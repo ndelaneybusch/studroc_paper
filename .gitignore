@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Agents
+AGENTS.md
+CLAUDE.md
+.claude/
+
+# Distribution / packaging
+.python-version
+dist/
+build/
+*.egg-info/
+
+# Unit test / coverage reports
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Type checking
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Linting
+.ruff_cache/
+
+# Environments
+.env
+.venv/
+env/
+venv/
+ENV/
+uv.lock
+.vscode/settings.json
+
+# Other
+.resources/
+.dev/
+results/activations/data/*
+*checkpoint.ipynb

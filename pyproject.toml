@@ -1,0 +1,63 @@
+[project]
+name = "studroc_paper"
+version = "0.1.0"
+description = "Simulations and analysis for the paper."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = ["numpy", "scipy", "matplotlib", "seaborn"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/studroc_paper"]
+
+[dependency-groups]
+dev = ["pytest>=8.0", "ruff>=0.1.0", "ty", "ipython>=9.4.0", "ipdb>=0.13.13"]
+
+[project.urls]
+Homepage = "https://ndelaneybusch.github.io/studroc/"
+Repository = "https://github.com/ndelaneybusch/studroc"
+
+
+[tool.uv.pip]
+torch-backend = "auto"
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "UP", # pyupgrade
+]
+ignore = []
+
+[tool.ruff.format]
+docstring-code-format = true
+quote-style = "double"
+skip-magic-trailing-comma = true
+
+[tool.ruff.lint.isort]
+split-on-trailing-comma = false
+
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-ra -q"
+testpaths = ["tests"]
+pythonpath = ["src"]
