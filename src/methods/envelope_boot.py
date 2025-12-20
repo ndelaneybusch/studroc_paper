@@ -5,7 +5,7 @@ import torch
 from numpy.typing import NDArray
 from torch import Tensor
 
-from .method_utils import numpy_to_torch, torch_interp, torch_to_numpy
+from .method_utils import numpy_to_torch, torch_step_interp, torch_to_numpy
 
 
 def _compute_empirical_roc(y_true: Tensor, y_score: Tensor, fpr_grid: Tensor) -> Tensor:
@@ -62,7 +62,7 @@ def _compute_empirical_roc(y_true: Tensor, y_score: Tensor, fpr_grid: Tensor) ->
     tpr_emp = tpr_emp[sort_idx]
 
     # Interpolate at fpr_grid points
-    return torch_interp(fpr_grid, fpr_emp, tpr_emp)
+    return torch_step_interp(fpr_grid, fpr_emp, tpr_emp)
 
 
 def envelope_bootstrap_band(

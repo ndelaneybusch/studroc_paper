@@ -31,6 +31,18 @@ def torch_to_numpy(tensor: Tensor):
     return tensor.detach().cpu().numpy()
 
 
+def torch_step_interp(x: Tensor, xp: Tensor, fp: Tensor) -> Tensor:
+    """
+    Step-function interpolation (right-continuous).
+
+    For x between xp[j] and xp[j+1], returns fp[j].
+    """
+    # Find insertion indices
+    indices = torch.searchsorted(xp, x, right=True) - 1
+    indices = torch.clamp(indices, 0, len(fp) - 1)
+    return fp[indices]
+
+
 def torch_interp(x: Tensor, xp: Tensor, fp: Tensor) -> Tensor:
     """Linear interpolation equivalent to np.interp.
 
