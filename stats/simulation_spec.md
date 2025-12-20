@@ -35,7 +35,7 @@ For many DGPs, we vary a "Shape" parameter and an "AUC" parameter. To achieve a 
     -   **DGP**: `make_beta_opposing_skew_dgp(alpha=?, beta=?)`
     -   **Sampling Space**:
         -   `AUC`: $[0.55, 0.99]$
-        -   `alpha`: $[1.5, 10.0]$ (Controls shape/kurtosis)
+        -   `alpha`: $[0.5, 10.0]$ (Controls shape/kurtosis)
     -   **Mapping**: Given `alpha`, solve for `beta` to match `AUC`.
     -   *Note*: `alpha=beta` implies AUC=0.5. We assume `beta > alpha` for AUC > 0.5.
 
@@ -53,7 +53,7 @@ For many DGPs, we vary a "Shape" parameter and an "AUC" parameter. To achieve a 
     -   **Sampling Space**:
         -   `AUC`: $[0.55, 0.99]$
         -   `mixture_weight` ($w$): $[0.1, 0.9]$
-        -   `mode_separation` ($\Delta_{neg}$): $[1.0, 4.0]$
+        -   `mode_separation` ($\Delta_{neg}$): $[0.1, 4.0]$
     -   **Mapping**: Fix `neg_means=[0, mode_separation]`, `neg_weights=[w, 1-w]`. Solve for `pos_mean` ($\Delta_{pos}$) to match `AUC`.
 
 ## 3. Sampling Strategy (LHS)
@@ -85,6 +85,21 @@ Using `src/eval/eval.py`, we collect:
 -   **Mean Band Area**: Average area between upper and lower bands (tightness).
 -   **Mean Band Width**: Average width across the FPR grid.
 -   **Violation Rates**: Frequency of true ROC exiting the band (above/below).
+
+## 6. Order of Operations
+
+A complete design for each DGP is specified by a set of LHS-derived parameter combinations, the n0/n1 combinations, the nuber of simulation repeats (n_sim), and the confidence levels for evaluation. Simulation order should be:
+1.  Loop over each DGP
+2.  Loop over each n0/n1 combination
+3.  Loop over each LHS parameter combination
+4.  Loop over each simulation repeat
+5.  Generate the data and bootstrap samples. Loop over methods, providing these data.
+6.  For each confidence level for each method, collect the evaluation metrics.
+7.  After each n0/n1 combination, save the individual evaluation metrics from each CI as a table (e.g. parquet), in long format. Save the aggregated metrics as a json keyed by method, separately for each confidence level. Have a special metadata key detailing the DGP, n0/n1, and confidence level, and other run information for attributes common to each CI. The filenames should include DGP, total n, and the date.
+
+There should be a progress bar for LHS combinations.
+
+In-memory intermediate results should be stored in RAM, not the GPU.
 
 ### Directory Structure
 -   `stats/run_simulation.py`: Main driver script.
