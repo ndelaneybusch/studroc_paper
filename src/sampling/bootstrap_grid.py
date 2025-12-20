@@ -28,11 +28,10 @@ def reconstruct_ranks(
             neg_ranks: Tensor of shape (n_negatives,) containing reconstructed ranks.
             Higher rank indicates higher score.
     """
-    # Ensure inputs are on device
     fpr = fpr.to(device)
     tpr = tpr.to(device)
 
-    # Ensure we start at 0
+    # 1. Handle (0,0) start
     if fpr[0] != 0 or tpr[0] != 0:
         zero = torch.tensor([0.0], device=device, dtype=fpr.dtype)
         fpr = torch.cat((zero, fpr))
@@ -41,40 +40,40 @@ def reconstruct_ranks(
     d_fpr = torch.diff(fpr)
     d_tpr = torch.diff(tpr)
 
-    # Counts of negatives and positives in each segment
-    # Use round to handle floating point inaccuracies
+    # 2. Robust Count Construction
+    # We enforce that the sum of counts equals N exactly by dumping
+    # rounding errors into the largest segment (or last).
     counts_neg = (d_fpr * n_negatives).round().long()
     counts_pos = (d_tpr * n_positives).round().long()
 
-    # Total ranks
-    total_samples = n_negatives + n_positives
+    # Force sum to match exactly
+    if counts_neg.sum() != n_negatives:
+        diff = n_negatives - counts_neg.sum()
+        # Add difference to the bin with the most samples to minimize distortion
+        counts_neg[counts_neg.argmax()] += diff
 
-    # Vectorized construction of label sequence
-    # We interleave: Pos then Neg for each segment.
-    # We construct a flat tensor of values to repeat and a flat tensor of counts.
-    # vals: 1 (Pos), 0 (Neg), 1, 0, ...
-    # counts: counts_pos[0], counts_neg[0], counts_pos[1], counts_neg[1], ...
+    if counts_pos.sum() != n_positives:
+        diff = n_positives - counts_pos.sum()
+        counts_pos[counts_pos.argmax()] += diff
 
-    # Stack counts: (N_segments, 2) -> flatten -> (2 * N_segments,)
+    # 3. Vectorized Label Construction
+    # Stack: (Pos, Neg) per segment implies Optimistic Tie Breaking (Pos > Neg)
     counts = torch.stack((counts_pos, counts_neg), dim=1).flatten()
 
-    # Create values pattern: 1, 0 repeated N_segments times
+    # Optimization: Create vals on CPU then move to device only if small,
+    # but here repeating on device is fast.
     vals = torch.tensor([1, 0], device=device, dtype=torch.long).repeat(len(counts_pos))
-
-    # Repeat values according to counts
     labels = torch.repeat_interleave(vals, counts)
 
-    # Ranks: 0 to total_samples - 1
-    # The first elements in 'labels' correspond to the highest scores (start of ROC).
-    # So index 0 has rank N-1.
+    # 4. Extract Ranks
+    # Since labels are constructed High-Score first (index 0),
+    # Rank = (Total - 1) - index
+    total_samples = n_negatives + n_positives
 
-    # Indices of positives in `labels`
-    # nonzero(as_tuple=True) returns tuple of tensors
+    # Use nonzero to find indices (already sorted by virtue of 'labels' structure)
     pos_indices = labels.nonzero(as_tuple=True)[0]
     neg_indices = (labels == 0).nonzero(as_tuple=True)[0]
 
-    # Map indices to ranks
-    # rank = (total_samples - 1) - index
     pos_ranks = (total_samples - 1) - pos_indices
     neg_ranks = (total_samples - 1) - neg_indices
 
@@ -89,6 +88,7 @@ def generate_bootstrap_grid(
     B: int,
     grid: Tensor,
     device: torch.device | None = None,
+    batch_size: int = 500,  # New Argument for memory safety
 ) -> Tensor:
     """
     Generate a tensor of bootstrapped ROC samples evaluated across a grid.
@@ -111,52 +111,64 @@ def generate_bootstrap_grid(
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # Ensure inputs are on device
     fpr = fpr.to(device)
     tpr = tpr.to(device)
     grid = grid.to(device)
 
-    # 1. Reconstruct implicit ranks from the empirical ROC
+    # 1. Reconstruct Ranks (One-time cost)
     pos_ranks, neg_ranks = reconstruct_ranks(fpr, tpr, n_negatives, n_positives, device)
 
-    # 2. Bootstrap the ranks
-    # Positives: (B, n1)
-    idx_pos = torch.randint(0, n_positives, (B, n_positives), device=device)
-    X_star = pos_ranks[idx_pos]
+    # Prepare Output
+    tpr_boot_list = []
 
-    # Negatives: (B, n0)
-    idx_neg = torch.randint(0, n_negatives, (B, n_negatives), device=device)
-    Y_star = neg_ranks[idx_neg]
-
-    # 3. Determine thresholds for the grid
-    # For a uniform grid u, we want the TPR at FPR = u.
-    # This corresponds to the threshold defined by the k-th largest negative,
-    # where k = floor(u * n0).
-
-    # Sort Y_star descending
-    Y_star_desc, _ = torch.sort(Y_star, dim=1, descending=True)
-
-    # Compute indices k for each grid point
+    # Pre-calculate grid indices for efficiency
+    # k is the index in the sorted negatives corresponding to the FPR grid point
     k_indices = torch.floor(grid * n_negatives).long()
     k_indices = torch.clamp(k_indices, 0, n_negatives)
 
-    # Pad Y_star_desc with sentinel -1 to handle k=n0 case (accept all negatives)
-    sentinel = torch.full((B, 1), -1, device=device, dtype=Y_star.dtype)
-    Y_star_padded = torch.cat([Y_star_desc, sentinel], dim=1)
+    # 2. Process in Batches
+    # This prevents allocating (B, N) tensors which causes OOM on large datasets
+    for start in range(0, B, batch_size):
+        end = min(start + batch_size, B)
+        current_B = end - start
 
-    # Gather thresholds: (B, K)
-    thresholds = Y_star_padded[:, k_indices]
+        # --- Bootstrap Negatives (Y_star) ---
+        # Sample
+        idx_neg = torch.randint(0, n_negatives, (current_B, n_negatives), device=device)
+        Y_star = neg_ranks[idx_neg]
 
-    # 4. Compute TPR
-    # TPR = (Count of X_star > threshold) / n1
+        # Sort Descending (Highest Rank/Score first)
+        Y_star, _ = torch.sort(Y_star, dim=1, descending=True)
 
-    # Sort X_star ascending for searchsorted
-    X_star_asc, _ = torch.sort(X_star, dim=1, descending=False)
+        # Pad with -1 sentinel for the FPR=1.0 case (accept all)
+        sentinel = torch.full((current_B, 1), -1, device=device, dtype=Y_star.dtype)
+        Y_star = torch.cat([Y_star, sentinel], dim=1)
 
-    # searchsorted returns count of elements <= threshold
-    counts_le = torch.searchsorted(X_star_asc, thresholds, right=True)
-    counts_gt = n_positives - counts_le
+        # Extract Thresholds
+        thresholds = Y_star[:, k_indices]
 
-    tpr_boot = counts_gt.float() / n_positives
+        # Free memory immediately
+        del Y_star, idx_neg
 
-    return tpr_boot
+        # --- Bootstrap Positives (X_star) ---
+        # Sample
+        idx_pos = torch.randint(0, n_positives, (current_B, n_positives), device=device)
+        X_star = pos_ranks[idx_pos]
+
+        # Sort Ascending for searchsorted
+        X_star, _ = torch.sort(X_star, dim=1, descending=False)
+
+        # --- Compute TPR ---
+        # Count X_star > Threshold
+        # searchsorted returns count <= Threshold
+        counts_le = torch.searchsorted(X_star, thresholds, right=True)
+        counts_gt = n_positives - counts_le
+
+        batch_tpr = counts_gt.float() / n_positives
+        tpr_boot_list.append(batch_tpr)
+
+        # Free memory
+        del X_star, idx_pos
+
+    # Concatenate all batches
+    return torch.cat(tpr_boot_list, dim=0)
