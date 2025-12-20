@@ -1,37 +1,50 @@
+"""Pointwise Bootstrap Confidence Bands using PyTorch."""
+
 import numpy as np
+import torch
+from numpy.typing import NDArray
+from torch import Tensor
+
+from .method_utils import numpy_to_torch, torch_to_numpy
 
 
-def pointwise_bootstrap_band(boot_tpr_matrix, fpr_grid, alpha=0.05):
-    """
-    Computes Pointwise Bootstrap Confidence Bands.
+def pointwise_bootstrap_band(
+    boot_tpr_matrix: NDArray | Tensor, fpr_grid: NDArray | Tensor, alpha: float = 0.05
+) -> tuple[NDArray, NDArray, NDArray]:
+    """Compute Pointwise Bootstrap Confidence Bands.
 
-    Parameters:
-    - boot_tpr_matrix: (B, F) numpy array where B is iterations, F is len(fpr_grid).
-                       Contains TPR values interpolated at fpr_grid points.
-    - fpr_grid: (F,) numpy array of FPR values corresponding to columns.
-    - alpha: float, significance level.
+    Args:
+        boot_tpr_matrix: (B, F) array where B is iterations, F is len(fpr_grid).
+                         Contains TPR values interpolated at fpr_grid points.
+        fpr_grid: (F,) array of FPR values corresponding to columns.
+        alpha: Significance level.
 
     Returns:
-    - fpr_grid: The input FPR vector.
-    - lower_envelope: 2.5th percentile (for alpha=0.05) at each point.
-    - upper_envelope: 97.5th percentile (for alpha=0.05) at each point.
+        Tuple of (fpr_grid, lower_envelope, upper_envelope) as numpy arrays.
     """
-    # Ensure inputs are numpy arrays, using boot_tpr_matrix dtype
-    boot_tpr_matrix = np.asarray(boot_tpr_matrix)
-    dtype = boot_tpr_matrix.dtype
-    fpr_grid = np.asarray(fpr_grid, dtype=dtype)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # Calculate percentiles column-wise (axis 0)
-    # For 95% interval, we want 2.5th and 97.5th percentiles
-    lower_p = (alpha / 2.0) * 100
-    upper_p = (1 - alpha / 2.0) * 100
+    # Convert inputs to tensors
+    boot_tpr_np = np.asarray(boot_tpr_matrix)
+    dtype = boot_tpr_np.dtype
+    boot_tpr = numpy_to_torch(boot_tpr_np, device).float()
+    fpr = numpy_to_torch(np.asarray(fpr_grid, dtype=dtype), device).float()
 
-    lower_envelope = np.percentile(boot_tpr_matrix, lower_p, axis=0).astype(dtype)
-    upper_envelope = np.percentile(boot_tpr_matrix, upper_p, axis=0).astype(dtype)
+    # Calculate quantiles column-wise (dim 0)
+    # torch.quantile uses [0, 1] range, not [0, 100]
+    lower_q = alpha / 2.0
+    upper_q = 1.0 - alpha / 2.0
 
-    # Enforce basic constraints (monotonicity is not guaranteed by pointwise quantiles,
-    # but clipping is safe)
-    lower_envelope = np.clip(lower_envelope, 0, 1).astype(dtype)
-    upper_envelope = np.clip(upper_envelope, 0, 1).astype(dtype)
+    lower_envelope = torch.quantile(boot_tpr, lower_q, dim=0)
+    upper_envelope = torch.quantile(boot_tpr, upper_q, dim=0)
 
-    return fpr_grid, lower_envelope, upper_envelope
+    # Clip to [0, 1]
+    lower_envelope = torch.clamp(lower_envelope, 0.0, 1.0)
+    upper_envelope = torch.clamp(upper_envelope, 0.0, 1.0)
+
+    # Convert back to numpy with original dtype
+    return (
+        torch_to_numpy(fpr).astype(dtype),
+        torch_to_numpy(lower_envelope).astype(dtype),
+        torch_to_numpy(upper_envelope).astype(dtype),
+    )
