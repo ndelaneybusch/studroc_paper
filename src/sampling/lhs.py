@@ -72,87 +72,57 @@ def _maximin_lhs_build(
     """
     Sequential 'build' algorithm for Maximin LHS.
     """
-    # Initialize the design matrix on the 1-based grid
-    # We maintain a list of available indices for each column to ensure Latin property
+    # Initialize available indices for each column
     available_indices = [list(range(1, n + 1)) for _ in range(k)]
-
-    # Pre-allocate result array
     result_grid = np.zeros((n, k), dtype=np.int32)
 
     # 1. Pick the first point randomly
     for col in range(k):
-        # Pick a random index from the available list for this column
         idx_in_list = rng.integers(0, len(available_indices[col]))
         val = available_indices[col].pop(idx_in_list)
         result_grid[0, col] = val
 
-    # 2. Build the remaining n-1 points
+    # 2. Build remaining points
     for i in range(1, n):
-        # Determine number of candidates to generate
-        # R documentation implies: candidate_count = dup * (points_remaining)
-        # However, for stability, we ensure at least one candidate.
         points_remaining = n - i
         n_candidates = max(1, dup * points_remaining)
 
         best_candidate = None
-        best_min_dist = -1.0
 
-        # Current valid design (i rows)
         current_design = result_grid[:i, :].astype(np.float64)
         if optimize_on == "result":
-            # Normalize to [0,1] for distance check if requested
             current_design = (current_design - 0.5) / n
 
-        # Generate candidates
-        for _ in range(n_candidates):
-            candidate_row = np.zeros(k, dtype=np.int32)
-
-            # Construct a valid candidate row obeying Latin property
+        # IMPROVEMENT: Generate all candidates at once for vectorization
+        candidates = np.zeros((n_candidates, k), dtype=np.int32)
+        for c in range(n_candidates):
             for col in range(k):
-                # Pick random value from remaining available indices
-                # We do NOT pop here, just peek, because we are simulating candidates
                 rand_idx = rng.integers(0, len(available_indices[col]))
-                candidate_row[col] = available_indices[col][rand_idx]
+                candidates[c, col] = available_indices[col][rand_idx]
 
-            # Calculate distance of this candidate to all existing points
-            candidate_point = candidate_row.astype(np.float64)
-            if optimize_on == "result":
-                candidate_point = (candidate_point - 0.5) / n
+        # Vectorized distance computation
+        candidate_points = candidates.astype(np.float64)
+        if optimize_on == "result":
+            candidate_points = (candidate_points - 0.5) / n
 
-            # Distance from candidate to all existing rows
-            # dists: shape (i,)
-            dists = np.sqrt(np.sum((current_design - candidate_point) ** 2, axis=1))
-            current_candidate_min_dist = np.min(dists)
+        # Shape: (n_candidates, i) - distance from each candidate to each existing point
+        # (n_candidates, 1, k) - (1, i, k) -> (n_candidates, i, k)
+        diffs = candidate_points[:, np.newaxis, :] - current_design[np.newaxis, :, :]
+        all_dists = np.sqrt(np.sum(diffs**2, axis=2))  # (n_candidates, i)
+        min_dists = np.min(all_dists, axis=1)  # (n_candidates,)
 
-            if current_candidate_min_dist > best_min_dist:
-                best_min_dist = current_candidate_min_dist
-                best_candidate = candidate_row
+        best_idx = np.argmax(min_dists)
+        best_candidate = candidates[best_idx]
 
-        # Add the best candidate to the grid and remove used indices
-        if best_candidate is not None:
-            result_grid[i, :] = best_candidate
-            for col in range(k):
-                # Remove the value used by the best candidate from availability
-                available_indices[col].remove(best_candidate[col])
-        else:
-            # Fallback (should not happen with dup >= 1)
-            for col in range(k):
-                val = available_indices[col].pop(0)
-                result_grid[i, col] = val
+        # Add best candidate and update availability
+        result_grid[i, :] = best_candidate
+        for col in range(k):
+            available_indices[col].remove(best_candidate[col])
 
-    # 3. Convert grid integers to [0, 1] uniform
-    # Subtract 0.5 to center on the grid cell, then divide by n?
-    # Or typically LHS is (grid_val - 1 + rand) / n.
-    # The R logic usually does: (permutation - 1 + random_uniform) / n
-    # We will use the standard LHS transformation:
-    # Cell i (1-based) becomes interval [(i-1)/n, i/n].
-
-    # result_grid is 1-based. Convert to 0-based.
+    # Transform to [0, 1]
     zero_based_grid = result_grid - 1
     perturbation = rng.random((n, k))
-    final_lhs = (zero_based_grid + perturbation) / n
-
-    return final_lhs
+    return (zero_based_grid + perturbation) / n
 
 
 def _maximin_lhs_iterative(
@@ -215,3 +185,46 @@ def _maximin_lhs_iterative(
     final_lhs = (grid - 1 + perturbation) / n
 
     return final_lhs
+
+
+def iman_conover_transform(
+    X: np.ndarray, target_corr: np.ndarray, rng: np.random.Generator
+) -> np.ndarray:
+    """
+    Iman-Conover method to induce target correlation structure
+    while preserving marginal distributions.
+
+    Reference: Iman & Conover (1982), Communications in Statistics
+    """
+    n, k = X.shape
+
+    # Get rank scores (van der Waerden scores work well)
+    from scipy import stats
+
+    ranks = np.zeros_like(X)
+    for j in range(k):
+        order = np.argsort(X[:, j])
+        ranks[order, j] = np.arange(1, n + 1)
+
+    # Convert ranks to normal scores
+    scores = stats.norm.ppf(ranks / (n + 1))
+
+    # Current correlation of scores
+    current_corr = np.corrcoef(scores.T)
+
+    # Cholesky decomposition
+    C_target = np.linalg.cholesky(target_corr)
+    C_current = np.linalg.cholesky(current_corr)
+
+    # Transform scores to achieve target correlation
+    T = C_target @ np.linalg.inv(C_current)
+    transformed_scores = (T @ scores.T).T
+
+    # Reorder original X to match the rank order of transformed scores
+    result = np.zeros_like(X)
+    for j in range(k):
+        target_order = np.argsort(np.argsort(transformed_scores[:, j]))
+        original_sorted = np.sort(X[:, j])
+        result[:, j] = original_sorted[target_order]
+
+    return result
