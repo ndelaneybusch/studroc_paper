@@ -90,14 +90,19 @@ def envelope_bootstrap_band(
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # Convert all inputs to tensors
-    y_score_np = np.asarray(y_score)
-    dtype = y_score_np.dtype
+    # Determine dtype from y_score (convert to numpy if needed to get dtype)
+    if isinstance(y_score, np.ndarray):
+        dtype = y_score.dtype
+    elif isinstance(y_score, torch.Tensor):
+        dtype = y_score.cpu().numpy().dtype
+    else:
+        dtype = np.asarray(y_score).dtype
 
-    boot_tpr = numpy_to_torch(np.asarray(boot_tpr_matrix, dtype=dtype), device).float()
-    fpr = numpy_to_torch(np.asarray(fpr_grid, dtype=dtype), device).float()
-    y_true_t = numpy_to_torch(np.asarray(y_true), device)
-    y_score_t = numpy_to_torch(y_score_np, device).float()
+    # Convert all inputs to tensors on the target device
+    boot_tpr = numpy_to_torch(boot_tpr_matrix, device).float()
+    fpr = numpy_to_torch(fpr_grid, device).float()
+    y_true_t = numpy_to_torch(y_true, device)
+    y_score_t = numpy_to_torch(y_score, device).float()
 
     n_bootstrap, n_grid_points = boot_tpr.shape
 

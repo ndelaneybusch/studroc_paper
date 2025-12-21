@@ -1,14 +1,16 @@
 """Shared utilities for PyTorch-based methods."""
 
+import numpy as np
 import torch
+from numpy.typing import NDArray
 from torch import Tensor
 
 
-def numpy_to_torch(arr, device: torch.device | None = None) -> Tensor:
-    """Convert numpy array to tensor, preserving dtype.
+def numpy_to_torch(arr: NDArray | Tensor, device: torch.device | None = None) -> Tensor:
+    """Convert numpy array or torch tensor to tensor on specified device.
 
     Args:
-        arr: Input numpy array.
+        arr: Input numpy array or torch tensor.
         device: Target device (defaults to CUDA if available).
 
     Returns:
@@ -16,18 +18,29 @@ def numpy_to_torch(arr, device: torch.device | None = None) -> Tensor:
     """
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    return torch.from_numpy(arr).to(device)
+
+    # If already a tensor, just move to the target device
+    if isinstance(arr, Tensor):
+        return arr.to(device)
+
+    # If numpy array, convert to tensor
+    return torch.from_numpy(np.asarray(arr)).to(device)
 
 
-def torch_to_numpy(tensor: Tensor):
-    """Convert tensor back to numpy array, preserving dtype.
+def torch_to_numpy(tensor: Tensor | NDArray) -> NDArray:
+    """Convert tensor or numpy array to numpy array.
 
     Args:
-        tensor: Input PyTorch tensor.
+        tensor: Input PyTorch tensor or numpy array.
 
     Returns:
         Numpy array with preserved dtype.
     """
+    # If already numpy array, return as-is
+    if isinstance(tensor, np.ndarray):
+        return tensor
+
+    # If tensor, convert to numpy (moving to CPU if necessary)
     return tensor.detach().cpu().numpy()
 
 

@@ -24,11 +24,17 @@ def pointwise_bootstrap_band(
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # Convert inputs to tensors
-    boot_tpr_np = np.asarray(boot_tpr_matrix)
-    dtype = boot_tpr_np.dtype
-    boot_tpr = numpy_to_torch(boot_tpr_np, device).float()
-    fpr = numpy_to_torch(np.asarray(fpr_grid, dtype=dtype), device).float()
+    # Determine dtype from boot_tpr_matrix (convert to numpy if needed to get dtype)
+    if isinstance(boot_tpr_matrix, np.ndarray):
+        dtype = boot_tpr_matrix.dtype
+    elif isinstance(boot_tpr_matrix, torch.Tensor):
+        dtype = boot_tpr_matrix.cpu().numpy().dtype
+    else:
+        dtype = np.asarray(boot_tpr_matrix).dtype
+
+    # Convert inputs to tensors on the target device
+    boot_tpr = numpy_to_torch(boot_tpr_matrix, device).float()
+    fpr = numpy_to_torch(fpr_grid, device).float()
 
     # Calculate quantiles column-wise (dim 0)
     # torch.quantile uses [0, 1] range, not [0, 100]
