@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 import numpy as np
 from scipy import stats
 
+from ..datagen.true_rocs import DGP
+
 # =============================================================================
 # Data Classes
 # =============================================================================
@@ -77,95 +79,6 @@ class BandEvaluation:
     # Violation magnitudes
     mean_max_violation: float
     percentile_95_max_violation: float
-
-
-# =============================================================================
-# True ROC Estimation
-# =============================================================================
-
-
-@dataclass
-class DGP:
-    """
-    Data generating process wrapper.
-
-    Parameters
-    ----------
-    generator : Callable
-        Function with signature (n_pos, n_neg, rng) -> (scores_pos, scores_neg)
-    true_roc : Optional[Callable]
-        Function with signature (fpr_array) -> tpr_array. If None, will be
-        estimated via Monte Carlo when needed.
-    """
-
-    generator: Callable[[int, int, np.random.Generator], tuple[np.ndarray, np.ndarray]]
-    true_roc: Callable[[np.ndarray], np.ndarray] | None = None
-    _estimated_roc_cache: tuple[np.ndarray, np.ndarray] | None = field(
-        default=None, repr=False
-    )
-
-    def sample(
-        self, n_pos: int, n_neg: int, rng: np.random.Generator | None = None
-    ) -> tuple[np.ndarray, np.ndarray]:
-        """Generate a sample from the DGP."""
-        if rng is None:
-            rng = np.random.default_rng()
-        return self.generator(n_pos, n_neg, rng)
-
-    def get_true_roc(
-        self,
-        fpr_grid: np.ndarray,
-        n_samples: int = 100_000,
-        rng: np.random.Generator | None = None,
-    ) -> np.ndarray:
-        """
-        Get true ROC values at specified FPR points.
-
-        If true_roc function is provided, uses that. Otherwise estimates
-        via Monte Carlo with large sample size.
-        """
-        if self.true_roc is not None:
-            return self.true_roc(fpr_grid)
-
-        # Estimate from large sample
-        return estimate_true_roc(self, fpr_grid, n_samples, rng)
-
-
-def estimate_true_roc(
-    dgp: DGP,
-    fpr_grid: np.ndarray,
-    n_samples: int = 100_000,
-    rng: np.random.Generator | None = None,
-) -> np.ndarray:
-    """
-    Estimate the true ROC curve via Monte Carlo with large sample.
-
-    Uses a very large sample to approximate the population ROC.
-    The standard error of the estimated TPR at each point is approximately
-    sqrt(TPR * (1-TPR) / n_pos), which for n=100,000 is < 0.002.
-    """
-    if rng is None:
-        rng = np.random.default_rng()
-
-    scores_pos, scores_neg = dgp.sample(n_samples, n_samples, rng)
-    dtype = scores_pos.dtype
-
-    # Compute thresholds at each FPR level
-    # FPR = P(score_neg > threshold), so threshold = quantile(1 - FPR)
-    thresholds = np.quantile(scores_neg, 1 - fpr_grid).astype(dtype)
-
-    # Handle edge cases
-    thresholds = np.clip(
-        thresholds, scores_neg.min() - 1, scores_neg.max() + 1
-    ).astype(dtype)
-
-    # TPR at each threshold
-    tpr = np.array([(scores_pos >= t).mean() for t in thresholds], dtype=dtype)
-
-    # Ensure monotonicity (should be automatic but numerical issues possible)
-    tpr = np.maximum.accumulate(tpr).astype(dtype)
-
-    return tpr
 
 
 # =============================================================================
