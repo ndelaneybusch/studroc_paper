@@ -446,7 +446,7 @@ def save_results(
     Save simulation results to disk.
 
     Creates:
-    - Individual CI evaluations as parquet (long format)
+    - Individual CI evaluations as feather (long format)
     - Aggregated metrics as JSON (per method, per confidence level)
     """
     timestamp = datetime.now().strftime("%Y%m%d")
@@ -538,10 +538,10 @@ def save_results(
 
                 individual_records.append(record)
 
-    # Save individual results as parquet
+    # Save individual results as feather
     df_individual = pd.DataFrame(individual_records)
-    parquet_path = output_dir / f"{base_filename}_individual.parquet"
-    df_individual.to_parquet(parquet_path, index=False)
+    feather_path = output_dir / f"{base_filename}_individual.feather"
+    df_individual.to_feather(feather_path)
 
     # Aggregate and save summary statistics
     aggregated_results = {}
@@ -605,7 +605,7 @@ def save_results(
     with open(json_path, "w") as f:
         json.dump(aggregated_results, f, indent=2)
 
-    print(f"  Saved: {parquet_path.name}")
+    print(f"  Saved: {feather_path.name}")
     print(f"  Saved: {json_path.name}")
 
 
@@ -683,7 +683,7 @@ def main():
     args = parser.parse_args()
 
     # Setup
-    output_dir = args.output_dir
+    output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Get DGP specs
