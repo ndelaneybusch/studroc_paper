@@ -4,7 +4,16 @@ version = "0.1.0"
 description = "Simulations and analysis for the paper."
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = ["numpy", "scipy", "matplotlib", "seaborn", "torch"]
+dependencies = [
+    "numpy",
+    "pandas",
+    "scikit-learn",
+    "scipy",
+    "matplotlib",
+    "seaborn",
+    "torch",
+    "tqdm",
+]
 
 [build-system]
 requires = ["hatchling"]
