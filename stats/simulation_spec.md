@@ -13,7 +13,7 @@ This document specifies the simulation approach to compare `envelope_boot.py` (N
 We will use the DGPs defined in `src/datagen/true_rocs.py`. For each DGP, we define a "Sampling Space" of key properties (e.g., AUC, Shape) which will be sampled using Latin Hypercube Sampling (LHS). These properties are then mapped back to the specific DGP parameters.
 
 ### Linking Function: AUC to Separation
-For many DGPs, we vary a "Shape" parameter and an "AUC" parameter. To achieve a target AUC given a shape, we numerically solve for the "Separation" parameter (e.g., `delta_mu`, `pos_mu`, `beta`) using `scipy.optimize.brentq`.
+For many DGPs, we vary a "Shape" parameter and an "AUC" parameter. Mapping between these ROC properties and DGP parameters is handled by `src/datagen/roc_to_dgp.py`.
 
 ### DGP List and Sampling Spaces
 
@@ -22,21 +22,18 @@ For many DGPs, we vary a "Shape" parameter and an "AUC" parameter. To achieve a 
     -   **Sampling Space**:
         -   `AUC`: $[0.55, 0.99]$
         -   `sigma`: $[0.1, 3.0]$ (Controls skewness; higher = more skewed)
-    -   **Mapping**: Given `sigma` and target `AUC`, solve for `pos_mu`.
 
 2.  **Heteroskedastic Gaussian (Binormal)**
     -   **DGP**: `make_heteroskedastic_gaussian_dgp(delta_mu=?, sigma_neg=1, sigma_pos=?)`
     -   **Sampling Space**:
         -   `AUC`: $[0.55, 0.99]$
         -   `sigma_ratio` ($ \sigma_{pos} / \sigma_{neg} $): $[0.2, 5.0]$
-    -   **Mapping**: Set `sigma_pos = sigma_ratio`. Solve for `delta_mu` to match `AUC`.
 
 3.  **Beta (Opposing Skew)**
     -   **DGP**: `make_beta_opposing_skew_dgp(alpha=?, beta=?)`
     -   **Sampling Space**:
         -   `AUC`: $[0.55, 0.99]$
         -   `alpha`: $[0.5, 10.0]$ (Controls shape/kurtosis)
-    -   **Mapping**: Given `alpha`, solve for `beta` to match `AUC`.
     -   *Note*: `alpha=beta` implies AUC=0.5. We assume `beta > alpha` for AUC > 0.5.
 
 4.  **Student's t (Heavy Tails)**
@@ -44,7 +41,6 @@ For many DGPs, we vary a "Shape" parameter and an "AUC" parameter. To achieve a 
     -   **Sampling Space**:
         -   `AUC`: $[0.55, 0.99]$
         -   `df`: $[1.1, 30.0]$ (Controls tail heaviness; lower = heavier)
-    -   **Mapping**: Given `df`, solve for `delta_loc` to match `AUC`.
 
 5.  **Bimodal Negative (Mixture)**
     -   **DGP**: `make_bimodal_negative_dgp`
@@ -54,7 +50,6 @@ For many DGPs, we vary a "Shape" parameter and an "AUC" parameter. To achieve a 
         -   `AUC`: $[0.55, 0.99]$
         -   `mixture_weight` ($w$): $[0.1, 0.9]$
         -   `mode_separation` ($\Delta_{neg}$): $[0.1, 4.0]$
-    -   **Mapping**: Fix `neg_means=[0, mode_separation]`, `neg_weights=[w, 1-w]`. Solve for `pos_mean` ($\Delta_{pos}$) to match `AUC`.
 
 ## 3. Sampling Strategy (LHS)
 
@@ -77,14 +72,12 @@ For each parameter combination (DGP instance), we run simulations across a range
 -   **Confidence Levels**: $\alpha \in \{0.5, 0.05\}$ (50% and 95% confidence).
 -   **Number of Simulations**: $N_{sim} = 1$ per configuration.
 -   **Bootstrap Replicates**: $B = 4000$ (for Envelope method).
+-   **K (eval grid size)**: $K = n0+1$ (1 + number of negative samples).
 
 ## 5. Evaluation Metrics
 
-Using `src/eval/eval.py`, we collect:
--   **Coverage Rate**: Proportion of bands containing the true ROC entirely.
--   **Mean Band Area**: Average area between upper and lower bands (tightness).
--   **Mean Band Width**: Average width across the FPR grid.
--   **Violation Rates**: Frequency of true ROC exiting the band (above/below).
+Produce evaluations of each CI using `src/eval/eval.py`. Add identifiers for e.g. DGP, n0/n1 and n_total, confidence level, DGP method, LHS parameters, corresponding DGP parameters, simulation repeat number, and empirical AUC.
+
 
 ## 6. Order of Operations
 

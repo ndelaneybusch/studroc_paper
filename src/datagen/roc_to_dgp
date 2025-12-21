@@ -292,6 +292,7 @@ def generate_simulation_design(n_samples: int = 1000, seed: int = 42):
             ["auc", "mixture_weight", "mode_separation"],
             [(0.55, 0.99), (0.1, 0.9), (0.1, 4.0)],
         ),
+        ("exponential", ["auc", "neg_rate"], [(0.55, 0.99), (0.1, 10.0)]),
     ]
 
     for dgp_type, param_names, param_bounds in specs:
