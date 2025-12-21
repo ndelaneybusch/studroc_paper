@@ -1,7 +1,6 @@
 """Fixed-Width KS Confidence Bands."""
 
 import numpy as np
-import torch
 from numpy.typing import NDArray
 from torch import Tensor
 
@@ -50,9 +49,7 @@ def fixed_width_ks_band(
     distinct_value_indices = np.where(diff != 0)[0]
 
     # Include the last index
-    threshold_idxs = np.concatenate(
-        [distinct_value_indices, [len(y_true_desc) - 1]]
-    )
+    threshold_idxs = np.concatenate([distinct_value_indices, [len(y_true_desc) - 1]])
 
     # Cumulative sum of true labels
     tps = np.cumsum(y_true_desc.astype(float))[threshold_idxs]

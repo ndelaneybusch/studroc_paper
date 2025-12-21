@@ -1,7 +1,6 @@
 """Working-Hotelling Simultaneous Confidence Bands."""
 
 import numpy as np
-import torch
 from numpy.typing import NDArray
 from scipy.stats import chi2, norm
 from torch import Tensor
