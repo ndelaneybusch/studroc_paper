@@ -88,15 +88,6 @@ class DGP:
             # Estimate from large sample
             tpr = estimate_true_roc(self, fpr_grid, n_samples, rng)
 
-        # Enforce ROC boundary constraints: (0,0) and (1,1)
-        # These are definitional properties of ROC curves
-        tpr = np.asarray(tpr)
-        if len(fpr_grid) > 0:
-            if fpr_grid[0] == 0.0:
-                tpr[0] = 0.0
-            if fpr_grid[-1] == 1.0:
-                tpr[-1] = 1.0
-
         return tpr
 
 
@@ -152,13 +143,6 @@ def estimate_true_roc(
     # Ensure monotonicity (should be automatic but numerical issues possible)
     tpr = np.maximum.accumulate(tpr).astype(dtype)
 
-    # Enforce ROC boundary constraints: (0,0) and (1,1)
-    if len(fpr_grid) > 0:
-        if fpr_grid[0] == 0.0:
-            tpr[0] = 0.0
-        if fpr_grid[-1] == 1.0:
-            tpr[-1] = 1.0
-
     return tpr
 
 
@@ -193,8 +177,7 @@ def make_gaussian_dgp(delta_mu: float = 1.0, sigma: float = 1.0) -> DGP:
     def true_roc(fpr):
         fpr = np.asarray(fpr)
         # Handle edge cases
-        fpr_clipped = np.clip(fpr, 1e-10, 1 - 1e-10)
-        return stats.norm.cdf(d_prime + stats.norm.ppf(fpr_clipped))
+        return stats.norm.cdf(d_prime + stats.norm.ppf(fpr))
 
     return DGP(
         generator=generator,
@@ -347,8 +330,7 @@ def make_lognormal_dgp(
 
     def true_roc(fpr):
         fpr = np.asarray(fpr)
-        fpr_clipped = np.clip(fpr, 1e-10, 1 - 1e-10)
-        return stats.norm.cdf(stats.norm.ppf(fpr_clipped) + d_prime)
+        return stats.norm.cdf(stats.norm.ppf(fpr) + d_prime)
 
     return DGP(
         generator=generator,
@@ -457,8 +439,8 @@ def make_heteroskedastic_gaussian_dgp(
 
     def true_roc(fpr):
         fpr = np.asarray(fpr)
-        fpr_clipped = np.clip(fpr, 1e-10, 1 - 1e-10)
-        return stats.norm.cdf(intercept + ratio * stats.norm.ppf(fpr_clipped))
+        # Use direct calculation to allow exact 0 and 1 (via inf)
+        return stats.norm.cdf(intercept + ratio * stats.norm.ppf(fpr))
 
     return DGP(
         generator=generator,
@@ -660,11 +642,7 @@ def make_student_t_dgp(
 
     def true_roc(fpr):
         fpr = np.asarray(fpr)
-        fpr_clipped = np.clip(fpr, 1e-10, 1 - 1e-10)
-
-        # Threshold at each FPR: t such that P(Neg > t) = FPR
-        # P(Neg > t) = 1 - F_neg(t) = FPR => F_neg(t) = 1 - FPR
-        thresholds = neg_dist.ppf(1 - fpr_clipped)
+        thresholds = neg_dist.ppf(1 - fpr)
 
         # TPR at each threshold
         tpr = 1 - pos_dist.cdf(thresholds)

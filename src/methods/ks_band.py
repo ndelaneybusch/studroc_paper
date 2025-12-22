@@ -74,12 +74,35 @@ def fixed_width_ks_band(
     # Evaluation grid
     fpr_grid = np.linspace(0, 1, k, dtype=dtype)
 
-    # Compute bands using linear interpolation
+    # Compute bands
+    # For upper envelope, we want the maximum TPR at a given FPR
+    # (top of vertical segments). np.interp returns the value at the last
+    # occurrence of x, which corresponds to the top.
     upper_envelope = np.interp(np.clip(fpr_grid + e, 0, 1), emp_fpr, emp_tpr) + d
-    lower_envelope = np.interp(np.clip(fpr_grid - e, 0, 1), emp_fpr, emp_tpr) - d
+
+    # For lower envelope, we want the minimum TPR at a given FPR
+    # (bottom of vertical segments). We can achieve this by interpolating
+    # on negated, reversed arrays.
+    # emp_fpr is sorted ascending. -emp_fpr[::-1] is also sorted ascending.
+    # emp_tpr[::-1] corresponds to those points.
+    # np.interp will pick the last occurrence in the reversed array, which is the
+    # first occurrence in the original array (bottom of segment).
+
+    # We interpolate at -clip(fpr_grid - e)
+    neg_fpr_rev = -emp_fpr[::-1]
+    tpr_rev = emp_tpr[::-1]
+
+    lower_interp = np.interp(-np.clip(fpr_grid - e, 0, 1), neg_fpr_rev, tpr_rev)
+    lower_envelope = lower_interp - d
 
     # Clip to [0, 1]
     upper_envelope = np.clip(upper_envelope, 0, 1).astype(dtype)
     lower_envelope = np.clip(lower_envelope, 0, 1).astype(dtype)
+
+    # Enforce boundary conditions
+    # FPR=0: [0, upper]
+    # FPR=1: [lower, 1]
+    lower_envelope[0] = 0.0
+    upper_envelope[-1] = 1.0
 
     return fpr_grid, lower_envelope, upper_envelope

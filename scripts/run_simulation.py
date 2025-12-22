@@ -29,7 +29,6 @@ from tqdm import tqdm
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from datagen.roc_to_dgp import map_lhs_to_dgp
-
 from datagen.true_rocs import (
     make_beta_opposing_skew_dgp,
     make_bimodal_negative_dgp,
@@ -192,7 +191,7 @@ def run_single_simulation(
     """
     # Generate data
     scores_pos, scores_neg = dgp.sample(n_pos, n_neg, rng)
-    true_tpr = dgp.true_roc(fpr_grid)
+    true_tpr = dgp.get_true_roc(fpr_grid)
 
     # Create labels and scores for sklearn-style interface
     y_true = np.concatenate([np.ones(n_pos), np.zeros(n_neg)])

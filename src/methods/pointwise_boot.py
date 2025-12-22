@@ -48,6 +48,12 @@ def pointwise_bootstrap_band(
     lower_envelope = torch.clamp(lower_envelope, 0.0, 1.0)
     upper_envelope = torch.clamp(upper_envelope, 0.0, 1.0)
 
+    # Enforce boundary conditions
+    # FPR=0: [0, upper]
+    # FPR=1: [lower, 1]
+    lower_envelope[0] = 0.0
+    upper_envelope[-1] = 1.0
+
     # Convert back to numpy with original dtype
     return (
         torch_to_numpy(fpr).astype(dtype),
