@@ -2,7 +2,7 @@
 
 ## Abstract
 
-We present a nonparametric method for constructing simultaneous confidence bands (SCB) for ROC curves using a studentized bootstrap envelope. The method retains the $(1-\alpha)$ fraction of bootstrap curves most consistent with the empirical ROC (ranked by studentized Kolmogorov-Smirnov statistic) and returns their pointwise envelope. The resulting band is asymmetric, adapts to local variance, and inherits the step-function structure of the empirical ROC.
+We present a nonparametric method for constructing simultaneous confidence bands (SCB) for ROC curves using a studentized bootstrap envelope. The method retains the $(1-\alpha)$ fraction of bootstrap curves most consistent with the empirical ROC (using either studentized Kolmogorov-Smirnov statistics or symmetric tail trimming) and returns their pointwise envelope. The resulting band is asymmetric, adapts to local variance (incorporating a Wilson-score floor for stability), and inherits the step-function structure of the empirical ROC.
 
 ---
 
@@ -48,40 +48,75 @@ For $b = 1, \ldots, B$:
 ### 2.4 Variance Estimation
 
 For each $t \in \mathcal{T}$:
-$$\hat{\sigma}(t) = \sqrt{\frac{1}{B-1} \sum_{b=1}^{B}\left(R_b(t) - \bar{R}(t)\right)^2}$$
+$$\hat{\sigma}_{boot}(t) = \sqrt{\frac{1}{B-1} \sum_{b=1}^{B}\left(R_b(t) - \bar{R}(t)\right)^2}$$
 
 where $\bar{R}(t) = \frac{1}{B}\sum_b R_b(t)$.
 
+**Wilson Score Variance Floor:**
+At boundaries (FPR near 0 or 1), the bootstrap distribution often collapses to a single value, yielding $\hat{\sigma}_{boot}(t) \approx 0$. This causes instability in studentization. To address this, we impose a minimum variance floor based on the Wilson score interval for a binomial proportion $p = \hat{R}(t)$ (the empirical TPR) with sample size $n_{pos}$:
+
+$$\sigma^2_{wilson}(p) = \left( \frac{z \sqrt{p(1-p)/n_{pos} + z^2/(4n_{pos}^2)}}{1 + z^2/n_{pos}} \right)^2$$
+
+where $z$ is the normal quantile for $(1-\alpha/2)$. The final standard deviation used for studentization is:
+$$\hat{\sigma}(t) = \sqrt{\max\left(\hat{\sigma}^2_{boot}(t), \sigma^2_{wilson}(\hat{R}(t))\right)}$$
+
 ### 2.5 Studentized KS Statistics
 
-Set regularization $\epsilon = \min(1/n, 10^{-6})$ where $n = n_0 + n_1$.
+To measure the "strangeness" of each bootstrap curve, we compute its maximum studentized deviation from the empirical curve.
 
-For each bootstrap curve, compute:
-$$Z_b = \sup_{t \in \mathcal{T}} z(t)$$
+**Epsilon Regularizer:**
+We define a regularization parameter $\epsilon = \min(1/N, 10^{-6})$, where $N = n_0 + n_1$. This serves as a lower bound on meaningful deviations, ensuring we do not amplify numerical noise or irrelevant micro-fluctuations when variance is extremely low. It is derived from the smallest possible probability mass in the sample space.
 
-where the pointwise studentized deviation handles corners explicitly:
+**Studentization with Low-Variance Handling:**
+For each bootstrap curve $b$, we compute the pointwise studentized deviation $z_b(t)$.
+1. Calculate absolute deviation: $\delta_b(t) = |R_b(t) - \hat{R}(t)|$.
+2. **Normal Case:** If $\hat{\sigma}(t) \geq \epsilon$:
+   $$z_b(t) = \frac{\delta_b(t)}{\hat{\sigma}(t)}$$
+3. **Low-Variance Case:** If $\hat{\sigma}(t) < \epsilon$ (variance is effectively zero):
+   $$z_b(t) = \begin{cases} 
+   0 & \text{if } \delta_b(t) < \epsilon \text{ (noise)} \\
+   \frac{\delta_b(t)}{\epsilon} & \text{if } \delta_b(t) \geq \epsilon \text{ (significant shift)}
+   \end{cases}$$
 
-$$z(t) = \begin{cases} 
-0 & \text{if } \hat{\sigma}(t) < \epsilon \text{ and } |R_b(t) - \hat{R}(t)| < \epsilon \\
-\frac{|R_b(t) - \hat{R}(t)|}{\epsilon} & \text{if } \hat{\sigma}(t) < \epsilon \text{ and } |R_b(t) - \hat{R}(t)| \geq \epsilon \\
-\frac{|R_b(t) - \hat{R}(t)|}{\hat{\sigma}(t)} & \text{otherwise}
-\end{cases}$$
+For each curve, the global statistic is $Z_b = \sup_{t \in \mathcal{T}} z_b(t)$.
 
-This measures the worst-case standardized deviation from the empirical ROC, with stable behavior at the corners where $\hat{\sigma}(t) \to 0$.
 
 ### 2.6 Curve Retention
 
-Retain the $(1-\alpha)B$ curves with smallest $Z_b$:
+We support two methods for determining which curves to retain.
+
+**Option A: Original KS Retention (`retention_method="ks"`)**
+Retain the $(1-\alpha)$ fraction of curves with the smallest maximum absolute studentized deviation $Z_b$.
 $$\mathcal{R}_\alpha = \left\{R_b : Z_b \leq Z_{(\lceil(1-\alpha)B\rceil)}\right\}$$
+where $Z_{(k)}$ is the $k$-th order statistic. This creates a band of "most typical" curves in terms of global shape deviation.
 
-where $Z_{(k)}$ is the $k$-th order statistic.
+**Option B: Symmetric Retention (`retention_method="symmetric"`)**
+The standard KS method can be asymmetric at boundaries (e.g., at high AUC, curves can't deviate upward past 1, but can deviate downward). To ensure balanced tail coverage:
+1. Compute *signed* studentized deviations: $s_b(t)$ using the signed difference $(R_b(t) - \hat{R}(t))$ in the numerator.
+2. For each curve $b$, find its max upward deviation $M^+_b = \sup_t s_b(t)$ and max downward deviation $M^-_b = \inf_t s_b(t)$.
+3. Determine thresholds $q_{up}$ and $q_{down}$ such that $\alpha/2$ of curves exceed $q_{up}$ and $\alpha/2$ fall below $q_{down}$.
+4. Retain curves that satisfy:
+   $$M^-_b \geq q_{down} \quad \text{AND} \quad M^+_b \leq q_{up}$$
 
-### 2.7 Envelope Construction
+This method explicitly trims the most extreme $\alpha/2$ upward excursions and $\alpha/2$ downward excursions.
 
+### 2.7 Envelope Construction & Boundary Handling
+
+Compute the pointwise min and max of the retained curves $\mathcal{R}_\alpha$:
 $$L(t) = \min_{R_b \in \mathcal{R}_\alpha} R_b(t)$$
 $$U(t) = \max_{R_b \in \mathcal{R}_\alpha} R_b(t)$$
 
-Clip to $[0,1]$: $L(t) \leftarrow \max(0, L(t))$, $U(t) \leftarrow \min(1, U(t))$.
+**Boundary Enforcement:**
+We explicitly enforce that the confidence band respects logical ROC constraints:
+- $L(0) = 0$
+- $U(1) = 1$
+- Clip all values to $[0, 1]$.
+
+**KS-Style Boundary Extension (Optional, `boundary_method="ks"`):**
+In regions where bootstrap variance collapses completely (near corners), we can optionally extend the band using fixed width margins derived from the analytical Kolmogorov-Smirnov distribution (Campbell 1994). This connects the computed bootstrap envelope to the corners (0,0) and (1,1) with a theoretical worst-case slope.
+
+
+
 
 ---
 
@@ -168,73 +203,68 @@ where:
 ## 5. Complete Pseudocode
 
 ```
-FUNCTION envelope_scb(scores_neg, scores_pos, B, alpha, grid="hybrid", K=1001):
+FUNCTION envelope_scb(scores_neg, scores_pos, B, alpha, 
+                      grid="hybrid", boundary_method="wilson", 
+                      retention_method="ks"):
     
-    n0 = length(scores_neg)
-    n1 = length(scores_pos)
+    # ... [Steps 1-4: Empirical ROC, Bootstrap, Grid Evaluation as before] ...
     
-    # === Step 1: Empirical ROC ===
-    R_hat, J_hat = compute_roc(scores_neg, scores_pos)
-    
-    # === Step 2: Bootstrap ===
-    R_boot = []          # list of B bootstrap curves
-    J_all = set(J_hat)   # collect jump points if exact grid
-    
-    FOR b = 1 TO B:
-        neg_b = resample_with_replacement(scores_neg, n0)
-        pos_b = resample_with_replacement(scores_pos, n1)
-        R_b, J_b = compute_roc(neg_b, pos_b)
-        R_boot.append(R_b)
-        IF grid == "exact":
-            J_all = J_all ∪ J_b
-    
-    # === Step 3: Evaluation grid ===
-    IF grid == "exact":
-        T = sorted(J_all)
-    ELIF grid == "hybrid":
-        T = sorted(J_hat ∪ linspace(0, 1, K))
-    ELSE:
-        T = linspace(0, 1, K)
-    
-    # === Step 4: Evaluate curves on grid ===
-    R_hat_T = [R_hat(t) for t in T]
-    R_boot_T = [[R_b(t) for t in T] for R_b in R_boot]
-    
-    # === Step 5: Variance estimation ===
+    # === Step 5: Variance Estimation ===
     sigma_T = []
     FOR i = 1 TO |T|:
-        values = [R_boot_T[b][i] for b in 1:B]
-        sigma_T.append(std(values))
+        sd_boot = std([R_boot_T[b][i] for b in 1:B])
+        IF boundary_method == "wilson":
+            p = R_hat_T[i]
+            sd_wilson = wilson_score_sd(p, n_pos, alpha)
+            sigma_T.append(max(sd_boot, sd_wilson))
+        ELSE:
+            sigma_T.append(sd_boot)
     
-    # === Step 6: Studentized KS statistics ===
+    # === Step 6: Studentized Statistics ===
     epsilon = min(1 / (n0 + n1), 1e-6)
-    Z = []
-    FOR b = 1 TO B:
-        max_dev = 0
-        FOR i = 1 TO |T|:
-            diff = |R_boot_T[b][i] - R_hat_T[i]|
-            IF sigma_T[i] < epsilon:
-                IF diff < epsilon:
-                    z_val = 0
-                ELSE:
-                    z_val = diff / epsilon
-            ELSE:
-                z_val = diff / sigma_T[i]
-            max_dev = max(max_dev, z_val)
-        Z.append(max_dev)
     
-    # === Step 7: Retain lowest-Z curves ===
-    n_retain = floor((1 - alpha) * B)
-    threshold = sorted(Z)[n_retain]
-    retained = [b for b in 1:B if Z[b] <= threshold]
+    IF retention_method == "symmetric":
+        # Compute signed deviations
+        M_up = [], M_down = []
+        FOR b = 1 TO B:
+            max_pos = -inf, min_neg = inf
+            FOR i = 1 TO |T|:
+                diff = R_boot_T[b][i] - R_hat_T[i]
+                # Apply epsilon/sigma logic to diff...
+                z_val = studentize(diff, sigma_T[i], epsilon)
+                max_pos = max(max_pos, z_val)
+                min_neg = min(min_neg, z_val)
+            M_up.append(max_pos)
+            M_down.append(min_neg)
+            
+        q_up = quantile(M_up, 1 - alpha/2)
+        q_down = quantile(M_down, alpha/2)
+        retained = [b for b in 1:B if M_down[b] >= q_down AND M_up[b] <= q_up]
+        
+    ELSE: # "ks"
+        Z = []
+        FOR b = 1 TO B:
+            # calculate max absolute studentized dev
+            max_dev = max_over_t(abs(studentize(diff, sigma_T[i], epsilon)))
+            Z.append(max_dev)
+        
+        threshold = quantile(Z, 1 - alpha)
+        retained = [b for b in 1:B if Z[b] <= threshold]
     
-    # === Step 8: Compute envelope ===
-    L = []
-    U = []
+    # === Step 7: Envelope ===
+    L = [], U = []
     FOR i = 1 TO |T|:
         vals = [R_boot_T[b][i] for b in retained]
-        L.append(max(0, min(vals)))
-        U.append(min(1, max(vals)))
+        L.append(min(vals))
+        U.append(max(vals))
     
-    RETURN T, L, U, R_hat_T
+    # === Step 8: Boundaries ===
+    L = clip(L, 0, 1), U = clip(U, 0, 1)
+    L[0] = 0, U[-1] = 1
+    
+    IF boundary_method == "ks":
+        L, U = extend_boundary_ks(L, U, n_pos, alpha)
+        
+    RETURN T, L, U
+
 ```
