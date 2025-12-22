@@ -31,11 +31,17 @@ Compute the empirical ROC curve $\hat{R}(t)$ and its FPR jump points $\mathcal{J
 
 Construct a common grid $\mathcal{T}$ for curve evaluation:
 
-| Method | Grid $\mathcal{T}$ | Properties |
-|--------|-------------------|------------|
-| Exact | $\mathcal{J}_0 \cup \bigcup_b \mathcal{J}_b$ | Exact supremum; $O(B \cdot n_0)$ points |
-| Hybrid | $\mathcal{J}_0 \cup \text{linspace}(0, 1, K)$ | Exact at $\hat{R}$ jumps; $O(n_0 + K)$ points |
-| Uniform | $\text{linspace}(0, 1, K)$ | Fast; $O(D/K)$ discretization error |
+
+**Key Insight:** Both the empirical ROC $\hat{R}(t)$ and any bootstrap ROC $R_b(t)$ are piecewise constant with jumps *only* at FPR values $\{0, 1/n_0, 2/n_0, \ldots, 1\}$. This is because the bootstrap resamples $n_0$ negatives with replacement, preserving the original grid of potential false positive rates.
+
+Therefore, evaluating on the set of all possible jump points is sufficient to capture the exact supremum distance.
+
+| Strategy | Grid $\mathcal{T}$ | Discretization Error $\delta_K$ | Memory |
+|----------|-------------------|--------------------------------|--------|
+| **Full** | $\{0, \frac{1}{n_0}, \frac{2}{n_0}, \ldots, 1\}$ | **0** (exact) | $B \times (n_0 + 1)$ |
+| **Uniform** | $\text{linspace}(0, 1, K)$ | $D / K$ | $B \times K$ |
+
+The **Full** grid provides exact evaluation but scales with sample size $n_0$. The **Uniform** grid allows controlling memory usage ($K$) independent of sample size, introducing a controlled discretization error.
 
 ### 2.3 Stratified Bootstrap
 
@@ -226,20 +232,34 @@ For FP32: Memory $= 4 \cdot B \cdot |\mathcal{T}|$ bytes.
 
 ### 4.3 Budget Allocation
 
-The optimal $B$ vs $K$ tradeoff follows the same analysis as the parametric band method. The error decomposition:
+We allocate a fixed memory budget $C = B \times K$ to minimize the total error $E = \sqrt{\delta_B^2 + \delta_K^2}$, where:
+- $\delta_B = \beta / \sqrt{B}$ (Monte Carlo error)
+- $\delta_K = D / K$ (Discretization error, 0 for Full grid)
 
-$$\delta_K = \frac{D}{K} \quad \text{(discretization)}, \quad \delta_B = \frac{\beta}{\sqrt{B}} \quad \text{(Monte Carlo)}$$
+**Optimization Strategy:**
 
-yields optimal allocation:
+1.  **Full Grid Analysis:**
+    - Set $K = n_0 + 1$.
+    - Maximize $B = \lfloor C / (n_0 + 1) \rfloor$.
+    - Feasible if $B \ge B_{\min}$. Error is just $\delta_B$.
 
-$$B_{opt} = \left(\frac{\beta^2}{2}\right)^{1/3} \cdot \frac{C^{2/3}}{D^{2/3}}, \quad K_{opt} = \left(\frac{2}{\beta^2}\right)^{1/3} \cdot C^{1/3} \cdot D^{2/3}$$
+2.  **Uniform Grid Optimization:**
+    - Minimize joint error subject to $B \times K = C$.
+    - Optimal allocation:
+      $$B_{\text{opt}} = \left(\frac{\beta^2 C^2}{2 D^2}\right)^{1/3}, \quad K_{\text{opt}} = \left(\frac{2 D^2 C}{\beta^2}\right)^{1/3}$$
+    - Error involves both $\delta_B$ and $\delta_K$.
 
-where:
-- $C = B \times K$ is the computational budget
-- $D = 2n_0\sqrt{2n_0/(n_1(n_0 + n_1))}$ is the discretization sensitivity
-- $\beta = \sqrt{\alpha(1-\alpha)}/f(c_\alpha)$ is the bootstrap error coefficient
+**Decision Rule:**
+Use the **Full Grid** (exact evaluation) if it provides lower error than the optimized uniform grid. This occurs when the sample size $n_0$ is small relative to the budget:
 
-**Change from parametric method:** Discretization error now affects both **curve ranking** (which curves are retained) and **envelope resolution** (where jumps can occur). For the exact grid, the envelope representation is exact. For uniform grids, ensure $K \geq 2n_0$ so envelope resolution matches empirical ROC resolution.
+$$(n_0 + 1)^3 < \frac{27 D^2 C}{4 \beta^2}$$
+
+Otherwise, use the **Uniform Grid** with $B_{\text{opt}}$ and $K_{\text{opt}}$ to balance finite-sample efficiency with grid resolution.
+
+**Parameters:**
+- $C$: Memory budget (total float entries).
+- $D \approx 2n_0\sqrt{2n_0/(n_1(n_0 + n_1))}$: Discretization sensitivity (or estimated from data).
+- $\beta = \sqrt{\alpha(1-\alpha)}/\phi(\Phi^{-1}(1-\alpha))$: Bootstrap error coefficient.
 
 ---
 
@@ -247,7 +267,7 @@ where:
 
 ```
 FUNCTION envelope_scb(scores_neg, scores_pos, B, alpha, 
-                      grid="hybrid", boundary_method="wilson", 
+                      grid="full", boundary_method="wilson", 
                       retention_method="ks"):
     
     # ... [Steps 1-4: Empirical ROC, Bootstrap, Grid Evaluation as before] ...
