@@ -115,29 +115,60 @@ We explicitly enforce that the confidence band respects logical ROC constraints:
 **KS-Style Boundary Extension (Optional, `boundary_method="ks"`):**
 In regions where bootstrap variance collapses completely (near corners), we can optionally extend the band using fixed width margins derived from the analytical Kolmogorov-Smirnov distribution (Campbell 1994). This connects the computed bootstrap envelope to the corners (0,0) and (1,1) with a theoretical worst-case slope.
 
-
-
-
 ---
 
 ## 3. Properties
 
-### 3.1 Asymptotic Coverage
+### 3.1 Coverage Guarantees
 
-**Theorem.** Under A1–A4, as $\min(n_0, n_1) \to \infty$:
+We distinguish two coverage targets with different finite-sample behavior.
+
+**Definition (Future-Curve Coverage).** The probability that an independent empirical ROC curve, computed from a new sample of the same size $(n_0, n_1)$ from the same population, falls entirely within the band:
+$$P\left(\forall t: \hat{R}_{new}(t) \in [L(t), U(t)]\right)$$
+
+**Definition (Population Coverage).** The probability that the true population ROC curve falls entirely within the band:
+$$P\left(\forall t: R_{true}(t) \in [L(t), U(t)]\right)$$
+
+---
+
+**Theorem 1 (Future-Curve Coverage).** Under A1–A4, the envelope band achieves:
+$$P\left(\forall t: \hat{R}_{new}(t) \in [L(t), U(t)]\right) = 1 - \alpha + O(n^{-1/2})$$
+
+where $n = \min(n_0, n_1)$.
+
+*Proof sketch:* The bootstrap directly estimates the sampling distribution of empirical ROC curves. By construction, the envelope contains the $(1-\alpha)$ fraction of bootstrap curves closest to $\hat{R}$ under the studentized supremum metric. The bootstrap distribution of $R_b$ around $\hat{R}$ consistently estimates the sampling distribution of $\hat{R}_{new}$ around its expectation. Since both $\hat{R}$ and $\hat{R}_{new}$ share the same bias structure (both are empirical ROCs at the same sample size), the band correctly captures the variability of future empirical curves. The $O(n^{-1/2})$ error arises from bootstrap approximation error. $\square$
+
+---
+
+**Theorem 2 (Asymptotic Population Coverage).** Under A1–A4, as $n = \min(n_0, n_1) \to \infty$:
 $$P\left(\forall t: R_{true}(t) \in [L(t), U(t)]\right) \to 1 - \alpha$$
 
-**Proof sketch:**
+*Proof sketch:* 
 
-1. The empirical ROC process $\sqrt{n}(\hat{R} - R_{true})$ converges weakly to a Gaussian process $\mathbb{G}$.
+1. The empirical ROC process $\sqrt{n}(\hat{R} - R_{true})$ converges weakly to a Gaussian process $\mathbb{G}$ (Hsieh & Turnbull, 1996).
 
-2. By bootstrap consistency, the distribution of $R_b$ around $\hat{R}$ approximates the distribution of $\hat{R}$ around $R_{true}$.
+2. By bootstrap consistency for the empirical process, the conditional distribution of $\sqrt{n}(R_b - \hat{R})$ given the data converges to the same limit $\mathbb{G}$.
 
-3. The retention rule keeps curves whose studentized supremum deviation is below the $(1-\alpha)$ quantile. By the bootstrap principle, $R_{true}$ falls within the envelope of such curves with probability approaching $1-\alpha$.
+3. The finite-sample bias $E[\hat{R}(t)] - R_{true}(t) = O(n^{-1})$ vanishes faster than the $O(n^{-1/2})$ standard deviation, so it becomes negligible in the standardized process.
 
-4. The studentization ensures the retention criterion adapts to local variance, providing uniform (not just pointwise) coverage. $\square$
+4. The retention rule keeps curves whose studentized supremum deviation is below the $(1-\alpha)$ quantile. By the bootstrap principle and (3), $R_{true}$ falls within the envelope with probability approaching $1-\alpha$. $\square$
 
-### 3.2 Asymmetry
+---
+
+### 3.2 Finite-Sample Bias
+
+The empirical ROC curve exhibits upward bias in finite samples:
+$$E[\hat{R}(t)] > R_{true}(t) \quad \text{for } t \in (0,1)$$
+
+This arises from the composition of two empirical distribution functions: $\hat{R}(t) = \hat{G}(\hat{F}^{-1}(1-t))$. The bias is $O(n^{-1})$ and increases with ROC curvature (higher AUC implies larger bias).
+
+**Impact on Coverage.** Since the confidence band is centered on $\hat{R}$, the true ROC tends to fall near or below the lower boundary, reducing population coverage in finite samples. This effect is most pronounced at high AUC and small sample sizes. Future-curve coverage is unaffected because both the band and future empirical curves share the same bias structure.
+
+**Asymptotic Negligibility.** Because the bias is $O(n^{-1})$ while the band width is $O(n^{-1/2})$, the relative contribution of bias vanishes as $n \to \infty$, ensuring the asymptotic coverage guarantee of Theorem 2.
+
+---
+
+### 3.3 Asymmetry
 
 The envelope is naturally asymmetric. Near boundaries (e.g., $\hat{R}(t) \approx 1$):
 - Bootstrap curves can deviate substantially downward
@@ -147,15 +178,27 @@ The envelope is naturally asymmetric. Near boundaries (e.g., $\hat{R}(t) \approx
 
 No separate machinery needed—asymmetry emerges from the bootstrap distribution.
 
-### 3.3 Heteroscedasticity Adaptation
+### 3.4 Heteroscedasticity Adaptation
 
 The studentized KS statistic weights deviations by local standard error. A curve with large deviation where $\hat{\sigma}(t)$ is large may be retained, while the same absolute deviation where $\hat{\sigma}(t)$ is small causes rejection.
 
 This yields tighter envelopes in low-variance regions (near corners) and wider envelopes in high-variance regions (mid-ROC).
 
-### 3.4 Step-Function Structure
+### 3.5 Step-Function Structure
 
 The envelope boundaries $L(t)$ and $U(t)$ are step functions with jumps at a subset of $\mathcal{T}$. This matches the step-function nature of $\hat{R}(t)$ and reflects genuine uncertainty about threshold placement.
+
+---
+
+### 3.6 Summary of Guarantees
+
+| Property | Finite Sample | Asymptotic |
+|----------|---------------|------------|
+| Future-curve coverage | $\approx 1-\alpha$ | $= 1-\alpha$ |
+| Population coverage | $< 1-\alpha$ (biased low) | $\to 1-\alpha$ |
+| Band width adapts to local variance | ✓ | ✓ |
+| Asymmetric at boundaries | ✓ | ✓ |
+| Distribution-free | ✓ | ✓ |
 
 ---
 
@@ -266,5 +309,5 @@ FUNCTION envelope_scb(scores_neg, scores_pos, B, alpha,
         L, U = extend_boundary_ks(L, U, n_pos, alpha)
         
     RETURN T, L, U
-
 ```
+
