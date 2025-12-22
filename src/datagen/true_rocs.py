@@ -37,6 +37,7 @@ class DGP:
     description : str
         Description of what makes this DGP interesting
     """
+
     generator: Callable[[int, int, np.random.Generator], tuple[np.ndarray, np.ndarray]]
     true_roc: Callable[[np.ndarray], np.ndarray] | None = None
     name: str = ""
@@ -65,6 +66,8 @@ class DGP:
         If true_roc function is provided, uses that. Otherwise estimates
         via Monte Carlo with large sample size.
 
+        ROC curves are pinned at definitional boundaries: (0,0) and (1,1).
+
         Parameters
         ----------
         fpr_grid : np.ndarray
@@ -80,10 +83,21 @@ class DGP:
             TPR values at the specified FPR points
         """
         if self.true_roc is not None:
-            return self.true_roc(fpr_grid)
+            tpr = self.true_roc(fpr_grid)
+        else:
+            # Estimate from large sample
+            tpr = estimate_true_roc(self, fpr_grid, n_samples, rng)
 
-        # Estimate from large sample
-        return estimate_true_roc(self, fpr_grid, n_samples, rng)
+        # Enforce ROC boundary constraints: (0,0) and (1,1)
+        # These are definitional properties of ROC curves
+        tpr = np.asarray(tpr)
+        if len(fpr_grid) > 0:
+            if fpr_grid[0] == 0.0:
+                tpr[0] = 0.0
+            if fpr_grid[-1] == 1.0:
+                tpr[-1] = 1.0
+
+        return tpr
 
 
 def estimate_true_roc(
@@ -98,6 +112,8 @@ def estimate_true_roc(
     Uses a very large sample to approximate the population ROC.
     The standard error of the estimated TPR at each point is approximately
     sqrt(TPR * (1-TPR) / n_pos), which for n=100,000 is < 0.002.
+
+    ROC curves are pinned at definitional boundaries: (0,0) and (1,1).
 
     Parameters
     ----------
@@ -126,15 +142,22 @@ def estimate_true_roc(
     thresholds = np.quantile(scores_neg, 1 - fpr_grid).astype(dtype)
 
     # Handle edge cases
-    thresholds = np.clip(
-        thresholds, scores_neg.min() - 1, scores_neg.max() + 1
-    ).astype(dtype)
+    thresholds = np.clip(thresholds, scores_neg.min() - 1, scores_neg.max() + 1).astype(
+        dtype
+    )
 
     # TPR at each threshold
     tpr = np.array([(scores_pos >= t).mean() for t in thresholds], dtype=dtype)
 
     # Ensure monotonicity (should be automatic but numerical issues possible)
     tpr = np.maximum.accumulate(tpr).astype(dtype)
+
+    # Enforce ROC boundary constraints: (0,0) and (1,1)
+    if len(fpr_grid) > 0:
+        if fpr_grid[0] == 0.0:
+            tpr[0] = 0.0
+        if fpr_grid[-1] == 1.0:
+            tpr[-1] = 1.0
 
     return tpr
 
