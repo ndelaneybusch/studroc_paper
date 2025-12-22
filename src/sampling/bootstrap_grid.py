@@ -171,4 +171,14 @@ def generate_bootstrap_grid(
         del X_star, idx_pos
 
     # Concatenate all batches
-    return torch.cat(tpr_boot_list, dim=0)
+    tpr_boot_matrix = torch.cat(tpr_boot_list, dim=0)
+
+    # Enforce ROC boundary constraints
+    # ROC curves must pass through (0, 0) and (1, 1)
+    if grid[0] == 0.0:
+        tpr_boot_matrix[:, 0] = 0.0
+
+    if grid[-1] == 1.0:
+        tpr_boot_matrix[:, -1] = 1.0
+
+    return tpr_boot_matrix
