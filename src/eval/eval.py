@@ -110,6 +110,11 @@ def evaluate_single_band(
     -------
     BandResult
         Comprehensive evaluation of this single band
+
+    Notes
+    -----
+    ROC curves are pinned at (0,0) and (1,1), so bands at these points
+    should have zero width and always cover the true ROC.
     """
     # Validate inputs and preserve dtype from true_tpr
     true_tpr = np.asarray(true_tpr)
@@ -122,8 +127,10 @@ def evaluate_single_band(
     assert len(lower_band) == n and len(upper_band) == n and len(true_tpr) == n
 
     # Pointwise coverage
-    above = true_tpr > upper_band
-    below = true_tpr < lower_band
+    # Use small tolerance for boundary comparisons due to floating point
+    tolerance = 1e-10
+    above = (true_tpr - upper_band) > tolerance
+    below = (lower_band - true_tpr) > tolerance
     pointwise_covered = ~(above | below)
 
     # Overall coverage
@@ -314,10 +321,26 @@ def aggregate_band_results(
     # Stack band widths: (n_sims, n_grid)
     band_widths_matrix = np.vstack([r.band_widths for r in results_list])
     mean_widths_by_fpr = band_widths_matrix.mean(axis=0)
-    mean_band_width = mean_widths_by_fpr.mean()
+
+    # Exclude pinned boundaries (FPR=0 and FPR=1) from width calculations
+    # since these have zero variance by construction
+    width_mask = np.ones(len(fpr_grid), dtype=bool)
+    if fpr_grid[0] == 0.0:
+        width_mask[0] = False
+    if fpr_grid[-1] == 1.0:
+        width_mask[-1] = False
+
+    # Mean width excluding boundaries
+    if width_mask.any():
+        mean_band_width = mean_widths_by_fpr[width_mask].mean()
+        sim_mean_widths = band_widths_matrix[:, width_mask].mean(
+            axis=1
+        )  # Mean width per simulation
+    else:
+        mean_band_width = mean_widths_by_fpr.mean()
+        sim_mean_widths = band_widths_matrix.mean(axis=1)
 
     # Percentiles of mean width across simulations
-    sim_mean_widths = band_widths_matrix.mean(axis=1)  # Mean width per simulation
     width_percentiles = {
         "p10": np.percentile(sim_mean_widths, 10),
         "p50": np.percentile(sim_mean_widths, 50),
@@ -549,17 +572,37 @@ def compute_pointwise_coverage_diagnostics(
     - excess_coverage: pointwise_coverage - (1-alpha), positive = conservative
     - conservative_regions: FPR regions where significantly over-covering
     - liberal_regions: FPR regions where significantly under-covering
+
+    Notes
+    -----
+    At pinned boundaries (FPR=0, FPR=1), coverage should be 100% with zero
+    variance. Z-scores are set to NaN at these points as they are not meaningful.
     """
     dtype = evaluation.fpr_grid.dtype
     nominal = 1 - alpha
     n_sims = evaluation.n_simulations
+    fpr_grid = evaluation.fpr_grid
 
     # Standard error of coverage at each point
     pc = evaluation.pointwise_coverage_rates
     pointwise_se = np.sqrt(pc * (1 - pc) / n_sims).astype(dtype)
 
     # Z-scores for deviation from nominal
-    z_scores = ((pc - nominal) / (pointwise_se + 1e-10)).astype(dtype)
+    # Set to NaN at pinned boundaries where SE is zero by construction
+    z_scores = np.full_like(pc, np.nan, dtype=dtype)
+    valid_mask = pointwise_se > 1e-10
+
+    # Only compute z-scores where SE is non-zero
+    z_scores[valid_mask] = (
+        (pc[valid_mask] - nominal) / pointwise_se[valid_mask]
+    ).astype(dtype)
+
+    # Mark pinned boundaries explicitly
+    is_pinned = np.zeros(len(fpr_grid), dtype=bool)
+    if fpr_grid[0] == 0.0:
+        is_pinned[0] = True
+    if fpr_grid[-1] == 1.0:
+        is_pinned[-1] = True
 
     # Excess coverage (positive = conservative)
     excess_coverage = (pc - nominal).astype(dtype)
@@ -570,6 +613,7 @@ def compute_pointwise_coverage_diagnostics(
         "pointwise_se": pointwise_se,
         "excess_coverage": excess_coverage,
         "z_scores": z_scores,
+        "is_pinned": is_pinned,
         "nominal": nominal,
     }
 
