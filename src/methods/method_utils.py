@@ -117,31 +117,35 @@ def compute_empirical_roc_from_scores(
     # neg_scores: (N_neg,) -> (1, N_neg)
     # thresholds: (N_neg,) -> (N_neg, 1)
 
+    # Determine dtype from inputs
+    dtype = neg_scores.dtype
+
     # Calculate FPR for each threshold
     # FPR = FP / N_neg = sum(neg_scores >= threshold) / N_neg
-    fpr_emp = (neg_scores.unsqueeze(0) >= thresholds.unsqueeze(1)).sum(
-        dim=1
-    ).float() / n_neg
+    # Note: sum() returns long for int/bool inputs, so we must cast to original dtype
+    fpr_emp = (neg_scores.unsqueeze(0) >= thresholds.unsqueeze(1)).sum(dim=1).to(
+        dtype=dtype
+    ) / n_neg
 
     # Calculate TPR for each threshold
     # TPR = TP / N_pos = sum(pos_scores >= threshold) / N_pos
-    tpr_emp = (pos_scores.unsqueeze(0) >= thresholds.unsqueeze(1)).sum(
-        dim=1
-    ).float() / n_pos
+    tpr_emp = (pos_scores.unsqueeze(0) >= thresholds.unsqueeze(1)).sum(dim=1).to(
+        dtype=dtype
+    ) / n_pos
 
     # Add boundary points (0,0) and (1,1)
     fpr_emp = torch.cat(
         [
-            torch.tensor([0.0], device=device),
+            torch.tensor([0.0], device=device, dtype=dtype),
             fpr_emp,
-            torch.tensor([1.0], device=device),
+            torch.tensor([1.0], device=device, dtype=dtype),
         ]
     )
     tpr_emp = torch.cat(
         [
-            torch.tensor([0.0], device=device),
+            torch.tensor([0.0], device=device, dtype=dtype),
             tpr_emp,
-            torch.tensor([1.0], device=device),
+            torch.tensor([1.0], device=device, dtype=dtype),
         ]
     )
 

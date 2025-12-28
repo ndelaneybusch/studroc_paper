@@ -259,7 +259,11 @@ class BernsteinCDF:
         return self._from_unit(samples_unit)
 
     def sample_batched(
-        self, n_samples: int, n_bootstraps: int, device: torch.device | None = None
+        self,
+        n_samples: int,
+        n_bootstraps: int,
+        device: torch.device | None = None,
+        dtype: torch.dtype = torch.float32,
     ) -> torch.Tensor:
         """Generate batched samples using PyTorch (Vectorized/Parallel).
 
@@ -269,6 +273,7 @@ class BernsteinCDF:
             n_samples: Number of samples per bootstrap (n).
             n_bootstraps: Number of bootstrap replicates (B).
             device: Torch device.
+            dtype: Target dtype for the output samples.
 
         Returns:
             Tensor of shape (B, n) containing sampled values.
@@ -283,7 +288,7 @@ class BernsteinCDF:
         weights = weights / np.sum(weights)
 
         # Move to device
-        weights_t = torch.tensor(weights, device=device, dtype=torch.float32)
+        weights_t = torch.tensor(weights, device=device, dtype=dtype)
 
         # 2. Select components
         # We need (B, n) indices
@@ -296,15 +301,15 @@ class BernsteinCDF:
         )
 
         # 3. Sample from Beta components
-        alpha = (indices + 1).float()
-        beta_param = (m - indices).float()
+        alpha = (indices + 1).to(dtype=dtype)
+        beta_param = (m - indices).to(dtype=dtype)
 
         dist = Beta(alpha, beta_param)
         samples_unit = dist.sample()
 
         # 4. Transform to original support
-        support_min = float(self.support_min)
-        support_range = float(self.support_range)
+        support_min = torch.tensor(self.support_min, device=device, dtype=dtype)
+        support_range = torch.tensor(self.support_range, device=device, dtype=dtype)
 
         return samples_unit * support_range + support_min
 
@@ -440,14 +445,13 @@ def _wilson_variance_floor(p: NDArray, n: int, z: float = 1.96) -> NDArray:
 
 
 def bp_smoothed_bootstrap_band(
-    scores_neg: NDArray,
-    scores_pos: NDArray,
+    y_true: NDArray | torch.Tensor,
+    y_score: NDArray | torch.Tensor,
+    fpr_grid: NDArray | torch.Tensor,
     alpha: float = 0.05,
     n_bootstrap: int = 2000,
     bp_degree: int | None = None,
-    grid_points: int = 201,
     retention_method: RetentionMethod = "ks",
-    sampling_method: SamplingMethod = "interpolate",
     random_seed: int | None = None,
 ) -> tuple[NDArray, NDArray, NDArray]:
     """Construct SCB using BP-smoothed bootstrap with exact numerical methods.
@@ -459,16 +463,14 @@ def bp_smoothed_bootstrap_band(
     4. Studentized retention with Wilson score floor
 
     Args:
-        scores_neg: Negative class scores.
-        scores_pos: Positive class scores.
+        y_true: True binary labels (numpy array or torch tensor).
+        y_score: Predicted scores (numpy array or torch tensor).
+        fpr_grid: FPR evaluation points (numpy array or torch tensor).
         alpha: Significance level (default 0.05).
         n_bootstrap: Number of bootstrap replicates (default 2000).
         bp_degree: Bernstein polynomial degree. Default: max(10, sqrt(n)).
-        grid_points: Number of FPR evaluation points (default 201).
         retention_method: 'ks' for KS-based retention or 'symmetric' for
             two-sided trimming (default 'ks').
-        sampling_method: 'exact' for exact quantiles or 'interpolate' for
-            faster grid-based sampling (default 'interpolate').
         random_seed: Random seed for reproducibility (default None).
 
     Returns:
@@ -476,20 +478,54 @@ def bp_smoothed_bootstrap_band(
     """
     rng = np.random.default_rng(random_seed)
 
-    scores_neg = np.asarray(scores_neg, dtype=np.float64)
-    scores_pos = np.asarray(scores_pos, dtype=np.float64)
-    n_neg, n_pos = len(scores_neg), len(scores_pos)
+    # Determine native dtype and device from inputs
+    if isinstance(y_score, torch.Tensor):
+        dtype = y_score.dtype
+        device = y_score.device
+    else:
+        # Default for numpy inputs
+        # Check if numpy array is float64, otherwise float32
+        if np.asarray(y_score).dtype == np.float64:
+            dtype = torch.float64
+        else:
+            dtype = torch.float32
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # Split scores into pos/neg
+    # Iterate to numpy for splitting/Bernstein fitting (requires CPU numpy)
+    if isinstance(y_true, torch.Tensor):
+        y_true_np = y_true.detach().cpu().numpy()
+    else:
+        y_true_np = np.asarray(y_true)
+
+    if isinstance(y_score, torch.Tensor):
+        y_score_np = y_score.detach().cpu().numpy()
+    else:
+        y_score_np = np.asarray(y_score)
+
+    scores_neg_np = y_score_np[y_true_np == 0].astype(np.float64)
+    scores_pos_np = y_score_np[y_true_np == 1].astype(np.float64)
+
+    n_neg = len(scores_neg_np)
+    n_pos = len(scores_pos_np)
 
     # === Step 1: FPR grid ===
-    fpr_grid = np.linspace(0, 1, grid_points)
-    n_grid = len(fpr_grid)
+    # Convert fpr_grid to numpy for exact ROC calc (BernsteinCDF is numpy/CPU)
+    if isinstance(fpr_grid, torch.Tensor):
+        fpr_grid_np = fpr_grid.detach().cpu().numpy()
+    else:
+        fpr_grid_np = np.asarray(fpr_grid)
+
+    n_grid = len(fpr_grid_np)
 
     # === Step 2: Fit Bernstein polynomial CDFs ===
-    bp_neg = BernsteinCDF(scores_neg, degree=bp_degree)
-    bp_pos = BernsteinCDF(scores_pos, degree=bp_degree)
+    bp_neg = BernsteinCDF(scores_neg_np, degree=bp_degree)
+    bp_pos = BernsteinCDF(scores_pos_np, degree=bp_degree)
 
     # === Step 3: Exact BP-implied ROC (center curve) ===
-    bp_roc = _compute_bp_roc_exact(bp_neg, bp_pos, fpr_grid, compute_derivatives=True)
+    bp_roc = _compute_bp_roc_exact(
+        bp_neg, bp_pos, fpr_grid_np, compute_derivatives=True
+    )
     roc_center = bp_roc.tpr
 
     # === Step 4: Smoothed bootstrap ===
@@ -497,27 +533,42 @@ def bp_smoothed_bootstrap_band(
 
     # Use optimized batched sampling if possible
     try:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
         # Move grid to device
-        fpr_grid_t = torch.tensor(fpr_grid, device=device, dtype=torch.float32)
-
-        # Generate all samples in one pass on GPU/CPU
-        # Shape: (n_bootstrap, n_neg)
-        boot_neg_batch = bp_neg.sample_batched(n_neg, n_bootstrap, device=device)
-        # Shape: (n_bootstrap, n_pos)
-        boot_pos_batch = bp_pos.sample_batched(n_pos, n_bootstrap, device=device)
+        # Use provided fpr_grid if tensor, else make tensor
+        if isinstance(fpr_grid, torch.Tensor):
+            fpr_grid_t = fpr_grid.to(device=device, dtype=dtype)
+        else:
+            fpr_grid_t = torch.tensor(fpr_grid_np, device=device, dtype=dtype)
 
         # Pre-allocate output tensor
-        roc_tensor = torch.zeros(
-            (n_bootstrap, n_grid), device=device, dtype=torch.float32
-        )
+        roc_tensor = torch.zeros((n_bootstrap, n_grid), device=device, dtype=dtype)
 
-        # Compute ROCs in loop (but keeping data on device)
-        for b in range(n_bootstrap):
-            roc_tensor[b] = compute_empirical_roc_from_scores(
-                boot_neg_batch[b], boot_pos_batch[b], fpr_grid_t
+        # Process in batches for memory efficiency
+        BATCH_SIZE = 500
+
+        for start_idx in range(0, n_bootstrap, BATCH_SIZE):
+            end_idx = min(start_idx + BATCH_SIZE, n_bootstrap)
+            current_batch_size = end_idx - start_idx
+
+            # Generate batch of samples
+            # Shape: (current_batch_size, n_neg)
+            boot_neg_batch = bp_neg.sample_batched(
+                n_neg, current_batch_size, device=device, dtype=dtype
             )
+            # Shape: (current_batch_size, n_pos)
+            boot_pos_batch = bp_pos.sample_batched(
+                n_pos, current_batch_size, device=device, dtype=dtype
+            )
+
+            # Compute ROCs for this batch
+            for i in range(current_batch_size):
+                roc_tensor[start_idx + i] = compute_empirical_roc_from_scores(
+                    boot_neg_batch[i], boot_pos_batch[i], fpr_grid_t
+                )
+
+            # Free batch memory
+            del boot_neg_batch
+            del boot_pos_batch
 
         # Move result to CPU numpy
         roc_bootstrap = roc_tensor.cpu().numpy()
@@ -527,11 +578,14 @@ def bp_smoothed_bootstrap_band(
         print(f"Sampling/computation failed on torch, falling back to numpy: {e}")
         for b in range(n_bootstrap):
             # Sample from BP-smoothed distributions
-            boot_neg = bp_neg.sample(n_neg, method=sampling_method, rng=rng)
-            boot_pos = bp_pos.sample(n_pos, method=sampling_method, rng=rng)
+            boot_neg = bp_neg.sample(n_neg, rng=rng)
+            boot_pos = bp_pos.sample(n_pos, rng=rng)
 
             # Compute empirical ROC from bootstrap samples
-            roc_bootstrap[b, :] = _compute_empirical_roc(boot_neg, boot_pos, fpr_grid)
+            # Note: _compute_empirical_roc expects 1d arrays, loop works on 1d arrays
+            roc_bootstrap[b, :] = _compute_empirical_roc(
+                boot_neg, boot_pos, fpr_grid_np
+            )
 
     # === Step 5: Variance estimation ===
     sigma_bootstrap = np.std(roc_bootstrap, axis=0, ddof=1)
@@ -565,7 +619,7 @@ def bp_smoothed_bootstrap_band(
         q_down = np.quantile(M_down, alpha / 2)
         retained_mask = (M_down >= q_down) & (M_up <= q_up)
 
-    else:  # 'ks'
+    elif retention_method == "ks":
         # KS-based retention
         Z = np.zeros(n_bootstrap)
         for b in range(n_bootstrap):
@@ -579,6 +633,9 @@ def bp_smoothed_bootstrap_band(
 
         threshold = np.quantile(Z, 1 - alpha)
         retained_mask = Z <= threshold
+
+    else:
+        raise ValueError(f"Invalid retention method: {retention_method}")
 
     # === Step 7: Envelope construction ===
     retained_curves = roc_bootstrap[retained_mask, :]
@@ -602,4 +659,4 @@ def bp_smoothed_bootstrap_band(
     lower_band = np.maximum.accumulate(lower_band)
     upper_band = np.maximum.accumulate(upper_band)
 
-    return (fpr_grid, lower_band, upper_band)
+    return (fpr_grid_np, lower_band, upper_band)
