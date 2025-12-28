@@ -8,7 +8,11 @@ import torch
 from numpy.typing import NDArray
 from torch import Tensor
 
-from .method_utils import numpy_to_torch, torch_step_interp, torch_to_numpy
+from .method_utils import (
+    compute_empirical_roc_from_scores,
+    numpy_to_torch,
+    torch_to_numpy,
+)
 
 # Type alias for boundary extension method selection
 BoundaryMethod = Literal["none", "wilson", "ks"]
@@ -28,50 +32,11 @@ def _compute_empirical_roc(y_true: Tensor, y_score: Tensor, fpr_grid: Tensor) ->
     Returns:
         TPR values at fpr_grid points.
     """
-    device = y_score.device
-
     # Separate scores by class
     neg_scores = y_score[y_true == 0]
     pos_scores = y_score[y_true == 1]
 
-    # Get thresholds from negative scores (sorted descending)
-    thresholds = torch.sort(neg_scores, descending=True).values
-
-    n_neg = len(neg_scores)
-    n_pos = len(pos_scores)
-
-    # Vectorized computation: for each threshold, compute FPR and TPR
-    # Shape: (n_thresholds,)
-    fpr_emp = (neg_scores.unsqueeze(0) >= thresholds.unsqueeze(1)).sum(
-        dim=1
-    ).float() / n_neg
-    tpr_emp = (pos_scores.unsqueeze(0) >= thresholds.unsqueeze(1)).sum(
-        dim=1
-    ).float() / n_pos
-
-    # Add boundary points (0,0) and (1,1)
-    fpr_emp = torch.cat(
-        [
-            torch.tensor([0.0], device=device),
-            fpr_emp,
-            torch.tensor([1.0], device=device),
-        ]
-    )
-    tpr_emp = torch.cat(
-        [
-            torch.tensor([0.0], device=device),
-            tpr_emp,
-            torch.tensor([1.0], device=device),
-        ]
-    )
-
-    # Sort by fpr (should already be sorted, but ensure for interp)
-    sort_idx = torch.argsort(fpr_emp)
-    fpr_emp = fpr_emp[sort_idx]
-    tpr_emp = tpr_emp[sort_idx]
-
-    # Interpolate at fpr_grid points
-    return torch_step_interp(fpr_grid, fpr_emp, tpr_emp)
+    return compute_empirical_roc_from_scores(neg_scores, pos_scores, fpr_grid)
 
 
 def _wilson_score_variance(empirical_tpr: Tensor, n_pos: int, alpha: float) -> Tensor:

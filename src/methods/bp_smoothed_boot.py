@@ -14,10 +14,14 @@ from dataclasses import dataclass
 from typing import Literal
 
 import numpy as np
+import torch
 from numpy.typing import NDArray
 from scipy.optimize import brentq
 from scipy.special import comb as scipy_comb
 from scipy.stats import norm
+from torch.distributions import Beta
+
+from .method_utils import compute_empirical_roc_from_scores
 
 # Type alias for curve retention method selection
 RetentionMethod = Literal["ks", "symmetric"]
@@ -221,11 +225,11 @@ class BernsteinCDF:
     def sample(self, n_samples: int, rng: np.random.Generator | None = None) -> NDArray:
         """Generate samples using the Beta mixture property (Vectorized/Exact).
 
-        This replaces numerical inversion (Brent's method) with a generative
-        process. The Bernstein PDF is a mixture of Beta distributions:
+        This uses a generative process. The Bernstein PDF is a mixture of Beta
+        distributions:
             f(u) = Σ w_k * Beta(u | k+1, m-k)
 
-        Complexity: O(N) instead of O(N * iterations).
+        Complexity: O(N).
         """
         if rng is None:
             rng = np.random.default_rng()
@@ -253,6 +257,56 @@ class BernsteinCDF:
 
         # 4. Transform from unit space [0,1] to original support
         return self._from_unit(samples_unit)
+
+    def sample_batched(
+        self, n_samples: int, n_bootstraps: int, device: torch.device | None = None
+    ) -> torch.Tensor:
+        """Generate batched samples using PyTorch (Vectorized/Parallel).
+
+        Generates B bootstrap replicates of n samples each in a single pass.
+
+        Args:
+            n_samples: Number of samples per bootstrap (n).
+            n_bootstraps: Number of bootstrap replicates (B).
+            device: Torch device.
+
+        Returns:
+            Tensor of shape (B, n) containing sampled values.
+        """
+        if device is None:
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        m = self.degree
+
+        # 1. Calculate mixture weights (CPU)
+        weights = np.diff(self.cdf_coeffs)
+        weights = weights / np.sum(weights)
+
+        # Move to device
+        weights_t = torch.tensor(weights, device=device, dtype=torch.float32)
+
+        # 2. Select components
+        # We need (B, n) indices
+        total_samples = n_samples * n_bootstraps
+
+        # Multinomial requires 1D or 2D input.
+        # For 1D input of weights, it performs n_samples samples.
+        indices = torch.multinomial(weights_t, total_samples, replacement=True).view(
+            n_bootstraps, n_samples
+        )
+
+        # 3. Sample from Beta components
+        alpha = (indices + 1).float()
+        beta_param = (m - indices).float()
+
+        dist = Beta(alpha, beta_param)
+        samples_unit = dist.sample()
+
+        # 4. Transform to original support
+        support_min = float(self.support_min)
+        support_range = float(self.support_range)
+
+        return samples_unit * support_range + support_min
 
 
 # =============================================================================
@@ -441,13 +495,43 @@ def bp_smoothed_bootstrap_band(
     # === Step 4: Smoothed bootstrap ===
     roc_bootstrap = np.zeros((n_bootstrap, n_grid))
 
-    for b in range(n_bootstrap):
-        # Sample from BP-smoothed distributions
-        boot_neg = bp_neg.sample(n_neg, method=sampling_method, rng=rng)
-        boot_pos = bp_pos.sample(n_pos, method=sampling_method, rng=rng)
+    # Use optimized batched sampling if possible
+    try:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        # Compute empirical ROC from bootstrap samples
-        roc_bootstrap[b, :] = _compute_empirical_roc(boot_neg, boot_pos, fpr_grid)
+        # Move grid to device
+        fpr_grid_t = torch.tensor(fpr_grid, device=device, dtype=torch.float32)
+
+        # Generate all samples in one pass on GPU/CPU
+        # Shape: (n_bootstrap, n_neg)
+        boot_neg_batch = bp_neg.sample_batched(n_neg, n_bootstrap, device=device)
+        # Shape: (n_bootstrap, n_pos)
+        boot_pos_batch = bp_pos.sample_batched(n_pos, n_bootstrap, device=device)
+
+        # Pre-allocate output tensor
+        roc_tensor = torch.zeros(
+            (n_bootstrap, n_grid), device=device, dtype=torch.float32
+        )
+
+        # Compute ROCs in loop (but keeping data on device)
+        for b in range(n_bootstrap):
+            roc_tensor[b] = compute_empirical_roc_from_scores(
+                boot_neg_batch[b], boot_pos_batch[b], fpr_grid_t
+            )
+
+        # Move result to CPU numpy
+        roc_bootstrap = roc_tensor.cpu().numpy()
+
+    except (ImportError, RuntimeError) as e:
+        # Fallback to original loop if torch fails or not available
+        print(f"Sampling/computation failed on torch, falling back to numpy: {e}")
+        for b in range(n_bootstrap):
+            # Sample from BP-smoothed distributions
+            boot_neg = bp_neg.sample(n_neg, method=sampling_method, rng=rng)
+            boot_pos = bp_pos.sample(n_pos, method=sampling_method, rng=rng)
+
+            # Compute empirical ROC from bootstrap samples
+            roc_bootstrap[b, :] = _compute_empirical_roc(boot_neg, boot_pos, fpr_grid)
 
     # === Step 5: Variance estimation ===
     sigma_bootstrap = np.std(roc_bootstrap, axis=0, ddof=1)

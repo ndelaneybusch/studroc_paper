@@ -82,3 +82,74 @@ def torch_interp(x: Tensor, xp: Tensor, fp: Tensor) -> Tensor:
     # Linear interpolation
     t = (x - x0) / (x1 - x0 + 1e-12)
     return y0 + t * (y1 - y0)
+
+
+def compute_empirical_roc_from_scores(
+    neg_scores: Tensor, pos_scores: Tensor, fpr_grid: Tensor
+) -> Tensor:
+    """Compute empirical ROC curve and interpolate at fpr_grid points.
+
+    Vectorized computation using PyTorch.
+
+    Args:
+        neg_scores: Tensor of negative class scores.
+        pos_scores: Tensor of positive class scores.
+        fpr_grid: FPR values at which to evaluate TPR.
+
+    Returns:
+        TPR values at fpr_grid points.
+    """
+    device = neg_scores.device
+
+    # Get thresholds from negative scores (sorted descending)
+    # Note: We use all negative scores as candidate thresholds
+    thresholds = torch.sort(neg_scores, descending=True).values
+
+    n_neg = len(neg_scores)
+    n_pos = len(pos_scores)
+
+    # Vectorized computation: for each threshold, compute FPR and TPR
+    # Shape: (n_thresholds,)
+    # Uses broadcasting: (1, n_neg) >= (n_thresholds, 1) -> (n_thresholds, n_neg)
+    # This is O(N^2) memory, which is fine for typical N (~1000s) but be careful for very large N.
+
+    # Expanding dimensions for broadcasting
+    # neg_scores: (N_neg,) -> (1, N_neg)
+    # thresholds: (N_neg,) -> (N_neg, 1)
+
+    # Calculate FPR for each threshold
+    # FPR = FP / N_neg = sum(neg_scores >= threshold) / N_neg
+    fpr_emp = (neg_scores.unsqueeze(0) >= thresholds.unsqueeze(1)).sum(
+        dim=1
+    ).float() / n_neg
+
+    # Calculate TPR for each threshold
+    # TPR = TP / N_pos = sum(pos_scores >= threshold) / N_pos
+    tpr_emp = (pos_scores.unsqueeze(0) >= thresholds.unsqueeze(1)).sum(
+        dim=1
+    ).float() / n_pos
+
+    # Add boundary points (0,0) and (1,1)
+    fpr_emp = torch.cat(
+        [
+            torch.tensor([0.0], device=device),
+            fpr_emp,
+            torch.tensor([1.0], device=device),
+        ]
+    )
+    tpr_emp = torch.cat(
+        [
+            torch.tensor([0.0], device=device),
+            tpr_emp,
+            torch.tensor([1.0], device=device),
+        ]
+    )
+
+    # Sort by fpr so interpolation works
+    # (The construction above usually results in increasing FPR, but strict sort is safer)
+    sort_idx = torch.argsort(fpr_emp)
+    fpr_emp = fpr_emp[sort_idx]
+    tpr_emp = tpr_emp[sort_idx]
+
+    # Interpolate at fpr_grid points (Step interpolation for empirical ROC)
+    return torch_step_interp(fpr_grid, fpr_emp, tpr_emp)
