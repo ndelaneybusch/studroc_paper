@@ -63,7 +63,7 @@ class BernsteinCDF:
 
         # Set degree with bias-variance tradeoff
         if degree is None:
-            self.degree = max(10, int(np.sqrt(self.n)))
+            self.degree = max(10, int(self.n**0.4))  # MISE-optimal rate
         else:
             self.degree = max(2, degree)
 
@@ -600,20 +600,32 @@ def bp_smoothed_bootstrap_band(
     # === Step 6: Studentized retention ===
     epsilon = min(1 / (n_neg + n_pos), 1e-6)
 
+    # Pre-compute valid locations to avoid divide-by-zero
+    # Mask of points with meaningful variance
+    valid_sigma = sigma_final >= epsilon
+
+    # Denominator: use sigma_final if valid, else epsilon (to avoid div/0 temporarily)
+    denom = np.where(valid_sigma, sigma_final, epsilon)
+
+    # Calculate signed differences for all bootstraps at once
+    # Shape: (n_bootstrap, n_grid)
+    diff = roc_bootstrap - roc_center
+
+    # Initial normalization
+    z_scores_raw = diff / denom
+
+    # We only need to zero out cases where not-valid-sigma AND diff is small
+    low_sigma_mask = ~valid_sigma
+    small_diff_mask = np.abs(diff) < epsilon
+    zero_out_mask = low_sigma_mask & small_diff_mask
+
+    z_scores = z_scores_raw.copy()
+    z_scores[zero_out_mask] = 0.0
+
     if retention_method == "symmetric":
         # Symmetric tail trimming
-        M_up = np.zeros(n_bootstrap)
-        M_down = np.zeros(n_bootstrap)
-
-        for b in range(n_bootstrap):
-            diff = roc_bootstrap[b, :] - roc_center
-            z_vals = np.where(
-                sigma_final >= epsilon,
-                diff / sigma_final,
-                np.where(np.abs(diff) < epsilon, 0, diff / epsilon),
-            )
-            M_up[b] = np.max(z_vals)
-            M_down[b] = np.min(z_vals)
+        M_up = np.max(z_scores, axis=1)
+        M_down = np.min(z_scores, axis=1)
 
         q_up = np.quantile(M_up, 1 - alpha / 2)
         q_down = np.quantile(M_down, alpha / 2)
@@ -621,15 +633,8 @@ def bp_smoothed_bootstrap_band(
 
     elif retention_method == "ks":
         # KS-based retention
-        Z = np.zeros(n_bootstrap)
-        for b in range(n_bootstrap):
-            delta = np.abs(roc_bootstrap[b, :] - roc_center)
-            z_vals = np.where(
-                sigma_final >= epsilon,
-                delta / sigma_final,
-                np.where(delta < epsilon, 0, delta / epsilon),
-            )
-            Z[b] = np.max(z_vals)
+        # Max absolute studentized deviation
+        Z = np.max(np.abs(z_scores), axis=1)
 
         threshold = np.quantile(Z, 1 - alpha)
         retained_mask = Z <= threshold
@@ -650,13 +655,14 @@ def bp_smoothed_bootstrap_band(
     upper_band = np.max(retained_curves, axis=0)
 
     # === Step 8: Boundary constraints ===
+    # Enforce monotonicity
+    lower_band = np.maximum.accumulate(lower_band)
+    upper_band = np.maximum.accumulate(upper_band)
+
+    # Enforce bounds
     lower_band = np.clip(lower_band, 0, 1)
     upper_band = np.clip(upper_band, 0, 1)
     lower_band[0] = 0.0
     upper_band[-1] = 1.0
-
-    # Enforce monotonicity
-    lower_band = np.maximum.accumulate(lower_band)
-    upper_band = np.maximum.accumulate(upper_band)
 
     return (fpr_grid_np, lower_band, upper_band)
