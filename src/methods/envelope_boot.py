@@ -12,6 +12,7 @@ from .method_utils import (
     compute_empirical_roc_from_scores,
     numpy_to_torch,
     torch_to_numpy,
+    wilson_halfwidth_squared_torch,
 )
 
 # Type alias for boundary extension method selection
@@ -37,49 +38,6 @@ def _compute_empirical_roc(y_true: Tensor, y_score: Tensor, fpr_grid: Tensor) ->
     pos_scores = y_score[y_true == 1]
 
     return compute_empirical_roc_from_scores(neg_scores, pos_scores, fpr_grid)
-
-
-def _wilson_score_variance(empirical_tpr: Tensor, n_pos: int, alpha: float) -> Tensor:
-    """Compute Wilson-score-based minimum variance for TPR at each grid point.
-
-    The Wilson score interval provides non-zero confidence interval width even
-    when the observed proportion is exactly 0 or 1. This function returns the
-    variance implied by the Wilson interval, which serves as a principled
-    floor for bootstrap variance estimation at boundaries.
-
-    The Wilson score interval for a proportion p with n observations is:
-        center = (p + z²/(2n)) / (1 + z²/n)
-        half_width = z * sqrt(p(1-p)/n + z²/(4n²)) / (1 + z²/n)
-
-    We return half_width² as the minimum variance.
-
-    Args:
-        empirical_tpr: TPR values at each grid point.
-        n_pos: Number of positive samples (denominator for TPR).
-        alpha: Significance level for the interval.
-
-    Returns:
-        Tensor of minimum variance values for each grid point.
-    """
-    # Normal quantile for (1-alpha/2) confidence
-    # Using torch to stay on device
-    z = torch.tensor(
-        2.0**0.5 * torch.erfinv(torch.tensor(1.0 - alpha)).item(),
-        device=empirical_tpr.device,
-    )
-    z_sq = z * z
-
-    # Wilson score half-width for each TPR value
-    # half_width = z * sqrt(p(1-p)/n + z²/(4n²)) / (1 + z²/n)
-    p = empirical_tpr
-    n = float(n_pos)
-
-    numerator = z * torch.sqrt(p * (1 - p) / n + z_sq / (4 * n * n))
-    denominator = 1 + z_sq / n
-    half_width = numerator / denominator
-
-    # Return variance (half_width squared)
-    return half_width * half_width
 
 
 def _extend_boundary_ks_style(
@@ -251,8 +209,11 @@ def envelope_bootstrap_band(
     bootstrap_var = bootstrap_std * bootstrap_std
 
     # Step 1b: Apply Wilson-score variance floor if requested
+    # Compute z from alpha for Wilson interval
+    z_alpha = (2.0**0.5) * torch.erfinv(torch.tensor(1.0 - alpha)).item()
+    wilson_var = wilson_halfwidth_squared_torch(empirical_tpr, n_pos, z_alpha)
+
     if boundary_method == "wilson":
-        wilson_var = _wilson_score_variance(empirical_tpr, n_pos, alpha)
         bootstrap_var = torch.maximum(bootstrap_var, wilson_var)
         bootstrap_std = torch.sqrt(bootstrap_var)
 
@@ -340,6 +301,14 @@ def envelope_bootstrap_band(
     # Step 5: Envelope Construction
     lower_envelope = torch.min(retained_curves, dim=0).values
     upper_envelope = torch.max(retained_curves, dim=0).values
+
+    # Step 5b: Apply Wilson floor to envelopes
+    # Ensure minimum envelope width at boundaries where bootstrap collapses
+    sigma_wilson = torch.sqrt(wilson_var)
+    # Upper band should be at least center + Wilson half-width
+    upper_envelope = torch.maximum(upper_envelope, empirical_tpr + sigma_wilson)
+    # Lower band should be at most center - Wilson half-width
+    lower_envelope = torch.minimum(lower_envelope, empirical_tpr - sigma_wilson)
 
     # Step 6: Clip to [0, 1]
     lower_envelope = torch.clamp(lower_envelope, 0.0, 1.0)

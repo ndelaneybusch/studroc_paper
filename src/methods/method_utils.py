@@ -111,7 +111,8 @@ def compute_empirical_roc_from_scores(
     # Vectorized computation: for each threshold, compute FPR and TPR
     # Shape: (n_thresholds,)
     # Uses broadcasting: (1, n_neg) >= (n_thresholds, 1) -> (n_thresholds, n_neg)
-    # This is O(N^2) memory, which is fine for typical N (~1000s) but be careful for very large N.
+    # This is O(N^2) memory, which is fine for typical N (~1000s)
+    # but be careful for very large N.
 
     # Expanding dimensions for broadcasting
     # neg_scores: (N_neg,) -> (1, N_neg)
@@ -149,11 +150,73 @@ def compute_empirical_roc_from_scores(
         ]
     )
 
-    # Sort by fpr so interpolation works
-    # (The construction above usually results in increasing FPR, but strict sort is safer)
-    sort_idx = torch.argsort(fpr_emp)
-    fpr_emp = fpr_emp[sort_idx]
-    tpr_emp = tpr_emp[sort_idx]
-
     # Interpolate at fpr_grid points (Step interpolation for empirical ROC)
     return torch_step_interp(fpr_grid, fpr_emp, tpr_emp)
+
+
+# =============================================================================
+# Wilson Score Interval Utilities
+# =============================================================================
+
+
+def wilson_halfwidth_squared_np(p: NDArray, n: int, z: float) -> NDArray:
+    """Compute squared half-width of Wilson score interval (NumPy version).
+
+    The Wilson score interval for a binomial proportion p is:
+        p̃ ± (z / denom) * sqrt(p(1-p)/n + z²/(4n²))
+
+    where denom = 1 + z²/n and p̃ is the Wilson-adjusted center.
+
+    This function returns the squared half-width:
+        (z / denom)² * (p(1-p)/n + z²/(4n²))
+
+    This is used as a variance floor because:
+    - It's always positive, even when p=0 or p=1 (where Wald variance is 0)
+    - At boundaries: returns z⁴/(4n²(1 + z²/n)²) > 0
+    - Provides a principled minimum uncertainty from exact binomial CI theory
+
+    Args:
+        p: Proportion estimates (e.g., TPR values).
+        n: Sample size (e.g., number of positive samples).
+        z: Critical value from normal distribution (e.g., z = Φ⁻¹(1 - α/2)).
+
+    Returns:
+        Squared half-width of Wilson interval at each p value (variance floor).
+    """
+    if n <= 0:
+        return np.zeros_like(p)
+
+    denom = 1 + z**2 / n
+    return (z**2 / denom**2) * (p * (1 - p) / n + z**2 / (4 * n**2))
+
+
+def wilson_halfwidth_squared_torch(p: Tensor, n: int, z: float) -> Tensor:
+    """Compute squared half-width of Wilson score interval (PyTorch version).
+
+    The Wilson score interval for a binomial proportion p is:
+        p̃ ± (z / denom) * sqrt(p(1-p)/n + z²/(4n²))
+
+    where denom = 1 + z²/n and p̃ is the Wilson-adjusted center.
+
+    This function returns the squared half-width:
+        (z / denom)² * (p(1-p)/n + z²/(4n²))
+
+    This is used as a variance floor because:
+    - It's always positive, even when p=0 or p=1 (where Wald variance is 0)
+    - At boundaries: returns z⁴/(4n²(1 + z²/n)²) > 0
+    - Provides a principled minimum uncertainty from exact binomial CI theory
+
+    Args:
+        p: Proportion estimates (e.g., TPR values) as tensor.
+        n: Sample size (e.g., number of positive samples).
+        z: Critical value from normal distribution (e.g., z = Φ⁻¹(1 - α/2)).
+
+    Returns:
+        Squared half-width of Wilson interval at each p value (variance floor).
+    """
+    if n <= 0:
+        return torch.zeros_like(p)
+
+    z_sq = z * z
+    denom = 1 + z_sq / n
+    return (z_sq / (denom * denom)) * (p * (1 - p) / n + z_sq / (4 * n * n))

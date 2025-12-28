@@ -17,11 +17,11 @@ import numpy as np
 import torch
 from numpy.typing import NDArray
 from scipy.optimize import brentq
-from scipy.special import comb as scipy_comb
+from scipy.special import gammaln
 from scipy.stats import norm
 from torch.distributions import Beta
 
-from .method_utils import compute_empirical_roc_from_scores
+from .method_utils import compute_empirical_roc_from_scores, wilson_halfwidth_squared_np
 
 # Type alias for curve retention method selection
 RetentionMethod = Literal["ks", "symmetric"]
@@ -95,10 +95,6 @@ class BernsteinCDF:
         # PDF coefficients: m · [F̂((k+1)/m) - F̂(k/m)] for k = 0, ..., m-1
         self.pdf_coeffs = m * np.diff(self.cdf_coeffs)
 
-        # Precompute binomial coefficients
-        self.binom_cdf = np.array([scipy_comb(m, k, exact=True) for k in range(m + 1)])
-        self.binom_pdf = np.array([scipy_comb(m - 1, k, exact=True) for k in range(m)])
-
     def _empirical_cdf_at_node(self, u: float) -> float:
         """Compute empirical CDF at unit-space position u."""
         if u <= 0:
@@ -116,31 +112,51 @@ class BernsteinCDF:
         """Transform from [0, 1] to original support."""
         return np.asarray(u) * self.support_range + self.support_min
 
-    def _eval_bernstein_poly(
-        self, u: NDArray, coeffs: NDArray, binom: NDArray
-    ) -> NDArray:
+    def _eval_bernstein_poly(self, u: NDArray, coeffs: NDArray) -> NDArray:
         """Evaluate Bernstein polynomial with given coefficients.
 
-        Uses log-space evaluation for numerical stability.
+        Uses fully vectorized log-space evaluation for numerical stability.
+        Computes: sum_{k=0}^{m} coeffs[k] * B_{k,m}(u)
+
+        where B_{k,m}(u) = C(m,k) * u^k * (1-u)^(m-k)
+
+        Args:
+            u: Points at which to evaluate, shape (N,).
+            coeffs: Bernstein coefficients, shape (m+1,).
+
+        Returns:
+            Evaluated polynomial values, shape (N,).
         """
         u = np.atleast_1d(np.asarray(u, dtype=np.float64))
         m = len(coeffs) - 1
 
-        # Clip to avoid numerical issues at boundaries
+        # Safety clip for log domain to avoid -inf
         u = np.clip(u, 1e-15, 1 - 1e-15)
 
-        result = np.zeros_like(u)
-        log_u = np.log(u)
-        log_1mu = np.log(1 - u)
+        # Create range of k values: [0, 1, ..., m]
+        k = np.arange(m + 1)
 
-        for k in range(m + 1):
-            if coeffs[k] == 0:
-                continue
-            # B_{k,m}(u) = binom(m,k) * u^k * (1-u)^(m-k)
-            log_basis = np.log(binom[k]) + k * log_u + (m - k) * log_1mu
-            result += coeffs[k] * np.exp(log_basis)
+        # Log-binomial coefficients using gammaln for numerical stability:
+        # log(C(m,k)) = log(m!) - log(k!) - log((m-k)!)
+        # This prevents overflow for large m that would occur with direct computation.
+        log_binom = gammaln(m + 1) - gammaln(k + 1) - gammaln(m - k + 1)
 
-        return result
+        # Compute log-basis for all k and all u using broadcasting.
+        # k_col: shape (m+1, 1), u_row: shape (1, N) -> result: (m+1, N)
+        k_col = k[:, np.newaxis]
+        u_row = u[np.newaxis, :]
+
+        # log(u^k * (1-u)^(m-k)) = k*log(u) + (m-k)*log(1-u)
+        log_powers = k_col * np.log(u_row) + (m - k_col) * np.log(1 - u_row)
+
+        # Combine: log_basis[k, :] = log_binom[k] + log_powers[k, :]
+        log_basis = log_binom[:, np.newaxis] + log_powers
+
+        # Compute weighted sum: sum_k coeffs[k] * exp(log_basis[k, :])
+        # Use coeffs[:, np.newaxis] for broadcasting: (m+1, 1) * (m+1, N) -> (m+1, N)
+        weighted_basis = coeffs[:, np.newaxis] * np.exp(log_basis)
+
+        return np.sum(weighted_basis, axis=0)
 
     def cdf_unit(self, u: NDArray) -> NDArray:
         """Evaluate BP-smoothed CDF at u ∈ [0, 1]."""
@@ -156,9 +172,7 @@ class BernsteinCDF:
         result[mask_hi] = 1.0
 
         if np.any(mask_mid):
-            result[mask_mid] = self._eval_bernstein_poly(
-                u[mask_mid], self.cdf_coeffs, self.binom_cdf
-            )
+            result[mask_mid] = self._eval_bernstein_poly(u[mask_mid], self.cdf_coeffs)
 
         return np.clip(result, 0, 1)
 
@@ -174,9 +188,7 @@ class BernsteinCDF:
         mask = (u > 0) & (u < 1)
 
         if np.any(mask):
-            result[mask] = self._eval_bernstein_poly(
-                u[mask], self.pdf_coeffs, self.binom_pdf
-            )
+            result[mask] = self._eval_bernstein_poly(u[mask], self.pdf_coeffs)
 
         return np.maximum(result, 0)
 
@@ -426,20 +438,6 @@ def _compute_empirical_roc(
 
 
 # =============================================================================
-# Wilson Floor
-# =============================================================================
-
-
-def _wilson_variance_floor(p: NDArray, n: int, z: float = 1.96) -> NDArray:
-    """Compute Wilson score interval variance as floor."""
-    if n <= 0:
-        return np.zeros_like(p)
-
-    denom = 1 + z**2 / n
-    return (z**2 / denom**2) * (p * (1 - p) / n + z**2 / (4 * n**2))
-
-
-# =============================================================================
 # Main SCB Construction
 # =============================================================================
 
@@ -592,7 +590,7 @@ def bp_smoothed_bootstrap_band(
 
     # Wilson floor
     z_alpha = norm.ppf(1 - alpha / 2)
-    sigma_wilson = np.sqrt(_wilson_variance_floor(roc_center, n_pos, z_alpha))
+    sigma_wilson = np.sqrt(wilson_halfwidth_squared_np(roc_center, n_pos, z_alpha))
 
     # Combine: max of bootstrap, Wilson
     sigma_final = np.maximum(sigma_bootstrap, sigma_wilson)
@@ -653,6 +651,13 @@ def bp_smoothed_bootstrap_band(
 
     lower_band = np.min(retained_curves, axis=0)
     upper_band = np.max(retained_curves, axis=0)
+
+    # === Step 7b: Apply Wilson floor to envelopes ===
+    # Ensure minimum envelope width at boundaries where bootstrap collapses
+    # Upper band should be at least center + Wilson half-width
+    upper_band = np.maximum(upper_band, roc_center + sigma_wilson)
+    # Lower band should be at most center - Wilson half-width
+    lower_band = np.minimum(lower_band, roc_center - sigma_wilson)
 
     # === Step 8: Boundary constraints ===
     # Enforce monotonicity
