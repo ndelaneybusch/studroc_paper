@@ -88,7 +88,7 @@ def generate_bootstrap_grid(
     B: int,
     grid: Tensor,
     device: torch.device | None = None,
-    batch_size: int = 500,  # New Argument for memory safety
+    batch_size: int = 500,
 ) -> Tensor:
     """
     Generate a tensor of bootstrapped ROC samples evaluated across a grid.
@@ -104,6 +104,7 @@ def generate_bootstrap_grid(
         B: Number of bootstrap replicates.
         grid: Uniform evaluation grid for FPR (1D tensor).
         device: Target device. If None, uses CUDA if available.
+        batch_size: Batch size for memory safety.
 
     Returns:
         Tensor of shape (B, len(grid)) containing TPR values.
@@ -115,7 +116,7 @@ def generate_bootstrap_grid(
     tpr = tpr.to(device)
     grid = grid.to(device)
 
-    # 1. Reconstruct Ranks (One-time cost)
+    # 1. Reconstruct Ranks
     pos_ranks, neg_ranks = reconstruct_ranks(fpr, tpr, n_negatives, n_positives, device)
 
     # Prepare Output
