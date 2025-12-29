@@ -11,13 +11,14 @@ from torch import Tensor
 
 from .method_utils import (
     compute_empirical_roc_from_scores,
+    compute_hsieh_turnbull_variance,
     numpy_to_torch,
     torch_to_numpy,
     wilson_halfwidth_squared_torch,
 )
 
 # Type alias for boundary extension method selection
-BoundaryMethod = Literal["none", "wilson", "ks"]
+BoundaryMethod = Literal["none", "wilson", "reflected_kde", "log_concave", "ks"]
 
 # Type alias for curve retention method selection
 RetentionMethod = Literal["ks", "symmetric"]
@@ -165,6 +166,12 @@ def envelope_bootstrap_band(
             - "wilson": Use Wilson-score-based variance floor (default).
               Provides a principled minimum variance based on binomial
               confidence intervals, ensuring non-degenerate bands at TPR=0/1.
+            - "reflected_kde": Use Hsieh-Turnbull asymptotic variance with
+              reflected KDE density estimation. Provides variance floor based
+              on asymptotic ROC variance theory with ISJ bandwidth selection.
+            - "log_concave": Use Hsieh-Turnbull asymptotic variance with
+              log-concave MLE density estimation. Enforces shape constraints
+              via convex optimization for robust density estimates.
             - "ks": Use KS-style margin extension (Campbell 1994).
               Extends the band from interior points to corners using
               horizontal/vertical margins based on sample sizes.
@@ -214,13 +221,34 @@ def envelope_bootstrap_band(
     bootstrap_std = torch.std(boot_tpr, dim=0, correction=1)
     bootstrap_var = bootstrap_std * bootstrap_std
 
-    # Step 1b: Apply Wilson-score variance floor if requested
-    # Compute z from alpha for Wilson interval
+    # Step 1b: Compute variance floor based on boundary method
     z_alpha = (2.0**0.5) * torch.erfinv(torch.tensor(1.0 - alpha)).item()
-    wilson_var = wilson_halfwidth_squared_torch(empirical_tpr, n_pos, z_alpha)
 
     if boundary_method == "wilson":
-        bootstrap_var = torch.maximum(bootstrap_var, wilson_var)
+        # Wilson-score variance floor
+        variance_floor = wilson_halfwidth_squared_torch(empirical_tpr, n_pos, z_alpha)
+    elif boundary_method in ("reflected_kde", "log_concave"):
+        # Hsieh-Turnbull asymptotic variance floor
+        # Convert to numpy for H-T computation
+        neg_scores_np = torch_to_numpy(y_score_t[y_true_t == 0])
+        pos_scores_np = torch_to_numpy(y_score_t[y_true_t == 1])
+        fpr_np = torch_to_numpy(fpr)
+
+        # Compute H-T variance with specified density estimation method
+        ht_var_np = compute_hsieh_turnbull_variance(
+            neg_scores_np, pos_scores_np, fpr_np, method=boundary_method
+        )
+        variance_floor = numpy_to_torch(ht_var_np, device).float()
+    elif boundary_method == "ks":
+        # KS method uses geometric extension later, no variance floor
+        variance_floor = torch.zeros_like(empirical_tpr)
+    else:  # "none"
+        # No variance floor
+        variance_floor = torch.zeros_like(empirical_tpr)
+
+    # Apply variance floor to bootstrap variance
+    if boundary_method not in ("none", "ks"):
+        bootstrap_var = torch.maximum(bootstrap_var, variance_floor)
         bootstrap_std = torch.sqrt(bootstrap_var)
 
     # Step 2: Regularization Parameter
@@ -308,13 +336,14 @@ def envelope_bootstrap_band(
     lower_envelope = torch.min(retained_curves, dim=0).values
     upper_envelope = torch.max(retained_curves, dim=0).values
 
-    # Step 5b: Apply Wilson floor to envelopes
+    # Step 5b: Apply variance floor to envelopes
     # Ensure minimum envelope width at boundaries where bootstrap collapses
-    sigma_wilson = torch.sqrt(wilson_var)
-    # Upper band should be at least center + Wilson half-width
-    upper_envelope = torch.maximum(upper_envelope, empirical_tpr + sigma_wilson)
-    # Lower band should be at most center - Wilson half-width
-    lower_envelope = torch.minimum(lower_envelope, empirical_tpr - sigma_wilson)
+    if boundary_method not in ("none", "ks"):
+        sigma_floor = torch.sqrt(variance_floor)
+        # Upper band should be at least center + floor half-width
+        upper_envelope = torch.maximum(upper_envelope, empirical_tpr + sigma_floor)
+        # Lower band should be at most center - floor half-width
+        lower_envelope = torch.minimum(lower_envelope, empirical_tpr - sigma_floor)
 
     # Step 6: Clip to [0, 1]
     lower_envelope = torch.clamp(lower_envelope, 0.0, 1.0)
@@ -343,7 +372,7 @@ def envelope_bootstrap_band(
             empirical_tpr_np = torch_to_numpy(empirical_tpr).astype(dtype)
             boot_tpr_np = torch_to_numpy(boot_tpr).astype(dtype)
             bootstrap_var_np = torch_to_numpy(bootstrap_var).astype(dtype)
-            wilson_var_np = torch_to_numpy(wilson_var).astype(dtype)
+            variance_floor_np = torch_to_numpy(variance_floor).astype(dtype)
 
             # Determine method name for title
             if plot_title is None:
@@ -356,7 +385,7 @@ def envelope_bootstrap_band(
                 upper_envelope=upper_np,
                 boot_tpr_matrix=boot_tpr_np,
                 bootstrap_var=bootstrap_var_np,
-                wilson_var=wilson_var_np,
+                wilson_var=variance_floor_np,
                 alpha=alpha,
                 method_name=plot_title,
                 layout="2x2",
