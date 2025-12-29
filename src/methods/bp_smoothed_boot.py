@@ -19,6 +19,7 @@ from numpy.typing import NDArray
 from scipy.optimize import brentq
 from scipy.special import gammaln
 from scipy.stats import norm
+from studroc_paper.viz import plot_band_diagnostics
 from torch.distributions import Beta
 
 from .method_utils import compute_empirical_roc_from_scores, wilson_halfwidth_squared_np
@@ -451,6 +452,8 @@ def bp_smoothed_bootstrap_band(
     bp_degree: int | None = None,
     retention_method: RetentionMethod = "ks",
     random_seed: int | None = None,
+    plot: bool = False,
+    plot_title: str | None = None,
 ) -> tuple[NDArray, NDArray, NDArray]:
     """Construct SCB using BP-smoothed bootstrap with exact numerical methods.
 
@@ -470,6 +473,9 @@ def bp_smoothed_bootstrap_band(
         retention_method: 'ks' for KS-based retention or 'symmetric' for
             two-sided trimming (default 'ks').
         random_seed: Random seed for reproducibility (default None).
+        plot: If True, generate diagnostic plots using the viz module (default False).
+        plot_title: Optional custom title for the diagnostic plots. If None, uses
+            method description.
 
     Returns:
         Tuple of (fpr_grid, lower_band, upper_band).
@@ -669,5 +675,39 @@ def bp_smoothed_bootstrap_band(
     upper_band = np.clip(upper_band, 0, 1)
     lower_band[0] = 0.0
     upper_band[-1] = 1.0
+
+    # Generate diagnostic plots if requested
+    if plot:
+        try:
+            # Compute empirical ROC for comparison
+            empirical_tpr = _compute_empirical_roc(
+                scores_neg_np, scores_pos_np, fpr_grid_np
+            )
+
+            # Determine method name for title
+            if plot_title is None:
+                plot_title = f"BP Smoothed Bootstrap (degree={bp_degree or 'auto'}, {retention_method} retention)"
+
+            fig = plot_band_diagnostics(
+                fpr_grid=fpr_grid_np,
+                empirical_tpr=empirical_tpr,
+                lower_envelope=lower_band,
+                upper_envelope=upper_band,
+                boot_tpr_matrix=roc_bootstrap,
+                bootstrap_var=sigma_bootstrap**2,
+                wilson_var=sigma_wilson**2,
+                alpha=alpha,
+                method_name=plot_title,
+                additional_curves={"BP-smoothed": roc_center},
+                layout="2x2",
+            )
+            fig.show()
+        except ImportError:
+            import warnings
+
+            warnings.warn(
+                "Visualization module not available. Install matplotlib to enable plotting.",
+                stacklevel=2,
+            )
 
     return (fpr_grid_np, lower_band, upper_band)

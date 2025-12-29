@@ -6,6 +6,7 @@ from typing import Literal
 import numpy as np
 import torch
 from numpy.typing import NDArray
+from studroc_paper.viz import plot_band_diagnostics
 from torch import Tensor
 
 from .method_utils import (
@@ -145,6 +146,8 @@ def envelope_bootstrap_band(
     alpha: float = 0.05,
     boundary_method: BoundaryMethod = "wilson",
     retention_method: RetentionMethod = "ks",
+    plot: bool = False,
+    plot_title: str | None = None,
 ) -> tuple[NDArray, NDArray, NDArray]:
     """Compute Studentized Bootstrap Envelope Simultaneous Confidence Bands.
 
@@ -174,6 +177,9 @@ def envelope_bootstrap_band(
               α/2 from curves that deviate most downward. This addresses
               asymmetric alpha mass at high AUC where positive deviations
               are bounded by 1 but negative deviations are not.
+        plot: If True, generate diagnostic plots using the viz module (default False).
+        plot_title: Optional custom title for the diagnostic plots. If None, uses
+            method description.
 
     Returns:
         Tuple of (fpr_grid, lower_envelope, upper_envelope) as numpy arrays.
@@ -327,8 +333,41 @@ def envelope_bootstrap_band(
     upper_envelope[-1] = 1.0
 
     # Convert back to numpy with original dtype
-    return (
-        torch_to_numpy(fpr).astype(dtype),
-        torch_to_numpy(lower_envelope).astype(dtype),
-        torch_to_numpy(upper_envelope).astype(dtype),
-    )
+    fpr_np = torch_to_numpy(fpr).astype(dtype)
+    lower_np = torch_to_numpy(lower_envelope).astype(dtype)
+    upper_np = torch_to_numpy(upper_envelope).astype(dtype)
+
+    # Generate diagnostic plots if requested
+    if plot:
+        try:
+            empirical_tpr_np = torch_to_numpy(empirical_tpr).astype(dtype)
+            boot_tpr_np = torch_to_numpy(boot_tpr).astype(dtype)
+            bootstrap_var_np = torch_to_numpy(bootstrap_var).astype(dtype)
+            wilson_var_np = torch_to_numpy(wilson_var).astype(dtype)
+
+            # Determine method name for title
+            if plot_title is None:
+                plot_title = f"Envelope Bootstrap ({retention_method} retention, {boundary_method} boundary)"
+
+            fig = plot_band_diagnostics(
+                fpr_grid=fpr_np,
+                empirical_tpr=empirical_tpr_np,
+                lower_envelope=lower_np,
+                upper_envelope=upper_np,
+                boot_tpr_matrix=boot_tpr_np,
+                bootstrap_var=bootstrap_var_np,
+                wilson_var=wilson_var_np,
+                alpha=alpha,
+                method_name=plot_title,
+                layout="2x2",
+            )
+            fig.show()
+        except ImportError:
+            import warnings
+
+            warnings.warn(
+                "Visualization module not available. Install matplotlib to enable plotting.",
+                stacklevel=2,
+            )
+
+    return (fpr_np, lower_np, upper_np)
