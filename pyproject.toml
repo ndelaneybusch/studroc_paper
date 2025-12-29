@@ -14,6 +14,8 @@ dependencies = [
     "seaborn",
     "torch",
     "tqdm",
+    "KDEpy",
+    "cvxpy",
 ]
 
 [build-system]
@@ -24,7 +26,14 @@ build-backend = "hatchling.build"
 packages = ["src/studroc_paper"]
 
 [dependency-groups]
-dev = ["pytest>=8.0", "ruff>=0.1.0", "ty", "ipython>=9.4.0", "ipdb>=0.13.13"]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.1.0",
+    "ty",
+    "ipython>=9.4.0",
+    "ipdb>=0.13.13",
+    "ipykernel>=6.24.1",
+]
 
 [project.urls]
 Homepage = "https://ndelaneybusch.github.io/studroc/"
