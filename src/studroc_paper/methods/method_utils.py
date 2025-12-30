@@ -1,5 +1,7 @@
 """Shared utilities for PyTorch-based methods."""
 
+from typing import Literal
+
 import cvxpy as cp
 import numpy as np
 import torch
@@ -241,10 +243,10 @@ def _sheather_jones_bandwidth(data: NDArray) -> float:
 
 
 def _reflected_kde_density_derivative(
-    data: NDArray, eval_points: NDArray
+    data: NDArray, eval_points: NDArray, bw_method: Literal["silverman", "ISJ"] = "ISJ"
 ) -> tuple[NDArray, NDArray]:
     """
-    Compute density and derivative using Reflected KDE with ISJ bandwidth.
+    Compute density and derivative using Reflected KDE.
 
     Uses KDEpy for optimal bandwidth selection, then computes exact
     Gaussian mixture density and derivatives manually (handling reflection).

@@ -6,8 +6,9 @@ from typing import Literal
 import numpy as np
 import torch
 from numpy.typing import NDArray
-from studroc_paper.viz import plot_band_diagnostics
 from torch import Tensor
+
+from studroc_paper.viz import plot_band_diagnostics
 
 from .method_utils import (
     compute_empirical_roc_from_scores,
