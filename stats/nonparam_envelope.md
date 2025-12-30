@@ -2,7 +2,7 @@
 
 ## Abstract
 
-We present a nonparametric method for constructing simultaneous confidence bands (SCB) for ROC curves using a studentized bootstrap envelope. The method retains the $(1-\alpha)$ fraction of bootstrap curves most consistent with the empirical ROC (using either studentized Kolmogorov-Smirnov statistics or symmetric tail trimming) and returns their pointwise envelope. The resulting band is asymmetric, adapts to local variance (incorporating a Wilson-score floor for stability), and inherits the step-function structure of the empirical ROC.
+We present a nonparametric method for constructing simultaneous confidence bands (SCB) for the **true population** ROC curve using a studentized bootstrap envelope. The method retains the $(1-\alpha)$ fraction of bootstrap curves most consistent with the empirical ROC (using either studentized Kolmogorov-Smirnov statistics or symmetric tail trimming) and returns their pointwise envelope. The resulting band is asymmetric, adapts to local variance (incorporating a Wilson-score floor for stability), and inherits the step-function structure of the empirical ROC.
 
 ---
 
@@ -127,26 +127,15 @@ In regions where bootstrap variance collapses completely (near corners), we can 
 
 ### 3.1 Coverage Guarantees
 
-We distinguish two coverage targets with different finite-sample behavior.
-
-**Definition (Future-Curve Coverage).** The probability that an independent empirical ROC curve, computed from a new sample of the same size $(n_0, n_1)$ from the same population, falls entirely within the band:
-$$P\left(\forall t: \hat{R}_{new}(t) \in [L(t), U(t)]\right)$$
-
 **Definition (Population Coverage).** The probability that the true population ROC curve falls entirely within the band:
 $$P\left(\forall t: R_{true}(t) \in [L(t), U(t)]\right)$$
 
----
+**Note on Future Samples:** This method constructs a *confidence band* for the underlying population curve $R_{true}$. It is **not** a *prediction band* for future empirical ROC curves $\hat{R}_{new}$. A future empirical curve has additional sampling variability relative to the current empirical curve (variance approximately doubles), so the coverage of future samples will be significantly lower than $(1-\alpha)$.
 
-**Theorem 1 (Future-Curve Coverage).** Under A1–A4, the envelope band achieves:
-$$P\left(\forall t: \hat{R}_{new}(t) \in [L(t), U(t)]\right) = 1 - \alpha + O(n^{-1/2})$$
-
-where $n = \min(n_0, n_1)$.
-
-*Proof sketch:* The bootstrap directly estimates the sampling distribution of empirical ROC curves. By construction, the envelope contains the $(1-\alpha)$ fraction of bootstrap curves closest to $\hat{R}$ under the studentized supremum metric. The bootstrap distribution of $R_b$ around $\hat{R}$ consistently estimates the sampling distribution of $\hat{R}_{new}$ around its expectation. Since both $\hat{R}$ and $\hat{R}_{new}$ share the same bias structure (both are empirical ROCs at the same sample size), the band correctly captures the variability of future empirical curves. The $O(n^{-1/2})$ error arises from bootstrap approximation error. $\square$
 
 ---
 
-**Theorem 2 (Asymptotic Population Coverage).** Under A1–A4, as $n = \min(n_0, n_1) \to \infty$:
+**Theorem 1 (Asymptotic Population Coverage).** Under A1–A4, as $n = \min(n_0, n_1) \to \infty$:
 $$P\left(\forall t: R_{true}(t) \in [L(t), U(t)]\right) \to 1 - \alpha$$
 
 *Proof sketch:* 
@@ -168,9 +157,9 @@ $$E[\hat{R}(t)] > R_{true}(t) \quad \text{for } t \in (0,1)$$
 
 This arises from the composition of two empirical distribution functions: $\hat{R}(t) = \hat{G}(\hat{F}^{-1}(1-t))$. The bias is $O(n^{-1})$ and increases with ROC curvature (higher AUC implies larger bias).
 
-**Impact on Coverage.** Since the confidence band is centered on $\hat{R}$, the true ROC tends to fall near or below the lower boundary, reducing population coverage in finite samples. This effect is most pronounced at high AUC and small sample sizes. Future-curve coverage is unaffected because both the band and future empirical curves share the same bias structure.
+**Impact on Coverage.** Since the confidence band is centered on $\hat{R}$, the true ROC tends to fall near or below the lower boundary, reducing population coverage in finite samples. This effect is most pronounced at high AUC and small sample sizes. 
 
-**Asymptotic Negligibility.** Because the bias is $O(n^{-1})$ while the band width is $O(n^{-1/2})$, the relative contribution of bias vanishes as $n \to \infty$, ensuring the asymptotic coverage guarantee of Theorem 2.
+**Asymptotic Negligibility.** Because the bias is $O(n^{-1})$ while the band width is $O(n^{-1/2})$, the relative contribution of bias vanishes as $n \to \infty$, ensuring the asymptotic coverage guarantee of Theorem 1.
 
 ---
 
@@ -200,8 +189,8 @@ The envelope boundaries $L(t)$ and $U(t)$ are step functions with jumps at a sub
 
 | Property | Finite Sample | Asymptotic |
 |----------|---------------|------------|
-| Future-curve coverage | $\approx 1-\alpha$ | $= 1-\alpha$ |
 | Population coverage | $< 1-\alpha$ (biased low) | $\to 1-\alpha$ |
+| Future-curve coverage | $\ll 1-\alpha$ (not covered) | $\ll 1-\alpha$ |
 | Band width adapts to local variance | ✓ | ✓ |
 | Asymmetric at boundaries | ✓ | ✓ |
 | Distribution-free | ✓ | ✓ |
