@@ -25,11 +25,8 @@ from numpy.typing import NDArray
 from sklearn.metrics import roc_auc_score, roc_curve
 from tqdm import tqdm
 
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-from datagen.roc_to_dgp import map_lhs_to_dgp
-from datagen.true_rocs import (
+from studroc_paper.datagen.roc_to_dgp import map_lhs_to_dgp
+from studroc_paper.datagen.true_rocs import (
     make_beta_opposing_skew_dgp,
     make_bimodal_negative_dgp,
     make_exponential_dgp,
@@ -37,13 +34,14 @@ from datagen.true_rocs import (
     make_lognormal_dgp,
     make_student_t_dgp,
 )
-from eval.eval import aggregate_band_results, evaluate_single_band
-from methods.envelope_boot import envelope_bootstrap_band
-from methods.ks_band import fixed_width_ks_band
-from methods.pointwise_boot import pointwise_bootstrap_band
-from methods.working_hotelling import working_hotelling_band
-from sampling.bootstrap_grid import generate_bootstrap_grid
-from sampling.lhs import maximin_lhs
+from studroc_paper.eval.eval import aggregate_band_results, evaluate_single_band
+from studroc_paper.methods.envelope_boot import envelope_bootstrap_band
+from studroc_paper.methods.hsieh_turnbull_band import hsieh_turnbull_band
+from studroc_paper.methods.ks_band import fixed_width_ks_band
+from studroc_paper.methods.pointwise_boot import pointwise_bootstrap_band
+from studroc_paper.methods.working_hotelling import working_hotelling_band
+from studroc_paper.sampling.bootstrap_grid import generate_bootstrap_grid
+from studroc_paper.sampling.lhs import maximin_lhs
 
 # =============================================================================
 # Configuration
@@ -143,8 +141,115 @@ def compute_all_bands(
         y_true=y_true,
         y_score=y_score,
         alpha=alpha,
+        boundary_method="none",
+        retention_method="ks",
     )
-    results["envelope"] = evaluate_single_band(
+    results["envelope_standard"] = evaluate_single_band(
+        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
+    )
+
+    fpr_out, lower, upper = envelope_bootstrap_band(
+        boot_tpr_matrix=boot_tpr_matrix,
+        fpr_grid=fpr_grid,
+        y_true=y_true,
+        y_score=y_score,
+        alpha=alpha,
+        boundary_method="none",
+        retention_method="symmetric",
+    )
+    results["envelope_symmetric"] = evaluate_single_band(
+        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
+    )
+
+    fpr_out, lower, upper = envelope_bootstrap_band(
+        boot_tpr_matrix=boot_tpr_matrix,
+        fpr_grid=fpr_grid,
+        y_true=y_true,
+        y_score=y_score,
+        alpha=alpha,
+        boundary_method="kde",
+        retention_method="ks",
+    )
+    results["envelope_kde"] = evaluate_single_band(
+        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
+    )
+
+    fpr_out, lower, upper = envelope_bootstrap_band(
+        boot_tpr_matrix=boot_tpr_matrix,
+        fpr_grid=fpr_grid,
+        y_true=y_true,
+        y_score=y_score,
+        alpha=alpha,
+        boundary_method="ks",
+        retention_method="ks",
+    )
+    results["envelope_ks"] = evaluate_single_band(
+        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
+    )
+
+    # Compute H-T
+    fpr_out, lower, upper = hsieh_turnbull_band(
+        y_true=y_true,
+        y_score=y_score,
+        alpha=alpha,
+        k=len(fpr_grid),
+        use_logit_transform=False,
+        density_method="log_concave",
+        n_bootstraps=0,
+    )
+    results["HT_log_concave"] = evaluate_single_band(
+        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
+    )
+
+    fpr_out, lower, upper = hsieh_turnbull_band(
+        y_true=y_true,
+        y_score=y_score,
+        alpha=alpha,
+        k=len(fpr_grid),
+        use_logit_transform=False,
+        density_method="log_concave",
+        n_bootstraps=4000,
+    )
+    results["HT_log_concave_calib"] = evaluate_single_band(
+        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
+    )
+
+    fpr_out, lower, upper = hsieh_turnbull_band(
+        y_true=y_true,
+        y_score=y_score,
+        alpha=alpha,
+        k=len(fpr_grid),
+        use_logit_transform=False,
+        density_method="reflected_kde",
+        n_bootstraps=0,
+    )
+    results["HT_reflected_kde"] = evaluate_single_band(
+        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
+    )
+
+    fpr_out, lower, upper = hsieh_turnbull_band(
+        y_true=y_true,
+        y_score=y_score,
+        alpha=alpha,
+        k=len(fpr_grid),
+        use_logit_transform=False,
+        density_method="kde",
+        n_bootstraps=0,
+    )
+    results["HT_kde"] = evaluate_single_band(
+        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
+    )
+
+    fpr_out, lower, upper = hsieh_turnbull_band(
+        y_true=y_true,
+        y_score=y_score,
+        alpha=alpha,
+        k=len(fpr_grid),
+        use_logit_transform=False,
+        density_method="kde",
+        n_bootstraps=4000,
+    )
+    results["HT_kde_calib"] = evaluate_single_band(
         lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
     )
 
@@ -671,13 +776,6 @@ def main():
 
     # Misc
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
-    parser.add_argument(
-        "--methods",
-        nargs="+",
-        choices=["envelope_boot", "working_hotelling", "all"],
-        default=["all"],
-        help="Which CI methods to run",
-    )
 
     args = parser.parse_args()
 

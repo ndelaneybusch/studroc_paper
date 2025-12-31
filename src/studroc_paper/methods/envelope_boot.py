@@ -228,7 +228,7 @@ def envelope_bootstrap_band(
     if boundary_method == "wilson":
         # Wilson-score variance floor
         variance_floor = wilson_halfwidth_squared_torch(empirical_tpr, n_pos, z_alpha)
-    elif boundary_method in ("reflected_kde", "log_concave"):
+    elif boundary_method in ("reflected_kde", "kde", "log_concave"):
         # Hsieh-Turnbull asymptotic variance floor
         # Convert to numpy for H-T computation
         neg_scores_np = torch_to_numpy(y_score_t[y_true_t == 0])
