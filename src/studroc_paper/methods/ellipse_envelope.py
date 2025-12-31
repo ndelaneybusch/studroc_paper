@@ -24,6 +24,10 @@ except ImportError:
     TORCH_AVAILABLE = False
     Tensor = None  # type: ignore[misc, assignment]
 
+from studroc_paper.viz import plot_band_diagnostics
+
+from .method_utils import compute_empirical_roc_from_scores
+
 
 class QuarticSolver(Enum):
     """Methods for solving the quartic polynomial in the envelope computation."""
@@ -319,7 +323,9 @@ def ellipse_envelope_band(
     minimum_std: float = 1e-8,
     probit_clip: float = 1e-9,
     envelope_method: Literal["sweep", "quartic"] = "sweep",
-    num_cutoffs: int = 500,
+    num_cutoffs: int = 1000,
+    plot: bool = False,
+    plot_title: str | None = None,
 ) -> tuple[NDArray, NDArray, NDArray]:
     """Compute ellipse-envelope simultaneous confidence bands for ROC curves.
 
@@ -348,6 +354,9 @@ def ellipse_envelope_band(
             - "sweep": Sweep through cutoffs and take min/max of ellipse boundaries (robust).
             - "quartic": Use quartic polynomial solution (as in Demidenko paper).
         num_cutoffs: Number of cutoff values to sweep through (for "sweep" method).
+        plot: If True, generate diagnostic plots using the viz module (default False).
+        plot_title: Optional custom title for the diagnostic plots. If None, uses
+            method description.
 
     Returns:
         Tuple of three numpy arrays:
@@ -421,49 +430,57 @@ def ellipse_envelope_band(
     upper_envelope = np.zeros(num_grid_points, dtype=dtype)
 
     if envelope_method == "sweep":
-        # Sweep method: evaluate ellipse boundaries at many cutoffs
-        # This is more robust than the quartic approach
-
-        # Generate cutoffs that span a reasonable range
-        # Use probit scale for uniform coverage
-        probit_range = np.linspace(-4, 4, num_cutoffs)
+        # Generate cutoffs (increase count to reduce discretization bias)
+        # +/- 5 sigma covers FPR from ~3e-7 to 1-3e-7
+        probit_range = np.linspace(-5, 5, num_cutoffs)
         cutoffs = mean_neg - std_neg * probit_range
 
-        for cutoff in cutoffs:
-            # For this cutoff, compute the ellipse parameters
+        # Pre-allocate arrays for vectorization
+        # shape: (num_cutoffs, num_grid_points)
+        lower_candidates = np.ones((len(cutoffs), num_grid_points), dtype=dtype)
+        upper_candidates = np.zeros((len(cutoffs), num_grid_points), dtype=dtype)
+
+        for i, cutoff in enumerate(cutoffs):
             gamma_neg = (mean_neg - cutoff) / std_neg
             gamma_pos = (mean_pos - cutoff) / std_pos
 
-            # Variance of gamma estimates (Demidenko Eq. for var(γ̂))
             var_gamma_neg = 1.0 / n_neg + gamma_neg**2 / (2 * (n_neg - 1))
             var_gamma_pos = 1.0 / n_pos + gamma_pos**2 / (2 * (n_pos - 1))
 
-            # A coefficients (inverse of variance)
             a_neg = 1.0 / var_gamma_neg
             a_pos = 1.0 / var_gamma_pos
 
-            # For each FPR on our grid, find where the ellipse intersects that vertical line
-            # Ellipse equation: a_neg * (x - gamma_neg)² + a_pos * (y - gamma_pos)² = chi2_critical
-            # Solving for y: y = gamma_pos ± sqrt((chi2_critical - a_neg*(x-gamma_neg)²) / a_pos)
+            # VECTORIZED: Compute intersection for all grid points at once
+            # Equation: A_neg * (x - gamma_neg)^2 + A_pos * (y - gamma_pos)^2 = chi2
 
-            for i, x in enumerate(probit_fpr):
-                # Check if this x is within the ellipse's x-range
-                x_deviation_sq = (x - gamma_neg) ** 2
-                remaining = chi2_critical - a_neg * x_deviation_sq
+            # 1. Calculate the 'cost' of the x-deviation
+            x_cost = a_neg * (probit_fpr - gamma_neg) ** 2
 
-                if remaining >= 0:
-                    # This vertical line intersects the ellipse
-                    y_offset = np.sqrt(remaining / a_pos)
-                    y_lower = gamma_pos - y_offset
-                    y_upper = gamma_pos + y_offset
+            # 2. Find valid indices where the ellipse exists (cost < critical val)
+            remaining = chi2_critical - x_cost
+            valid_mask = remaining >= 0
 
-                    # Convert to TPR space
-                    tpr_lower = norm.cdf(y_lower)
-                    tpr_upper = norm.cdf(y_upper)
+            # 3. Compute y boundaries where valid
+            if np.any(valid_mask):
+                y_offset = np.sqrt(remaining[valid_mask] / a_pos)
 
-                    # Update envelope (take most extreme values across all ellipses)
-                    lower_envelope[i] = min(lower_envelope[i], tpr_lower)
-                    upper_envelope[i] = max(upper_envelope[i], tpr_upper)
+                # Probit space boundaries
+                y_lower = gamma_pos - y_offset
+                y_upper = gamma_pos + y_offset
+
+                # Transform to TPR (probability) space
+                tpr_lower = norm.cdf(y_lower)
+                tpr_upper = norm.cdf(y_upper)
+
+                # Store in candidate arrays
+                # Initialize invalid points to 1.0 (lower) and 0.0 (upper) so they don't affect min/max
+                lower_candidates[i, valid_mask] = tpr_lower
+                upper_candidates[i, valid_mask] = tpr_upper
+
+        # Collapse candidates to finding the envelope
+        # min over cutoffs for lower band, max over cutoffs for upper band
+        lower_envelope = np.min(lower_candidates, axis=0)
+        upper_envelope = np.max(upper_candidates, axis=0)
 
     else:  # quartic method
         # Use the quartic polynomial approach from Demidenko's paper
@@ -617,4 +634,53 @@ def ellipse_envelope_band(
         lower_envelope[i] = max(lower_envelope[i], lower_envelope[i - 1])
         upper_envelope[i] = max(upper_envelope[i], upper_envelope[i - 1])
 
-    return fpr_grid, lower_envelope.astype(dtype), upper_envelope.astype(dtype)
+    # Convert to final dtype before plotting/returning
+    fpr_grid_final = fpr_grid.astype(dtype)
+    lower_envelope_final = lower_envelope.astype(dtype)
+    upper_envelope_final = upper_envelope.astype(dtype)
+
+    # Generate diagnostic plots if requested
+    if plot:
+        try:
+            # Compute empirical ROC curve for visualization
+            neg_scores = y_score_np[y_true_np == 0]
+            pos_scores = y_score_np[y_true_np == 1]
+
+            # Convert to torch tensors for compute_empirical_roc_from_scores
+            import torch
+
+            neg_scores_t = torch.from_numpy(neg_scores).float()
+            pos_scores_t = torch.from_numpy(pos_scores).float()
+            fpr_grid_t = torch.from_numpy(fpr_grid_final).float()
+
+            empirical_tpr_t = compute_empirical_roc_from_scores(
+                neg_scores_t, pos_scores_t, fpr_grid_t
+            )
+            empirical_tpr_np = empirical_tpr_t.cpu().numpy().astype(dtype)
+
+            # Determine method name for title
+            if plot_title is None:
+                plot_title = f"Ellipse-Envelope ({envelope_method} method)"
+
+            fig = plot_band_diagnostics(
+                fpr_grid=fpr_grid_final,
+                empirical_tpr=empirical_tpr_np,
+                lower_envelope=lower_envelope_final,
+                upper_envelope=upper_envelope_final,
+                boot_tpr_matrix=None,
+                bootstrap_var=None,
+                wilson_var=None,
+                alpha=alpha,
+                method_name=plot_title,
+                layout="2x2",
+            )
+            fig.show()
+        except ImportError:
+            import warnings
+
+            warnings.warn(
+                "Visualization module not available. Install matplotlib to enable plotting.",
+                stacklevel=2,
+            )
+
+    return fpr_grid_final, lower_envelope_final, upper_envelope_final
