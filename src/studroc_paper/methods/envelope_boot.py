@@ -146,7 +146,7 @@ def envelope_bootstrap_band(
     y_true: NDArray | Tensor,
     y_score: NDArray | Tensor,
     alpha: float = 0.05,
-    boundary_method: BoundaryMethod = "wilson",
+    boundary_method: BoundaryMethod = "none",
     retention_method: RetentionMethod = "ks",
     plot: bool = False,
     plot_title: str | None = None,
