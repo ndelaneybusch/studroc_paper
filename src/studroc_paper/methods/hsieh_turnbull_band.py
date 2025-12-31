@@ -337,20 +337,31 @@ def hsieh_turnbull_band(
             # Handle SE=0 cases
             valid_se = logit_se > 1e-9
 
+            # Exclude regions with low effective sample size for logit stability
+            # Rule of thumb: n*p > 5 for normal approximation on logit scale
+            min_tpr = 5.0 / n1
+            stable_mask = (tpr_empirical_t > min_tpr) & (tpr_empirical_t < 1 - min_tpr)
+            calib_mask = valid_se & stable_mask
+
             deviations = torch.abs(logit_boot - logit_tpr.unsqueeze(0))
 
             # Initialize with zeros
             stat_grid = torch.zeros_like(deviations)
-            stat_grid[:, valid_se] = deviations[:, valid_se] / logit_se[valid_se]
+            stat_grid[:, calib_mask] = deviations[:, calib_mask] / logit_se[calib_mask]
 
         else:
             se = torch.sqrt(ht_variance_t)
             valid_se = se > 1e-9
 
+            # Apply same effective sample size filter for consistency
+            min_tpr = 5.0 / n1
+            stable_mask = (tpr_empirical_t > min_tpr) & (tpr_empirical_t < 1 - min_tpr)
+            calib_mask = valid_se & stable_mask
+
             deviations = torch.abs(boot_tpr_matrix - tpr_empirical_t.unsqueeze(0))
 
             stat_grid = torch.zeros_like(deviations)
-            stat_grid[:, valid_se] = deviations[:, valid_se] / se[valid_se]
+            stat_grid[:, calib_mask] = deviations[:, calib_mask] / se[calib_mask]
 
         # Sup over t (grid) for each bootstrap
         sup_stats = torch.max(stat_grid, dim=1).values
