@@ -242,11 +242,14 @@ def _sheather_jones_bandwidth(data: NDArray) -> float:
     return float(kde.bw)
 
 
-def _reflected_kde_density_derivative(
-    data: NDArray, eval_points: NDArray, bw_method: Literal["silverman", "ISJ"] = "ISJ"
+def _kde_density_derivative(
+    data: NDArray,
+    eval_points: NDArray,
+    bw_method: Literal["silverman", "ISJ"] = "ISJ",
+    reflected=False,
 ) -> tuple[NDArray, NDArray]:
     """
-    Compute density and derivative using Reflected KDE.
+    Compute density and derivative using KDE.
 
     Uses KDEpy for optimal bandwidth selection, then computes exact
     Gaussian mixture density and derivatives manually (handling reflection).
@@ -264,11 +267,12 @@ def _reflected_kde_density_derivative(
     if h <= 1e-9:
         h = 1e-6
 
-    # 2. Augment data (Reflection)
-    lower, upper = np.min(data), np.max(data)
-    # D_aug = [D, 2*L - D, 2*U - D]
-    data_aug = np.concatenate([data, 2 * lower - data, 2 * upper - data])
-    n_aug = len(data_aug)  # = 3 * n
+    if reflected:
+        # 2. Augment data (Reflection)
+        lower, upper = np.min(data), np.max(data)
+        # D_aug = [D, 2*L - D, 2*U - D]
+        data_aug = np.concatenate([data, 2 * lower - data, 2 * upper - data])
+        n_aug = len(data_aug)  # = 3 * n
 
     # 3. Vectorized Gaussian Sum computation
     eval_points = np.asarray(eval_points)
@@ -282,7 +286,7 @@ def _reflected_kde_density_derivative(
 
     # Normalize result by 3.0 because we want density on original support [L, U]
     # and we reflected twice (tripling mass).
-    correction = 3.0
+    correction = 3.0 if reflected else 1.0
 
     for i in range(0, len(eval_points), chunk_size):
         x_chunk = eval_points[i : i + chunk_size]
@@ -409,7 +413,7 @@ def compute_hsieh_turnbull_variance(
         neg_scores: Control scores
         pos_scores: Case scores
         fpr_grid: FPR values t over which to evaluate.
-        method: 'reflected_kde' or 'log_concave'.
+        method: 'reflected_kde' or 'log_concave' or 'kde'.
 
     Returns:
         Variance array matching fpr_grid.
@@ -445,10 +449,14 @@ def compute_hsieh_turnbull_variance(
     if method == "log_concave":
         f_vals, _ = _log_concave_mle_density_derivative(neg_scores, thresholds)
         g_vals, _ = _log_concave_mle_density_derivative(pos_scores, thresholds)
+    elif method == "kde":
+        f_vals, _ = _kde_density_derivative(neg_scores, thresholds, reflected=False)
+        g_vals, _ = _kde_density_derivative(pos_scores, thresholds, reflected=False)
+    elif method == "reflected_kde":
+        f_vals, _ = _kde_density_derivative(neg_scores, thresholds, reflected=True)
+        g_vals, _ = _kde_density_derivative(pos_scores, thresholds, reflected=True)
     else:
-        # Default: Reflected KDE
-        f_vals, _ = _reflected_kde_density_derivative(neg_scores, thresholds)
-        g_vals, _ = _reflected_kde_density_derivative(pos_scores, thresholds)
+        raise ValueError(f"Unknown method: {method}")
 
     # Protect against division by zero
     f_vals = np.maximum(f_vals, 1e-12)
