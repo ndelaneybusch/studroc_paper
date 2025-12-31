@@ -273,6 +273,9 @@ def _kde_density_derivative(
         # D_aug = [D, 2*L - D, 2*U - D]
         data_aug = np.concatenate([data, 2 * lower - data, 2 * upper - data])
         n_aug = len(data_aug)  # = 3 * n
+    else:
+        n_aug = len(data)
+        data_aug = data
 
     # 3. Vectorized Gaussian Sum computation
     eval_points = np.asarray(eval_points)
