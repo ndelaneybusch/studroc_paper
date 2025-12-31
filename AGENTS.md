@@ -8,6 +8,7 @@
 - NEVER address the user through code comments. Comments must be evergreen - don't acknowledge prior code states or transient instructions.
 - Pass data values through pydantic models where reasonable.
 - Do not edit comments that are unrelated to the code you are changing. NEVER ADDRESS THE USER OR DESCRIBE YOUR CHANGES THROUGH COMMENTS. Comments MUST be "evergreen" and will not refer to changes from previous code states or user instructions.
+- Always aim for maximal quality. Never make accomodations for backwards compatibility, just make sure the current code state is the best possible.
 
 ## Writing tests
 
@@ -25,3 +26,7 @@
 
 My huggingface hub location is:
 "C:\\Users\\ndela\\.cache\\huggingface\\hub"
+
+## Running commands
+
+Run commands using `uv`, e.g. `uv run python <script.py>`
