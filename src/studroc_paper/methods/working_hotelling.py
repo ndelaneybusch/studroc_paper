@@ -48,6 +48,13 @@ def working_hotelling_band(
     mu0, s0 = neg.mean(), neg.std(ddof=1)
     mu1, s1 = pos.mean(), pos.std(ddof=1)
 
+    # Handle degenerate cases (n < 2 or constant values)
+    epsilon = 1e-8
+    if np.isnan(s0) or s0 < epsilon:
+        s0 = epsilon
+    if np.isnan(s1) or s1 < epsilon:
+        s1 = epsilon
+
     # ROC parameters: a = (mu1 - mu0) / s1, b = s0 / s1
     a_hat = (mu1 - mu0) / s1
     b_hat = s0 / s1
