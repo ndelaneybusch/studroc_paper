@@ -466,7 +466,7 @@ def hsieh_turnbull_band(
                 upper_envelope=upper_envelope,
                 boot_tpr_matrix=boot_tpr_matrix_np,
                 bootstrap_var=ht_variance,
-                wilson_var=None,  # H-T doesn't use Wilson variance floor
+                wilson_var=wilson_var,
                 alpha=alpha,
                 method_name=plot_title,
                 layout="2x2",
