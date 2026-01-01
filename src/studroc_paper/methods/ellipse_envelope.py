@@ -65,7 +65,7 @@ def _estimate_binormal_parameters(
 
     Args:
         y_true: Binary class labels (0/1).
-        y_score: Continuous prediction scores.
+        y_score: Continuous unbounded prediction scores.
         minimum_std: Minimum allowed standard deviation to prevent degeneracy.
 
     Returns:
@@ -260,7 +260,9 @@ def ellipse_envelope_band(
     Args:
         y_true: Array of binary class labels (0/1). Can be numpy array or torch tensor.
         y_score: Array of continuous prediction scores. Can be numpy array or torch tensor.
-            Higher scores should indicate higher probability of positive class.
+            Higher scores should indicate higher probability of positive class. Assumed to be
+            binormal (i.e. pos and neg scores follow normal distributions). If bounded by [0, 1],
+            it is probit-transformed.
         num_grid_points: Number of evaluation points on the FPR grid.
             Higher values give smoother bands but increase computation time.
         alpha: Significance level for the confidence band.
@@ -319,6 +321,13 @@ def ellipse_envelope_band(
         raise ValueError(
             f"y_true must contain exactly classes 0 and 1, got {unique_labels}"
         )
+
+    # Check if scores are bounded on (0,1) and apply probit transformation if so
+    if np.all((y_score_np > 0) & (y_score_np < 1)):
+        # Scores appear to be probabilities - apply probit transformation
+        # Clip to avoid infinite values at boundaries
+        y_score_clipped = np.clip(y_score_np, probit_clip, 1 - probit_clip)
+        y_score_np = norm.ppf(y_score_clipped)
 
     # Estimate binormal parameters
     mean_neg, std_neg, mean_pos, std_pos, n_neg, n_pos = _estimate_binormal_parameters(
