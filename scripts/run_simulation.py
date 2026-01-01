@@ -35,6 +35,7 @@ from studroc_paper.datagen.true_rocs import (
     make_student_t_dgp,
 )
 from studroc_paper.eval.eval import aggregate_band_results, evaluate_single_band
+from studroc_paper.methods.ellipse_envelope import ellipse_envelope_band
 from studroc_paper.methods.envelope_boot import envelope_bootstrap_band
 from studroc_paper.methods.hsieh_turnbull_band import hsieh_turnbull_band
 from studroc_paper.methods.ks_band import fixed_width_ks_band
@@ -196,6 +197,7 @@ def compute_all_bands(
         use_logit_transform=False,
         density_method="log_concave",
         n_bootstraps=0,
+        check_assumptions=False,
     )
     results["HT_log_concave"] = evaluate_single_band(
         lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
@@ -209,6 +211,7 @@ def compute_all_bands(
         use_logit_transform=False,
         density_method="log_concave",
         n_bootstraps=4000,
+        check_assumptions=False,
     )
     results["HT_log_concave_calib"] = evaluate_single_band(
         lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
@@ -222,6 +225,7 @@ def compute_all_bands(
         use_logit_transform=False,
         density_method="reflected_kde",
         n_bootstraps=0,
+        check_assumptions=False,
     )
     results["HT_reflected_kde"] = evaluate_single_band(
         lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
@@ -235,6 +239,7 @@ def compute_all_bands(
         use_logit_transform=False,
         density_method="kde",
         n_bootstraps=0,
+        check_assumptions=False,
     )
     results["HT_kde"] = evaluate_single_band(
         lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
@@ -248,8 +253,36 @@ def compute_all_bands(
         use_logit_transform=False,
         density_method="kde",
         n_bootstraps=4000,
+        check_assumptions=False,
     )
     results["HT_kde_calib"] = evaluate_single_band(
+        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
+    )
+
+    # Compute ellipse-envelope band
+    fpr_out, lower, upper = ellipse_envelope_band(
+        y_true=y_true,
+        y_score=y_score,
+        num_grid_points=len(fpr_grid),
+        alpha=alpha,
+        quartic_solver="numpy_roots",
+        envelope_method="sweep",
+        num_cutoffs=1000,
+    )
+    results["ellipse_envelope_sweep"] = evaluate_single_band(
+        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
+    )
+
+    fpr_out, lower, upper = ellipse_envelope_band(
+        y_true=y_true,
+        y_score=y_score,
+        num_grid_points=len(fpr_grid),
+        alpha=alpha,
+        quartic_solver="numpy_roots",
+        envelope_method="quartic",
+        num_cutoffs=1000,
+    )
+    results["ellipse_envelope_quartic"] = evaluate_single_band(
         lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
     )
 
@@ -560,7 +593,22 @@ def save_results(
     base_filename = f"{dgp_type}_n{n_total}_prev{prev}_{timestamp}"
 
     # Hardcoded method names
-    method_names = ["envelope", "pointwise", "ks", "working_hotelling"]
+    method_names = [
+        "envelope_standard",
+        "envelope_symmetric",
+        "envelope_kde",
+        "envelope_ks",
+        "HT_log_concave",
+        "HT_log_concave_calib",
+        "HT_reflected_kde",
+        "HT_kde",
+        "HT_kde_calib",
+        "ellipse_envelope_sweep",
+        "ellipse_envelope_quartic",
+        "pointwise",
+        "ks",
+        "working_hotelling",
+    ]
 
     # Prepare individual results (long format)
     individual_records = []
