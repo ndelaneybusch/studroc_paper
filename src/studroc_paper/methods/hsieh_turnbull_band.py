@@ -15,7 +15,11 @@ from torch import Tensor
 
 from ..sampling.bootstrap_grid import generate_bootstrap_grid
 from ..viz.band_diagnostics import plot_band_diagnostics
-from .method_utils import compute_hsieh_turnbull_variance, numpy_to_torch
+from .method_utils import (
+    compute_hsieh_turnbull_variance,
+    numpy_to_torch,
+    wilson_halfwidth_squared_np,
+)
 
 
 def _check_log_concavity_assumptions(
@@ -93,6 +97,7 @@ def hsieh_turnbull_band(
     density_method: Literal["log_concave", "reflected_kde"] = "log_concave",
     n_bootstraps: int = 2000,
     check_assumptions: bool = True,
+    use_wilson_variance_floor: bool = False,
     plot: bool = False,
     plot_title: str | None = None,
 ) -> tuple[NDArray, NDArray, NDArray]:
@@ -170,6 +175,10 @@ def hsieh_turnbull_band(
             heuristic. If 0, uses the conservative `sqrt(k)` heuristic.
         check_assumptions: If True (default), run heuristic checks for gross
             violations of log-concavity assumptions and issue warnings.
+        use_wilson_variance_floor: If True, apply a Wilson score interval variance
+            floor to stabilize bands when the estimated ROC slope is near 0. The
+            Wilson variance provides a principled minimum uncertainty based on exact
+            binomial theory. Default False.
         plot: If True, generate diagnostic plots using the viz module (default False).
         plot_title: Optional custom title for the diagnostic plots. If None, uses
             "Hsieh-Turnbull".
@@ -268,6 +277,21 @@ def hsieh_turnbull_band(
         fpr_grid=fpr_grid,
         method=density_method,
     )
+
+    # Apply Wilson variance floor if requested
+    wilson_var = None  # For diagnostics
+    if use_wilson_variance_floor:
+        # Compute pointwise z-value for Wilson score interval
+        z_pointwise = stats.norm.ppf(1 - alpha / 2)
+
+        # Compute Wilson squared half-width
+        wilson_hw_sq = wilson_halfwidth_squared_np(tpr_empirical, n1, z_pointwise)
+
+        # Convert to variance: wilson_hw_sq = z^2 * Var, so Var = wilson_hw_sq / z^2
+        wilson_var = wilson_hw_sq / (z_pointwise**2)
+
+        # Apply floor to Hsieh-Turnbull variance
+        ht_variance = np.maximum(ht_variance, wilson_var)
 
     # --- Critical Value Determination ---
 
