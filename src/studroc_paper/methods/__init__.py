@@ -5,7 +5,7 @@ from .ellipse_envelope import ellipse_envelope_band
 from .envelope_boot import envelope_bootstrap_band
 from .hsieh_turnbull_band import hsieh_turnbull_band
 from .ks_band import fixed_width_ks_band
-from .max_modulus_boot import max_modulus_bootstrap_band
+from .max_modulus_boot import logit_bootstrap_band
 from .pointwise_boot import pointwise_bootstrap_band
 from .working_hotelling import working_hotelling_band
 
@@ -17,7 +17,7 @@ __all__ = [
     "envelope_bootstrap_band",
     "fixed_width_ks_band",
     "hsieh_turnbull_band",
-    "max_modulus_bootstrap_band",
+    "logit_bootstrap_band",
     "pointwise_bootstrap_band",
     "working_hotelling_band",
 ]
