@@ -98,6 +98,8 @@ def hsieh_turnbull_band(
     n_bootstraps: int = 2000,
     check_assumptions: bool = True,
     use_wilson_variance_floor: bool = False,
+    data_floor: float | None = None,
+    data_ceil: float | None = None,
     plot: bool = False,
     plot_title: str | None = None,
 ) -> tuple[NDArray, NDArray, NDArray]:
@@ -179,6 +181,12 @@ def hsieh_turnbull_band(
             floor to stabilize bands when the estimated ROC slope is near 0. The
             Wilson variance provides a principled minimum uncertainty based on exact
             binomial theory. Default False.
+        data_floor: Optional lower boundary for reflected KDE. When using reflected_kde
+            method, data is reflected around this boundary. If None, uses np.min(data).
+            Useful when the theoretical support is known (e.g., scores in [0, 1]).
+        data_ceil: Optional upper boundary for reflected KDE. When using reflected_kde
+            method, data is reflected around this boundary. If None, uses np.max(data).
+            Useful when the theoretical support is known (e.g., scores in [0, 1]).
         plot: If True, generate diagnostic plots using the viz module (default False).
         plot_title: Optional custom title for the diagnostic plots. If None, uses
             "Hsieh-Turnbull".
@@ -276,6 +284,8 @@ def hsieh_turnbull_band(
         pos_scores=pos_scores,
         fpr_grid=fpr_grid,
         method=density_method,
+        data_floor=data_floor,
+        data_ceil=data_ceil,
     )
 
     # Apply Wilson variance floor if requested

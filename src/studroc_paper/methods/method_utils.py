@@ -246,13 +246,26 @@ def _kde_density_derivative(
     data: NDArray,
     eval_points: NDArray,
     bw_method: Literal["silverman", "ISJ"] = "ISJ",
-    reflected=False,
+    reflected: bool = False,
+    lower_bound: float | None = None,
+    upper_bound: float | None = None,
 ) -> tuple[NDArray, NDArray]:
     """
     Compute density and derivative using KDE.
 
     Uses KDEpy for optimal bandwidth selection, then computes exact
     Gaussian mixture density and derivatives manually (handling reflection).
+
+    Args:
+        data: Input data array.
+        eval_points: Points at which to evaluate density and derivative.
+        bw_method: Bandwidth selection method ('ISJ' or 'silverman').
+        reflected: If True, use boundary reflection to reduce edge bias.
+        lower_bound: Lower boundary for reflection. If None, uses np.min(data).
+        upper_bound: Upper boundary for reflection. If None, uses np.max(data).
+
+    Returns:
+        Tuple of (density, derivative) arrays at eval_points.
     """
     # 1. Determine bandwidth using Improved Sheather-Jones (ISJ)
     try:
@@ -269,9 +282,11 @@ def _kde_density_derivative(
 
     if reflected:
         # 2. Augment data (Reflection)
-        lower, upper = np.min(data), np.max(data)
+        L = lower_bound if lower_bound is not None else np.min(data)
+        U = upper_bound if upper_bound is not None else np.max(data)
+        # Reflect around the TRUE boundaries
         # D_aug = [D, 2*L - D, 2*U - D]
-        data_aug = np.concatenate([data, 2 * lower - data, 2 * upper - data])
+        data_aug = np.concatenate([data, 2 * L - data, 2 * U - data])
         n_aug = len(data_aug)  # = 3 * n
     else:
         n_aug = len(data)
@@ -406,6 +421,8 @@ def compute_hsieh_turnbull_variance(
     pos_scores: NDArray,
     fpr_grid: NDArray,
     method: str = "reflected_kde",
+    data_floor: float | None = None,
+    data_ceil: float | None = None,
 ) -> NDArray:
     """
     Compute Asymptotic Variance of ROC curve using Hsieh-Turnbull formula.
@@ -417,6 +434,8 @@ def compute_hsieh_turnbull_variance(
         pos_scores: Case scores
         fpr_grid: FPR values t over which to evaluate.
         method: 'reflected_kde' or 'log_concave' or 'kde'.
+        data_floor: Optional lower boundary for reflected KDE. If None, uses np.min(data).
+        data_ceil: Optional upper boundary for reflected KDE. If None, uses np.max(data).
 
     Returns:
         Variance array matching fpr_grid.
@@ -456,8 +475,12 @@ def compute_hsieh_turnbull_variance(
         f_vals, _ = _kde_density_derivative(neg_scores, thresholds, reflected=False)
         g_vals, _ = _kde_density_derivative(pos_scores, thresholds, reflected=False)
     elif method == "reflected_kde":
-        f_vals, _ = _kde_density_derivative(neg_scores, thresholds, reflected=True)
-        g_vals, _ = _kde_density_derivative(pos_scores, thresholds, reflected=True)
+        f_vals, _ = _kde_density_derivative(
+            neg_scores, thresholds, reflected=True, lower_bound=data_floor, upper_bound=data_ceil
+        )
+        g_vals, _ = _kde_density_derivative(
+            pos_scores, thresholds, reflected=True, lower_bound=data_floor, upper_bound=data_ceil
+        )
     else:
         raise ValueError(f"Unknown method: {method}")
 
