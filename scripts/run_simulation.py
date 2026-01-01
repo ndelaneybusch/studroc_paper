@@ -56,31 +56,43 @@ def get_dgp_specs() -> dict[str, dict[str, NDArray]]:
             "make_dgp": make_lognormal_dgp,
             "lhs_params": ["auc", "sigma"],
             "lhs_bounds": [(0.55, 0.99), (0.1, 3.0)],
+            "data_floor": 0.0,
+            "data_ceil": None,
         },
         "hetero_gaussian": {
             "make_dgp": make_heteroskedastic_gaussian_dgp,
             "lhs_params": ["auc", "sigma_ratio"],
             "lhs_bounds": [(0.55, 0.99), (0.2, 5.0)],
+            "data_floor": None,
+            "data_ceil": None,
         },
         "beta_opposing": {
             "make_dgp": make_beta_opposing_skew_dgp,
             "lhs_params": ["auc", "alpha"],
             "lhs_bounds": [(0.55, 0.99), (0.5, 10.0)],
+            "data_floor": 0.0,
+            "data_ceil": 1.0,
         },
         "student_t": {
             "make_dgp": make_student_t_dgp,
             "lhs_params": ["auc", "df"],
             "lhs_bounds": [(0.55, 0.99), (1.1, 30.0)],
+            "data_floor": None,
+            "data_ceil": None,
         },
         "bimodal_negative": {
             "make_dgp": make_bimodal_negative_dgp,
             "lhs_params": ["auc", "mixture_weight", "mode_separation"],
             "lhs_bounds": [(0.55, 0.99), (0.1, 0.9), (0.1, 4.0)],
+            "data_floor": None,
+            "data_ceil": None,
         },
         "exponential": {
             "make_dgp": make_exponential_dgp,
             "lhs_params": ["auc", "neg_rate"],
             "lhs_bounds": [(0.55, 0.99), (0.1, 10.0)],
+            "data_floor": 0.0,
+            "data_ceil": None,
         },
     }
 
@@ -125,6 +137,8 @@ def compute_all_bands(
     fpr_grid: NDArray,
     true_tpr: NDArray,
     alpha: float,
+    data_floor: float | None = None,
+    data_ceil: float | None = None,
 ) -> dict[str, tuple[NDArray, NDArray]]:
     """Compute all confidence bands."""
 
@@ -198,6 +212,8 @@ def compute_all_bands(
         density_method="log_concave",
         n_bootstraps=0,
         check_assumptions=False,
+        data_floor=data_floor,
+        data_ceil=data_ceil,
     )
     results["HT_log_concave"] = evaluate_single_band(
         lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
@@ -212,6 +228,8 @@ def compute_all_bands(
         density_method="log_concave",
         n_bootstraps=4000,
         check_assumptions=False,
+        data_floor=data_floor,
+        data_ceil=data_ceil,
     )
     results["HT_log_concave_calib"] = evaluate_single_band(
         lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
@@ -226,6 +244,8 @@ def compute_all_bands(
         density_method="reflected_kde",
         n_bootstraps=0,
         check_assumptions=False,
+        data_floor=data_floor,
+        data_ceil=data_ceil,
     )
     results["HT_reflected_kde"] = evaluate_single_band(
         lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
@@ -240,6 +260,8 @@ def compute_all_bands(
         density_method="kde",
         n_bootstraps=0,
         check_assumptions=False,
+        data_floor=data_floor,
+        data_ceil=data_ceil,
     )
     results["HT_kde"] = evaluate_single_band(
         lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
@@ -254,6 +276,8 @@ def compute_all_bands(
         density_method="kde",
         n_bootstraps=4000,
         check_assumptions=False,
+        data_floor=data_floor,
+        data_ceil=data_ceil,
     )
     results["HT_kde_calib"] = evaluate_single_band(
         lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
@@ -319,7 +343,16 @@ def compute_all_bands(
 
 
 def run_single_simulation(
-    dgp, n_pos, n_neg, confidence_levels, fpr_grid, rng, dtype, B
+    dgp,
+    n_pos,
+    n_neg,
+    confidence_levels,
+    fpr_grid,
+    rng,
+    dtype,
+    B,
+    data_floor=None,
+    data_ceil=None,
 ):
     """
     Run a single simulation: generate data, compute CIs, evaluate.
@@ -373,6 +406,8 @@ def run_single_simulation(
             fpr_grid=fpr_grid,
             true_tpr=true_tpr,
             alpha=alpha,
+            data_floor=data_floor,
+            data_ceil=data_ceil,
         )
 
     return results
@@ -414,6 +449,10 @@ def run_lhs_combination(
 
     dgp = dgp_spec["make_dgp"](**params_for_dgp)
 
+    # Extract data bounds from DGP spec
+    data_floor = dgp_spec.get("data_floor", None)
+    data_ceil = dgp_spec.get("data_ceil", None)
+
     # Run n_sim simulations
     simulation_results = []
 
@@ -427,6 +466,8 @@ def run_lhs_combination(
             rng=rng,
             B=B,
             dtype=dtype,
+            data_floor=data_floor,
+            data_ceil=data_ceil,
         )
         # Collect metadata for this simulation
         metadata = {
