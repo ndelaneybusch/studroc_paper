@@ -8,8 +8,6 @@ classic Working-Hotelling approach by accounting for the estimation of variances
 rather than treating them as fixed and known.
 """
 
-from collections.abc import Callable
-from enum import Enum
 from typing import Literal
 
 import numpy as np
@@ -29,16 +27,6 @@ from studroc_paper.viz import plot_band_diagnostics
 from .method_utils import compute_empirical_roc_from_scores
 
 
-class QuarticSolver(Enum):
-    """Methods for solving the quartic polynomial in the envelope computation."""
-
-    NUMPY_ROOTS = "numpy_roots"
-    """Use numpy.roots (companion matrix eigenvalue method)."""
-
-    ANALYTIC = "analytic"
-    """Use closed-form Ferrari/Cardano solution for quartic equations."""
-
-
 def _solve_quartic_numpy(coefficients: NDArray) -> NDArray:
     """Solve quartic polynomial using numpy's companion matrix method.
 
@@ -52,66 +40,6 @@ def _solve_quartic_numpy(coefficients: NDArray) -> NDArray:
     # Extract real roots (with small imaginary tolerance)
     real_mask = np.abs(roots.imag) < 1e-10
     return roots[real_mask].real
-
-
-def _solve_quartic_analytic(coefficients: NDArray) -> NDArray:
-    """Solve quartic polynomial using Ferrari's method (closed-form).
-
-    This provides higher precision than eigenvalue-based methods for
-    well-conditioned problems. Falls back to numpy.roots for numerically
-    difficult cases.
-
-    Args:
-        coefficients: Array of shape (5,) with [p4, p3, p2, p1, p0].
-
-    Returns:
-        Array of real roots.
-    """
-    p4, p3, p2, p1, p0 = coefficients
-
-    # Handle degenerate case where leading coefficient is near zero
-    if np.abs(p4) < 1e-12:
-        return _solve_quartic_numpy(coefficients)
-
-    # Normalize to monic form: x^4 + ax^3 + bx^2 + cx + d = 0
-    a = p3 / p4
-    b = p2 / p4
-    c = p1 / p4
-    d = p0 / p4
-
-    # Check for numerical issues in coefficients
-    if not all(np.isfinite([a, b, c, d])):
-        return _solve_quartic_numpy(coefficients)
-
-    # Depressed quartic substitution: x = y - a/4
-    # y^4 + py^2 + qy + r = 0
-    p = b - 3 * a**2 / 8
-    q = a**3 / 8 - a * b / 2 + c
-    r = -3 * a**4 / 256 + a**2 * b / 16 - a * c / 4 + d
-
-    # Handle special cases
-    if np.abs(q) < 1e-12:
-        # Biquadratic: y^4 + py^2 + r = 0
-        discriminant = p**2 - 4 * r
-        if discriminant < -1e-12:
-            return np.array([])
-        discriminant = max(0, discriminant)
-        y2_roots = np.array(
-            [(-p + np.sqrt(discriminant)) / 2, (-p - np.sqrt(discriminant)) / 2]
-        )
-        y_roots = []
-        for y2 in y2_roots:
-            if y2 >= 0:
-                y_roots.extend([np.sqrt(y2), -np.sqrt(y2)])
-            elif y2 > -1e-10:  # Numerical tolerance
-                y_roots.append(0.0)
-        if len(y_roots) == 0:
-            return np.array([])
-        return np.array(y_roots) - a / 4
-
-    # For general case, fall back to numpy which is more numerically stable
-    # The Ferrari method has known numerical instability issues
-    return _solve_quartic_numpy(coefficients)
 
 
 def _convert_to_numpy(arr: "NDArray | Tensor") -> tuple[NDArray, "np.dtype"]:
@@ -247,7 +175,6 @@ def _solve_envelope_quartic(
     d_negative: float,
     d_positive: float,
     chi2_critical: float,
-    solver: QuarticSolver,
 ) -> tuple[NDArray, NDArray]:
     """Solve the quartic equation for the ellipse envelope.
 
@@ -259,7 +186,6 @@ def _solve_envelope_quartic(
         b_negative, b_positive: B coefficients.
         d_negative, d_positive: D coefficients.
         chi2_critical: Chi-squared critical value.
-        solver: Method to use for solving the quartic.
 
     Returns:
         Tuple of (u_values, v_values) for envelope points.
@@ -287,11 +213,8 @@ def _solve_envelope_quartic(
 
     coefficients = np.array([p4, p3, p2, p1, p0])
 
-    # Solve quartic
-    if solver == QuarticSolver.NUMPY_ROOTS:
-        eta_roots = _solve_quartic_numpy(coefficients)
-    else:
-        eta_roots = _solve_quartic_analytic(coefficients)
+    # Solve quartic using numpy
+    eta_roots = _solve_quartic_numpy(coefficients)
 
     if len(eta_roots) == 0:
         return np.array([]), np.array([])
@@ -318,8 +241,6 @@ def ellipse_envelope_band(
     y_score: "NDArray | Tensor",
     num_grid_points: int = 1000,
     alpha: float = 0.05,
-    quartic_solver: QuarticSolver
-    | Literal["numpy_roots", "analytic"] = QuarticSolver.NUMPY_ROOTS,
     minimum_std: float = 1e-8,
     probit_clip: float = 1e-9,
     envelope_method: Literal["sweep", "quartic"] = "sweep",
@@ -344,9 +265,6 @@ def ellipse_envelope_band(
             Higher values give smoother bands but increase computation time.
         alpha: Significance level for the confidence band.
             E.g., 0.05 gives a 95% simultaneous confidence band.
-        quartic_solver: Method for solving the quartic polynomial in envelope computation.
-            - "numpy_roots": Uses numpy's companion matrix eigenvalue method (default, robust).
-            - "analytic": Uses closed-form Ferrari solution (potentially more precise).
         minimum_std: Minimum allowed standard deviation to prevent numerical issues
             with near-constant data. Values below this are clamped.
         probit_clip: Clipping value for FPR grid to avoid infinite probit values at 0 and 1.
@@ -401,10 +319,6 @@ def ellipse_envelope_band(
         raise ValueError(
             f"y_true must contain exactly classes 0 and 1, got {unique_labels}"
         )
-
-    # Convert solver string to enum if needed
-    if isinstance(quartic_solver, str):
-        quartic_solver = QuarticSolver(quartic_solver)
 
     # Estimate binormal parameters
     mean_neg, std_neg, mean_pos, std_pos, n_neg, n_pos = _estimate_binormal_parameters(
@@ -517,7 +431,7 @@ def ellipse_envelope_band(
             )
 
             u_vals, v_vals = _solve_envelope_quartic(
-                a_neg, a_pos, b_neg, b_pos, d_neg, d_pos, chi2_critical, quartic_solver
+                a_neg, a_pos, b_neg, b_pos, d_neg, d_pos, chi2_critical
             )
 
             if len(v_vals) > 0:

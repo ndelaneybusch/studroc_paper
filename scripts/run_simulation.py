@@ -352,7 +352,6 @@ def compute_all_bands(
         y_score=y_score,
         num_grid_points=len(fpr_grid),
         alpha=alpha,
-        quartic_solver="numpy_roots",
         envelope_method="sweep",
         num_cutoffs=1000,
     )
@@ -365,7 +364,6 @@ def compute_all_bands(
         y_score=y_score,
         num_grid_points=len(fpr_grid),
         alpha=alpha,
-        quartic_solver="numpy_roots",
         envelope_method="quartic",
         num_cutoffs=1000,
     )
