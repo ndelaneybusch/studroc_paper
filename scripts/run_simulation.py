@@ -23,7 +23,6 @@ import pandas as pd
 import torch
 from numpy.typing import NDArray
 from sklearn.metrics import roc_auc_score, roc_curve
-from studroc_paper.methods.max_modulus_bootstrap import logit_bootstrap_band
 from tqdm import tqdm
 
 from studroc_paper.datagen.roc_to_dgp import map_lhs_to_dgp
@@ -40,6 +39,7 @@ from studroc_paper.methods.ellipse_envelope import ellipse_envelope_band
 from studroc_paper.methods.envelope_boot import envelope_bootstrap_band
 from studroc_paper.methods.hsieh_turnbull_band import hsieh_turnbull_band
 from studroc_paper.methods.ks_band import fixed_width_ks_band
+from studroc_paper.methods.max_modulus_boot import logit_bootstrap_band
 from studroc_paper.methods.pointwise_boot import pointwise_bootstrap_band
 from studroc_paper.methods.working_hotelling import working_hotelling_band
 from studroc_paper.sampling.bootstrap_grid import generate_bootstrap_grid
