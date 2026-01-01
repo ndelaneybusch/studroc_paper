@@ -23,6 +23,7 @@ import pandas as pd
 import torch
 from numpy.typing import NDArray
 from sklearn.metrics import roc_auc_score, roc_curve
+from studroc_paper.methods.max_modulus_bootstrap import logit_bootstrap_band
 from tqdm import tqdm
 
 from studroc_paper.datagen.roc_to_dgp import map_lhs_to_dgp
@@ -195,10 +196,38 @@ def compute_all_bands(
         y_true=y_true,
         y_score=y_score,
         alpha=alpha,
-        boundary_method="ks",
+        boundary_method="wilson",
         retention_method="ks",
     )
-    results["envelope_ks"] = evaluate_single_band(
+    results["envelope_wilson"] = evaluate_single_band(
+        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
+    )
+
+    fpr_out, lower, upper = envelope_bootstrap_band(
+        boot_tpr_matrix=boot_tpr_matrix,
+        fpr_grid=fpr_grid,
+        y_true=y_true,
+        y_score=y_score,
+        alpha=alpha,
+        boundary_method="none",
+        retention_method="ks",
+        use_logit=True,
+    )
+    results["envelope_logit"] = evaluate_single_band(
+        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
+    )
+
+    fpr_out, lower, upper = envelope_bootstrap_band(
+        boot_tpr_matrix=boot_tpr_matrix,
+        fpr_grid=fpr_grid,
+        y_true=y_true,
+        y_score=y_score,
+        alpha=alpha,
+        boundary_method="none",
+        retention_method="symmetric",
+        use_logit=True,
+    )
+    results["envelope_symmetric_logit"] = evaluate_single_band(
         lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
     )
 
@@ -283,6 +312,40 @@ def compute_all_bands(
         lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
     )
 
+    fpr_out, lower, upper = hsieh_turnbull_band(
+        y_true=y_true,
+        y_score=y_score,
+        alpha=alpha,
+        k=len(fpr_grid),
+        use_logit_transform=False,
+        density_method="kde",
+        n_bootstraps=0,
+        check_assumptions=False,
+        use_wilson_variance_floor=True,
+        data_floor=data_floor,
+        data_ceil=data_ceil,
+    )
+    results["HT_kde_wilson"] = evaluate_single_band(
+        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
+    )
+
+    fpr_out, lower, upper = hsieh_turnbull_band(
+        y_true=y_true,
+        y_score=y_score,
+        alpha=alpha,
+        k=len(fpr_grid),
+        use_logit_transform=False,
+        density_method="kde",
+        n_bootstraps=4000,
+        check_assumptions=False,
+        use_wilson_variance_floor=True,
+        data_floor=data_floor,
+        data_ceil=data_ceil,
+    )
+    results["HT_kde_calib_wilson"] = evaluate_single_band(
+        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
+    )
+
     # Compute ellipse-envelope band
     fpr_out, lower, upper = ellipse_envelope_band(
         y_true=y_true,
@@ -307,6 +370,18 @@ def compute_all_bands(
         num_cutoffs=1000,
     )
     results["ellipse_envelope_quartic"] = evaluate_single_band(
+        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
+    )
+
+    # Compute logit band
+    fpr_out, lower, upper = logit_bootstrap_band(
+        boot_tpr_matrix=boot_tpr_matrix,
+        fpr_grid=fpr_grid,
+        y_true=y_true,
+        y_score=y_score,
+        alpha=alpha,
+    )
+    results["logit_max_modulus"] = evaluate_single_band(
         lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
     )
 
@@ -639,13 +714,19 @@ def save_results(
         "envelope_symmetric",
         "envelope_kde",
         "envelope_ks",
+        "envelope_wilson",
+        "envelope_logit",
+        "envelope_symmetric_logit",
         "HT_log_concave",
         "HT_log_concave_calib",
         "HT_reflected_kde",
         "HT_kde",
         "HT_kde_calib",
+        "HT_kde_wilson",
+        "HT_kde_calib_wilson",
         "ellipse_envelope_sweep",
         "ellipse_envelope_quartic",
+        "logit_max_modulus",
         "pointwise",
         "ks",
         "working_hotelling",
@@ -938,8 +1019,8 @@ def main():
     rng = np.random.default_rng(args.seed)
 
     for dgp_type in [
-        "lognormal",
         "hetero_gaussian",
+        "lognormal",
         "beta_opposing",
         "student_t",
         "bimodal_negative",
