@@ -43,6 +43,20 @@ def _compute_empirical_roc(y_true: Tensor, y_score: Tensor, fpr_grid: Tensor) ->
     return compute_empirical_roc_from_scores(neg_scores, pos_scores, fpr_grid)
 
 
+def _haldane_logit(tpr: Tensor, n_pos: int) -> Tensor:
+    """Apply Logit transform with Haldane-Anscombe correction (+0.5)."""
+    k = tpr * n_pos
+    return torch.log((k + 0.5) / (n_pos - k + 0.5))
+
+
+def _logit_std_error(tpr: Tensor, n_pos: int) -> Tensor:
+    """Compute asymptotic standard error in Haldane-corrected logit space."""
+    k = tpr * n_pos
+    p_hat = (k + 0.5) / (n_pos + 1.0)
+    p_hat = torch.clamp(p_hat, 1e-6, 1.0 - 1e-6)
+    return torch.sqrt(1.0 / (n_pos * p_hat * (1.0 - p_hat)))
+
+
 def _extend_boundary_ks_style(
     fpr_grid: Tensor,
     lower_envelope: Tensor,
@@ -148,6 +162,7 @@ def envelope_bootstrap_band(
     alpha: float = 0.05,
     boundary_method: BoundaryMethod = "none",
     retention_method: RetentionMethod = "ks",
+    use_logit: bool = False,
     plot: bool = False,
     plot_title: str | None = None,
 ) -> tuple[NDArray, NDArray, NDArray]:
@@ -185,6 +200,9 @@ def envelope_bootstrap_band(
               α/2 from curves that deviate most downward. This addresses
               asymmetric alpha mass at high AUC where positive deviations
               are bounded by 1 but negative deviations are not.
+        use_logit: If True, construct the bands in logit space to stabilize
+            the variance of the ROC curve. When doing so, it's recommended that
+            the boundary method is set to "none" or "ks".
         plot: If True, generate diagnostic plots using the viz module (default False).
         plot_title: Optional custom title for the diagnostic plots. If None, uses
             method description.
@@ -218,135 +236,128 @@ def envelope_bootstrap_band(
     # Step 0: Compute empirical ROC
     empirical_tpr = _compute_empirical_roc(y_true_t, y_score_t, fpr)
 
-    # Step 1: Variance Estimation - std across bootstrap dimension
-    bootstrap_std = torch.std(boot_tpr, dim=0, correction=1)
-    bootstrap_var = bootstrap_std * bootstrap_std
+    if use_logit:
+        # --- PATH A: LOGIT SPACE ENVELOPE ---
+        # 1. Transform everything to Haldane-corrected Logit Space
+        logit_tpr_hat = _haldane_logit(empirical_tpr, n_pos)
+        logit_boot_tpr = _haldane_logit(boot_tpr, n_pos)
 
-    # Step 1b: Compute variance floor based on boundary method
-    z_alpha = (2.0**0.5) * torch.erfinv(torch.tensor(1.0 - alpha)).item()
+        # 2. Compute Analytic Standard Error (Studentization Denominator)
+        # In logit space, we use the analytic asymptotic SE for stability
+        std_dev = _logit_std_error(empirical_tpr, n_pos)
 
-    if boundary_method == "wilson":
-        # Wilson-score variance floor
-        variance_floor = wilson_halfwidth_squared_torch(
-            empirical_tpr, n_pos, z_alpha
-        ) / (z_alpha**2)  # this function returns the band - convert to variance.
-    elif boundary_method in ("reflected_kde", "kde", "log_concave"):
-        # Hsieh-Turnbull asymptotic variance floor
-        # Convert to numpy for H-T computation
-        neg_scores_np = torch_to_numpy(y_score_t[y_true_t == 0])
-        pos_scores_np = torch_to_numpy(y_score_t[y_true_t == 1])
-        fpr_np = torch_to_numpy(fpr)
+        # 3. Compute Signed Deviations in Logit Space
+        # (B, K) matrix
+        signed_deviations = logit_boot_tpr - logit_tpr_hat.unsqueeze(0)
 
-        # Compute H-T variance with specified density estimation method
-        ht_var_np = compute_hsieh_turnbull_variance(
-            neg_scores_np, pos_scores_np, fpr_np, method=boundary_method
-        )
-        variance_floor = numpy_to_torch(ht_var_np, device).float()
-    elif boundary_method == "ks":
-        # KS method uses geometric extension later, no variance floor
-        variance_floor = torch.zeros_like(empirical_tpr)
-    else:  # "none"
-        # No variance floor
-        variance_floor = torch.zeros_like(empirical_tpr)
+        # 4. Studentize
+        studentized_signed = signed_deviations / std_dev.unsqueeze(0)
 
-    # Apply variance floor to bootstrap variance
-    if boundary_method not in ("none", "ks"):
-        bootstrap_var = torch.maximum(bootstrap_var, variance_floor)
-        bootstrap_std = torch.sqrt(bootstrap_var)
+        # Prepare for retention (absolute deviations for KS)
+        studentized_abs = torch.abs(studentized_signed)
 
-    # Step 2: Regularization Parameter
-    epsilon = min(1.0 / n_total, 1e-6)
+        # Logit path inherently handles variance floor, so we skip explicit floors.
+        # We perform retention logic on the 'studentized_signed'/'studentized_abs' vars below.
+    else:
+        # --- PATH B: PROBABILITY SPACE ENVELOPE ---
+        # 1. Compute Bootstrap Std (Empirical)
+        bootstrap_std = torch.std(boot_tpr, dim=0, correction=1)
+        bootstrap_var = bootstrap_std.pow(2)
 
-    # Step 3: Studentized KS Statistics (FULLY VECTORIZED)
-    # Compute absolute deviations: (n_bootstrap, n_grid_points)
-    absolute_deviations = torch.abs(boot_tpr - empirical_tpr.unsqueeze(0))
+        # 2. Apply Variance Floors (Boundary Methods)
+        z_alpha = (2.0**0.5) * torch.erfinv(torch.tensor(1.0 - alpha)).item()
 
-    # Create regularized std for division
-    low_var_mask = bootstrap_std < epsilon
+        if boundary_method == "wilson":
+            variance_floor = wilson_halfwidth_squared_torch(
+                empirical_tpr, n_pos, z_alpha
+            )
+        elif boundary_method in ("reflected_kde", "kde", "log_concave"):
+            neg_np = torch_to_numpy(y_score_t[y_true_t == 0])
+            pos_np = torch_to_numpy(y_score_t[y_true_t == 1])
+            fpr_np = torch_to_numpy(fpr)
+            ht_var = compute_hsieh_turnbull_variance(
+                neg_np, pos_np, fpr_np, method=boundary_method
+            )
+            variance_floor = numpy_to_torch(ht_var, device).float()
+        else:
+            variance_floor = torch.zeros_like(empirical_tpr)
 
-    # For points with low variance: if deviation < epsilon, result is 0,
-    # else deviation/epsilon
-    studentized_deviations = torch.zeros_like(absolute_deviations)
+        if boundary_method not in ("none", "ks"):
+            bootstrap_var = torch.maximum(bootstrap_var, variance_floor)
+            bootstrap_std = torch.sqrt(bootstrap_var)
 
-    # Handle normal variance points
-    normal_mask = ~low_var_mask
-    if normal_mask.any():
-        studentized_deviations[:, normal_mask] = (
-            absolute_deviations[:, normal_mask] / bootstrap_std[normal_mask]
-        )
+        # 3. Studentize
+        epsilon = min(1.0 / n_total, 1e-6)
+        signed_deviations = boot_tpr - empirical_tpr.unsqueeze(0)
 
-    # Handle low variance points
-    if low_var_mask.any():
-        low_var_devs = absolute_deviations[:, low_var_mask]
-        # Where deviation < epsilon, set to 0; otherwise divide by epsilon
-        result = torch.where(
-            low_var_devs < epsilon,
-            torch.zeros_like(low_var_devs),
-            low_var_devs / epsilon,
-        )
-        studentized_deviations[:, low_var_mask] = result
+        # Handle low variance points (avoid div by zero)
+        low_var_mask = bootstrap_std < epsilon
+        std_dev = bootstrap_std.clone()  # For unified reference later
 
-    # Max studentized deviation across grid for each bootstrap (KS statistic)
-    ks_statistics = torch.max(studentized_deviations, dim=1).values
+        studentized_signed = torch.zeros_like(signed_deviations)
+
+        # Normal points
+        normal_mask = ~low_var_mask
+        if normal_mask.any():
+            studentized_signed[:, normal_mask] = (
+                signed_deviations[:, normal_mask] / bootstrap_std[normal_mask]
+            )
+
+        # Low variance points
+        if low_var_mask.any():
+            low_devs = signed_deviations[:, low_var_mask]
+            # If dev is tiny, 0; else scale by epsilon
+            studentized_signed[:, low_var_mask] = torch.where(
+                torch.abs(low_devs) < epsilon,
+                torch.zeros_like(low_devs),
+                low_devs / epsilon,
+            )
+
+        studentized_abs = torch.abs(studentized_signed)
 
     # Step 4: Curve Retention
     if retention_method == "symmetric":
-        # === Symmetric Tail Trimming ===
-        # Instead of absolute deviations, use signed deviations to trim each tail
-        # This fixes asymmetric alpha mass when TPR is near boundaries (e.g., high AUC)
+        # Trim tails separately
+        max_above = studentized_signed.max(dim=1).values
+        max_below = studentized_signed.min(dim=1).values
 
-        # Compute signed studentized deviations (not absolute)
-        signed_deviations = boot_tpr - empirical_tpr.unsqueeze(0)  # (B, K)
+        upper_thresh = torch.quantile(max_above, 1.0 - alpha / 2)
+        lower_thresh = torch.quantile(max_below, alpha / 2)
 
-        # Studentize the signed deviations
-        signed_studentized = torch.zeros_like(signed_deviations)
-        if normal_mask.any():
-            signed_studentized[:, normal_mask] = (
-                signed_deviations[:, normal_mask] / bootstrap_std[normal_mask]
-            )
-        if low_var_mask.any():
-            # For low variance points, use epsilon as denominator
-            signed_studentized[:, low_var_mask] = (
-                signed_deviations[:, low_var_mask] / epsilon
-            )
+        retained_mask = (max_above <= upper_thresh) & (max_below >= lower_thresh)
 
-        # For each curve: max deviation upward and max deviation downward
-        max_above = signed_studentized.max(dim=1).values  # Most positive
-        max_below = signed_studentized.min(dim=1).values  # Most negative
+    else:  # "ks" (default)
+        # Trim based on max absolute deviation
+        ks_statistics = torch.max(studentized_abs, dim=1).values
 
-        # Trim α/2 from curves that go too far up
-        upper_threshold = torch.quantile(max_above, 1.0 - alpha / 2)
-        # Trim α/2 from curves that go too far down
-        lower_threshold = torch.quantile(max_below, alpha / 2)
-
-        # Retain curves that don't exceed either threshold
-        retained_mask = (max_above <= upper_threshold) & (max_below >= lower_threshold)
-
-    else:
-        # === Original KS-based Retention ===
         n_retain = int(np.floor((1 - alpha) * n_bootstrap))
-
-        # Get threshold (n_retain-th order statistic)
         ks_sorted = torch.sort(ks_statistics).values
         threshold = ks_sorted[n_retain - 1] if n_retain > 0 else float("inf")
 
-        # Identify retained curves
         retained_mask = ks_statistics <= threshold
 
-    retained_curves = boot_tpr[retained_mask]
-
     # Step 5: Envelope Construction
-    lower_envelope = torch.min(retained_curves, dim=0).values
-    upper_envelope = torch.max(retained_curves, dim=0).values
+    if use_logit:
+        # Construct envelope in Logit Space
+        retained_logits = logit_boot_tpr[retained_mask]
+        lower_logit = torch.min(retained_logits, dim=0).values
+        upper_logit = torch.max(retained_logits, dim=0).values
 
-    # Step 5b: Apply variance floor to envelopes
-    # Ensure minimum envelope width at boundaries where bootstrap collapses
-    if boundary_method not in ("none", "ks"):
-        sigma_floor = torch.sqrt(variance_floor)
-        # Upper band should be at least center + floor half-width
-        upper_envelope = torch.maximum(upper_envelope, empirical_tpr + sigma_floor)
-        # Lower band should be at most center - floor half-width
-        lower_envelope = torch.minimum(lower_envelope, empirical_tpr - sigma_floor)
+        # Back-transform to Probability Space
+        lower_envelope = torch.sigmoid(lower_logit)
+        upper_envelope = torch.sigmoid(upper_logit)
+
+    else:
+        # Construct envelope in Probability Space
+        retained_curves = boot_tpr[retained_mask]
+        lower_envelope = torch.min(retained_curves, dim=0).values
+        upper_envelope = torch.max(retained_curves, dim=0).values
+
+        # Apply variance floor to envelope widths (only for standard path)
+        if boundary_method not in ("none", "ks"):
+            sigma_floor = torch.sqrt(variance_floor)
+            upper_envelope = torch.maximum(upper_envelope, empirical_tpr + sigma_floor)
+            lower_envelope = torch.minimum(lower_envelope, empirical_tpr - sigma_floor)
 
     # Step 6: Clip to [0, 1]
     lower_envelope = torch.clamp(lower_envelope, 0.0, 1.0)
@@ -371,11 +382,23 @@ def envelope_bootstrap_band(
 
     # Generate diagnostic plots if requested
     if plot:
+        # Diagnostic plotting (unchanged logic, just casting)
+        # Note: 'bootstrap_var' might not be defined in logit path, so we mock it for viz
+        if use_logit:
+            # Create a pseudo-variance for visualization based on logit SE projected back
+            # Delta_p approx p(1-p) * Delta_logit
+            p = empirical_tpr
+            deriv = p * (1 - p)
+            # This is just for the plot diagnostic
+            bootstrap_var_np = torch_to_numpy((std_dev * deriv) ** 2).astype(dtype)
+            variance_floor_np = np.zeros_like(bootstrap_var_np)
+        else:
+            bootstrap_var_np = torch_to_numpy(bootstrap_var).astype(dtype)
+            variance_floor_np = torch_to_numpy(variance_floor).astype(dtype)
+
         try:
             empirical_tpr_np = torch_to_numpy(empirical_tpr).astype(dtype)
             boot_tpr_np = torch_to_numpy(boot_tpr).astype(dtype)
-            bootstrap_var_np = torch_to_numpy(bootstrap_var).astype(dtype)
-            variance_floor_np = torch_to_numpy(variance_floor).astype(dtype)
 
             # Determine method name for title
             if plot_title is None:
