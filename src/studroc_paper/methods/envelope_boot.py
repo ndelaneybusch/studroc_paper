@@ -228,6 +228,8 @@ def envelope_bootstrap_band(
     # Step 0: Compute empirical ROC
     empirical_tpr = _compute_empirical_roc(y_true_t, y_score_t, fpr)
 
+    z_alpha = (2.0**0.5) * torch.erfinv(torch.tensor(1.0 - alpha)).item()
+
     if use_logit:
         # --- PATH A: LOGIT SPACE ENVELOPE ---
         # 1. Transform everything to Haldane-corrected Logit Space
@@ -271,8 +273,6 @@ def envelope_bootstrap_band(
         bootstrap_var = bootstrap_std.pow(2)
 
         # 2. Apply Variance Floors (Boundary Methods)
-        z_alpha = (2.0**0.5) * torch.erfinv(torch.tensor(1.0 - alpha)).item()
-
         if boundary_method == "wilson":
             variance_floor = (
                 wilson_halfwidth_squared_torch(empirical_tpr, n_pos, z_alpha)
@@ -363,8 +363,12 @@ def envelope_bootstrap_band(
         # Apply variance floor to envelope widths (only for standard path)
         if boundary_method not in ("none", "ks"):
             sigma_floor = torch.sqrt(variance_floor)
-            upper_envelope = torch.maximum(upper_envelope, empirical_tpr + sigma_floor)
-            lower_envelope = torch.minimum(lower_envelope, empirical_tpr - sigma_floor)
+            upper_envelope = torch.maximum(
+                upper_envelope, empirical_tpr + sigma_floor * z_alpha
+            )
+            lower_envelope = torch.minimum(
+                lower_envelope, empirical_tpr - sigma_floor * z_alpha
+            )
 
     # Step 6: Clip to [0, 1]
     lower_envelope = torch.clamp(lower_envelope, 0.0, 1.0)
