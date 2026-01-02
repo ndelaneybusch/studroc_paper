@@ -81,12 +81,14 @@ def reconstruct_ranks(
 
 
 def generate_bootstrap_grid(
-    fpr: Tensor,
-    tpr: Tensor,
-    n_negatives: int,
-    n_positives: int,
-    B: int,
-    grid: Tensor,
+    fpr: Tensor | None = None,
+    tpr: Tensor | None = None,
+    n_negatives: int | None = None,
+    n_positives: int | None = None,
+    y_true: Tensor | None = None,
+    y_score: Tensor | None = None,
+    B: int = None,
+    grid: Tensor = None,
     device: torch.device | None = None,
     batch_size: int = 500,
 ) -> Tensor:
@@ -96,11 +98,17 @@ def generate_bootstrap_grid(
     Efficiently computes the ROC values at specified grid points without
     generating the full empirical ROC for each bootstrap sample.
 
+    Supports two usage patterns:
+    A) Provide fpr, tpr, n_negatives, n_positives (reconstructs ranks from ROC curve)
+    B) Provide y_true, y_score (uses scores directly, bypassing reconstruction)
+
     Args:
-        fpr: Empirical FPR coordinates (sorted).
-        tpr: Empirical TPR coordinates (sorted).
-        n_negatives: Number of negative samples (n0).
-        n_positives: Number of positive samples (n1).
+        fpr: Empirical FPR coordinates (sorted). Required for path A.
+        tpr: Empirical TPR coordinates (sorted). Required for path A.
+        n_negatives: Number of negative samples (n0). Required for path A.
+        n_positives: Number of positive samples (n1). Required for path A.
+        y_true: True binary labels (0 or 1). Required for path B.
+        y_score: Predicted scores or probabilities. Required for path B.
         B: Number of bootstrap replicates.
         grid: Uniform evaluation grid for FPR (1D tensor).
         device: Target device. If None, uses CUDA if available.
@@ -112,12 +120,47 @@ def generate_bootstrap_grid(
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    fpr = fpr.to(device)
-    tpr = tpr.to(device)
+    # Validate inputs
+    path_a = (
+        fpr is not None
+        and tpr is not None
+        and n_negatives is not None
+        and n_positives is not None
+    )
+    path_b = y_true is not None and y_score is not None
+
+    if not (path_a or path_b):
+        raise ValueError(
+            "Must provide either (fpr, tpr, n_negatives, n_positives) or (y_true, y_score)"
+        )
+    if path_a and path_b:
+        raise ValueError(
+            "Cannot provide both (fpr, tpr, n_negatives, n_positives) and (y_true, y_score)"
+        )
+
     grid = grid.to(device)
 
-    # 1. Reconstruct Ranks
-    pos_ranks, neg_ranks = reconstruct_ranks(fpr, tpr, n_negatives, n_positives, device)
+    # 1. Get positive and negative values
+    if path_b:
+        # Path B: Direct from scores
+        y_true = y_true.to(device)
+        y_score = y_score.to(device)
+
+        pos_mask = y_true == 1
+        neg_mask = y_true == 0
+
+        pos_values = y_score[pos_mask]
+        neg_values = y_score[neg_mask]
+
+        n_positives = len(pos_values)
+        n_negatives = len(neg_values)
+    else:
+        # Path A: Reconstruct ranks from ROC curve
+        fpr = fpr.to(device)
+        tpr = tpr.to(device)
+        pos_values, neg_values = reconstruct_ranks(
+            fpr, tpr, n_negatives, n_positives, device
+        )
 
     # Prepare Output
     tpr_boot_list = []
@@ -136,13 +179,17 @@ def generate_bootstrap_grid(
         # --- Bootstrap Negatives (Y_star) ---
         # Sample
         idx_neg = torch.randint(0, n_negatives, (current_B, n_negatives), device=device)
-        Y_star = neg_ranks[idx_neg]
+        Y_star = neg_values[idx_neg]
 
         # Sort Descending (Highest Rank/Score first)
         Y_star, _ = torch.sort(Y_star, dim=1, descending=True)
 
-        # Pad with -1 sentinel for the FPR=1.0 case (accept all)
-        sentinel = torch.full((current_B, 1), -1, device=device, dtype=Y_star.dtype)
+        # Pad with sentinel for the FPR=1.0 case (accept all)
+        # Use -inf for scores (path B) or -1 for ranks (path A)
+        sentinel_value = float("-inf") if path_b else -1
+        sentinel = torch.full(
+            (current_B, 1), sentinel_value, device=device, dtype=Y_star.dtype
+        )
         Y_star = torch.cat([Y_star, sentinel], dim=1)
 
         # Extract Thresholds
@@ -154,7 +201,7 @@ def generate_bootstrap_grid(
         # --- Bootstrap Positives (X_star) ---
         # Sample
         idx_pos = torch.randint(0, n_positives, (current_B, n_positives), device=device)
-        X_star = pos_ranks[idx_pos]
+        X_star = pos_values[idx_pos]
 
         # Sort Ascending for searchsorted
         X_star, _ = torch.sort(X_star, dim=1, descending=False)
