@@ -2,7 +2,7 @@
 
 ## Abstract
 
-We present a nonparametric method for constructing simultaneous confidence bands (SCB) for the **true population** ROC curve using a studentized bootstrap envelope. The method retains the $(1-\alpha)$ fraction of bootstrap curves most consistent with the empirical ROC (using either studentized Kolmogorov-Smirnov statistics or symmetric tail trimming) and returns their pointwise envelope. The resulting band is asymmetric, adapts to local variance (incorporating a Wilson-score floor for stability), and inherits the step-function structure of the empirical ROC.
+We present a nonparametric method for constructing simultaneous confidence bands (SCB) for the **true population** ROC curve using a studentized bootstrap envelope. The method retains the $(1-\alpha)$ fraction of bootstrap curves most consistent with the empirical ROC (using either studentized Kolmogorov-Smirnov statistics or symmetric tail trimming) and returns their pointwise envelope. The resulting band is asymmetric, adapts to local variance (incorporating a variance floor for stability), and inherits the step-function structure of the empirical ROC.
 
 ---
 
@@ -54,17 +54,35 @@ For $b = 1, \ldots, B$:
 ### 2.4 Variance Estimation
 
 For each $t \in \mathcal{T}$:
-$$\hat{\sigma}_{boot}(t) = \sqrt{\frac{1}{B-1} \sum_{b=1}^{B}\left(R_b(t) - \bar{R}(t)\right)^2}$$
+$$\hat{\sigma}_{boot}^2(t) = \frac{1}{B-1} \sum_{b=1}^{B}\left(R_b(t) - \bar{R}(t)\right)^2$$
 
 where $\bar{R}(t) = \frac{1}{B}\sum_b R_b(t)$.
 
-**Wilson Score Variance Floor:**
-At boundaries (FPR near 0 or 1), the bootstrap distribution often collapses to a single value, yielding $\hat{\sigma}_{boot}(t) \approx 0$. This causes instability in studentization. To address this, we impose a minimum variance floor based on the Wilson score interval for a binomial proportion $p = \hat{R}(t)$ (the empirical TPR) with sample size $n_{pos}$:
+**Variance Floor:**
+At boundaries (FPR near 0 or 1), the bootstrap distribution often collapses to a single value, yielding $\hat{\sigma}_{boot}(t) \approx 0$. This causes instability in studentization. We support multiple methods for imposing a minimum variance floor:
 
-$$\sigma^2_{wilson}(p) = \left( \frac{z \sqrt{p(1-p)/n_{pos} + z^2/(4n_{pos}^2)}}{1 + z^2/n_{pos}} \right)^2$$
+**Option 1: Wilson Score Variance Floor (`boundary_method="wilson"`)**
 
-where $z$ is the normal quantile for $(1-\alpha/2)$. The final standard deviation used for studentization is:
-$$\hat{\sigma}(t) = \sqrt{\max\left(\hat{\sigma}^2_{boot}(t), \sigma^2_{wilson}(\hat{R}(t))\right)}$$
+Based on the Wilson score interval for a binomial proportion $p = \hat{R}(t)$ with sample size $n_1$:
+
+$$\sigma^2_{wilson}(p) = \frac{1}{(1 + z^2/n_1)^2} \cdot \left(\frac{p(1-p)}{n_1} + \frac{z^2}{4n_1^2}\right)$$
+
+where $z = \Phi^{-1}(1-\alpha/2)$ is the normal quantile.
+
+**Option 2: Hsieh-Turnbull Asymptotic Variance (`boundary_method="reflected_kde"` or `"log_concave"`)**
+
+Uses the asymptotic variance formula from Hsieh & Turnbull (1996):
+
+$$\text{Var}(R(t)) = \frac{R(t)(1-R(t))}{n_1} + \left(\frac{g(c_t)}{f(c_t)}\right)^2 \cdot \frac{t(1-t)}{n_0}$$
+
+where $c_t$ is the threshold corresponding to FPR $= t$, and $f$, $g$ are the score densities for negatives and positives respectively. Densities are estimated via:
+- `reflected_kde`: Reflected kernel density estimation with ISJ bandwidth selection
+- `log_concave`: Log-concave MLE via convex optimization
+
+**Variance Floor Application:**
+
+The final variance used for studentization is:
+$$\hat{\sigma}^2(t) = \max\left(\hat{\sigma}^2_{boot}(t), \sigma^2_{floor}(t)\right)$$
 
 ### 2.5 Studentized KS Statistics
 
@@ -75,16 +93,16 @@ We define a regularization parameter $\epsilon = \min(1/N, 10^{-6})$, where $N =
 
 **Studentization with Low-Variance Handling:**
 For each bootstrap curve $b$, we compute the pointwise studentized deviation $z_b(t)$.
-1. Calculate absolute deviation: $\delta_b(t) = |R_b(t) - \hat{R}(t)|$.
+1. Calculate signed deviation: $\delta_b(t) = R_b(t) - \hat{R}(t)$.
 2. **Normal Case:** If $\hat{\sigma}(t) \geq \epsilon$:
    $$z_b(t) = \frac{\delta_b(t)}{\hat{\sigma}(t)}$$
 3. **Low-Variance Case:** If $\hat{\sigma}(t) < \epsilon$ (variance is effectively zero):
    $$z_b(t) = \begin{cases} 
-   0 & \text{if } \delta_b(t) < \epsilon \text{ (noise)} \\
-   \frac{\delta_b(t)}{\epsilon} & \text{if } \delta_b(t) \geq \epsilon \text{ (significant shift)}
+   0 & \text{if } |\delta_b(t)| < \epsilon \text{ (noise)} \\
+   \frac{\delta_b(t)}{\epsilon} & \text{if } |\delta_b(t)| \geq \epsilon \text{ (significant shift)}
    \end{cases}$$
 
-For each curve, the global statistic is $Z_b = \sup_{t \in \mathcal{T}} z_b(t)$.
+For each curve, the global statistic is $Z_b = \sup_{t \in \mathcal{T}} |z_b(t)|$.
 
 
 ### 2.6 Curve Retention
@@ -100,26 +118,58 @@ where $Z_{(k)}$ is the $k$-th order statistic. This creates a band of "most typi
 The standard KS method can be asymmetric at boundaries (e.g., at high AUC, curves can't deviate upward past 1, but can deviate downward). To ensure balanced tail coverage:
 1. Compute *signed* studentized deviations: $s_b(t)$ using the signed difference $(R_b(t) - \hat{R}(t))$ in the numerator.
 2. For each curve $b$, find its max upward deviation $M^+_b = \sup_t s_b(t)$ and max downward deviation $M^-_b = \inf_t s_b(t)$.
-3. Determine thresholds $q_{up}$ and $q_{down}$ such that $\alpha/2$ of curves exceed $q_{up}$ and $\alpha/2$ fall below $q_{down}$.
+3. Determine thresholds $q_{up}$ and $q_{down}$ as the $(1-\alpha/2)$ and $(\alpha/2)$ quantiles of $M^+$ and $M^-$ respectively.
 4. Retain curves that satisfy:
    $$M^-_b \geq q_{down} \quad \text{AND} \quad M^+_b \leq q_{up}$$
 
 This method explicitly trims the most extreme $\alpha/2$ upward excursions and $\alpha/2$ downward excursions.
 
-### 2.7 Envelope Construction & Boundary Handling
+### 2.7 Envelope Construction
 
 Compute the pointwise min and max of the retained curves $\mathcal{R}_\alpha$:
 $$L(t) = \min_{R_b \in \mathcal{R}_\alpha} R_b(t)$$
 $$U(t) = \max_{R_b \in \mathcal{R}_\alpha} R_b(t)$$
 
+**Envelope Width Extension:**
+When using a variance floor (i.e., `boundary_method` is not `"none"` or `"ks"`), the envelope is extended to ensure minimum width based on the variance floor:
+$$U(t) \leftarrow \max\left(U(t), \hat{R}(t) + \sigma_{floor}(t)\right)$$
+$$L(t) \leftarrow \min\left(L(t), \hat{R}(t) - \sigma_{floor}(t)\right)$$
+
+This guarantees the band is at least as wide as the theoretical minimum uncertainty even when retained bootstrap curves happen to cluster tightly.
+
+### 2.8 Boundary Handling
+
+**Clipping:**
+Clip all values to $[0, 1]$.
+
 **Boundary Enforcement:**
 We explicitly enforce that the confidence band respects logical ROC constraints:
 - $L(0) = 0$
 - $U(1) = 1$
-- Clip all values to $[0, 1]$.
 
 **KS-Style Boundary Extension (Optional, `boundary_method="ks"`):**
 In regions where bootstrap variance collapses completely (near corners), we can optionally extend the band using fixed width margins derived from the analytical Kolmogorov-Smirnov distribution (Campbell 1994). This connects the computed bootstrap envelope to the corners (0,0) and (1,1) with a theoretical worst-case slope.
+
+---
+
+## 2.9 Logit Space Construction (Optional)
+
+As an alternative to probability space, the entire procedure can be performed in logit space (`use_logit=True`). This stabilizes variance across the ROC curve, particularly at boundaries where TPR is near 0 or 1.
+
+**Haldane-Anscombe Correction:**
+To handle boundary values, we apply a continuity correction before the logit transform:
+$$\text{logit}_{H}(p) = \log\left(\frac{k + 0.5}{n_1 - k + 0.5}\right)$$
+where $k = p \cdot n_1$ is the count of true positives.
+
+**Procedure:**
+1. Transform empirical and bootstrap TPR values to logit space using the Haldane correction
+2. Compute bootstrap standard deviation in logit space
+3. Studentize deviations in logit space
+4. Apply retention rule (KS or symmetric)
+5. Construct envelope in logit space
+6. Back-transform to probability space via sigmoid: $p = \sigma(\text{logit}) = 1/(1 + e^{-\text{logit}})$
+
+**Note:** When using logit space, boundary methods `"wilson"`, `"reflected_kde"`, and `"log_concave"` are not applied (variance floors are computed in probability space). Use `boundary_method="none"` or `"ks"` with the logit path.
 
 ---
 
@@ -257,20 +307,26 @@ Otherwise, use the **Uniform Grid** with $B_{\text{opt}}$ and $K_{\text{opt}}$ t
 ```
 FUNCTION envelope_scb(scores_neg, scores_pos, B, alpha, 
                       grid="full", boundary_method="wilson", 
-                      retention_method="ks"):
+                      retention_method="ks", use_logit=False):
     
     # ... [Steps 1-4: Empirical ROC, Bootstrap, Grid Evaluation as before] ...
     
     # === Step 5: Variance Estimation ===
-    sigma_T = []
-    FOR i = 1 TO |T|:
-        sd_boot = std([R_boot_T[b][i] for b in 1:B])
-        IF boundary_method == "wilson":
-            p = R_hat_T[i]
-            sd_wilson = wilson_score_sd(p, n_pos, alpha)
-            sigma_T.append(max(sd_boot, sd_wilson))
-        ELSE:
-            sigma_T.append(sd_boot)
+    bootstrap_var = var([R_boot_T[b] for b in 1:B], axis=0)
+    
+    IF boundary_method == "wilson":
+        z = normal_quantile(1 - alpha/2)
+        denom = 1 + z^2 / n_pos
+        variance_floor = (1/denom^2) * (R_hat_T * (1 - R_hat_T) / n_pos + z^2 / (4 * n_pos^2))
+    ELSE IF boundary_method in ("reflected_kde", "log_concave"):
+        variance_floor = hsieh_turnbull_variance(scores_neg, scores_pos, T, method=boundary_method)
+    ELSE:
+        variance_floor = zeros(|T|)
+    
+    IF boundary_method NOT IN ("none", "ks"):
+        bootstrap_var = maximum(bootstrap_var, variance_floor)
+    
+    sigma_T = sqrt(bootstrap_var)
     
     # === Step 6: Studentized Statistics ===
     epsilon = min(1 / (n0 + n1), 1e-6)
@@ -282,7 +338,6 @@ FUNCTION envelope_scb(scores_neg, scores_pos, B, alpha,
             max_pos = -inf, min_neg = inf
             FOR i = 1 TO |T|:
                 diff = R_boot_T[b][i] - R_hat_T[i]
-                # Apply epsilon/sigma logic to diff...
                 z_val = studentize(diff, sigma_T[i], epsilon)
                 max_pos = max(max_pos, z_val)
                 min_neg = min(min_neg, z_val)
@@ -300,7 +355,8 @@ FUNCTION envelope_scb(scores_neg, scores_pos, B, alpha,
             max_dev = max_over_t(abs(studentize(diff, sigma_T[i], epsilon)))
             Z.append(max_dev)
         
-        threshold = quantile(Z, 1 - alpha)
+        n_retain = ceil((1 - alpha) * B)
+        threshold = sorted(Z)[n_retain - 1]
         retained = [b for b in 1:B if Z[b] <= threshold]
     
     # === Step 7: Envelope ===
@@ -309,6 +365,12 @@ FUNCTION envelope_scb(scores_neg, scores_pos, B, alpha,
         vals = [R_boot_T[b][i] for b in retained]
         L.append(min(vals))
         U.append(max(vals))
+    
+    # === Step 7b: Envelope Width Extension ===
+    IF boundary_method NOT IN ("none", "ks"):
+        sigma_floor = sqrt(variance_floor)
+        U = maximum(U, R_hat_T + sigma_floor)
+        L = minimum(L, R_hat_T - sigma_floor)
     
     # === Step 8: Boundaries ===
     L = clip(L, 0, 1), U = clip(U, 0, 1)
@@ -319,4 +381,3 @@ FUNCTION envelope_scb(scores_neg, scores_pos, B, alpha,
         
     RETURN T, L, U
 ```
-
