@@ -16,8 +16,8 @@ We present a nonparametric method for constructing simultaneous confidence bands
 - A3: Higher scores indicate positive class
 - A4: Finite variance of TPR at any fixed FPR
 
-**Target:** Construct $\mathcal{B}_\alpha(t) = [L(t), U(t)]$ such that:
-$$P\left(\forall t \in [0,1]: R_{true}(t) \in \mathcal{B}_\alpha(t)\right) \geq 1 - \alpha$$
+**Target:** Construct $\mathcal{B}_\alpha(t) = [L(t), U(t)]$ such that: 
+$$P\left(\forall t \in [0,1]: R_{\text{true}}(t) \in \mathcal{B}_\alpha(t)\right) \geq 1 - \alpha$$
 
 ---
 
@@ -53,8 +53,8 @@ For $b = 1, \ldots, B$:
 
 ### 2.4 Variance Estimation
 
-For each $t \in \mathcal{T}$:
-$$\hat{\sigma}_{boot}^2(t) = \frac{1}{B-1} \sum_{b=1}^{B}\left(R_b(t) - \bar{R}(t)\right)^2$$
+For each $t \in T$: 
+$$\hat{\sigma}_{\text{boot}}^2(t) = \frac{1}{B-1} \sum_{b=1}^{B} \left(R_b(t) - \bar{R}(t)\right)^2$$
 
 where $\bar{R}(t) = \frac{1}{B}\sum_b R_b(t)$.
 
@@ -96,11 +96,11 @@ For each bootstrap curve $b$, we compute the pointwise studentized deviation $z_
 1. Calculate signed deviation: $\delta_b(t) = R_b(t) - \hat{R}(t)$.
 2. **Normal Case:** If $\hat{\sigma}(t) \geq \epsilon$:
    $$z_b(t) = \frac{\delta_b(t)}{\hat{\sigma}(t)}$$
-3. **Low-Variance Case:** If $\hat{\sigma}(t) < \epsilon$ (variance is effectively zero):
-   $$z_b(t) = \begin{cases} 
-   0 & \text{if } |\delta_b(t)| < \epsilon \text{ (noise)} \\
-   \frac{\delta_b(t)}{\epsilon} & \text{if } |\delta_b(t)| \geq \epsilon \text{ (significant shift)}
-   \end{cases}$$
+3. **Low-Variance Case:** If $\hat{\sigma}(t) < \epsilon$ (variance is effectively zero): 
+    $$z_b(t) = \begin{cases} 
+    0 & \text{if } |\delta_b(t)| < \epsilon \text{ (noise)} \\ 
+    \frac{\delta_b(t)}{\epsilon} & \text{if } |\delta_b(t)| \geq \epsilon \text{ (significant shift)} 
+    \end{cases}$$
 
 For each curve, the global statistic is $Z_b = \sup_{t \in \mathcal{T}} |z_b(t)|$.
 
@@ -111,7 +111,7 @@ We support two methods for determining which curves to retain.
 
 **Option A: Original KS Retention (`retention_method="ks"`)**
 Retain the $(1-\alpha)$ fraction of curves with the smallest maximum absolute studentized deviation $Z_b$.
-$$\mathcal{R}_\alpha = \left\{R_b : Z_b \leq Z_{(\lceil(1-\alpha)B\rceil)}\right\}$$
+$$\mathcal{R}_\alpha = \left\{ R_b : Z_b \leq Z_{(\lceil (1-\alpha)B \rceil)} \right\}$$
 where $Z_{(k)}$ is the $k$-th order statistic. This creates a band of "most typical" curves in terms of global shape deviation.
 
 **Option B: Symmetric Retention (`retention_method="symmetric"`)**
@@ -120,7 +120,7 @@ The standard KS method can be asymmetric at boundaries (e.g., at high AUC, curve
 2. For each curve $b$, find its max upward deviation $M^+_b = \sup_t s_b(t)$ and max downward deviation $M^-_b = \inf_t s_b(t)$.
 3. Determine thresholds $q_{up}$ and $q_{down}$ as the $(1-\alpha/2)$ and $(\alpha/2)$ quantiles of $M^+$ and $M^-$ respectively.
 4. Retain curves that satisfy:
-   $$M^-_b \geq q_{down} \quad \text{AND} \quad M^+_b \leq q_{up}$$
+   $$M^{-}_{b} \geq q_{\text{down}} \quad \text{AND} \quad M^{+}_{b} \leq q_{\text{up}}$$
 
 This method explicitly trims the most extreme $\alpha/2$ upward excursions and $\alpha/2$ downward excursions.
 
@@ -252,22 +252,24 @@ The envelope boundaries $L(t)$ and $U(t)$ are step functions with jumps at a sub
 ### 4.1 Complexity
 
 | Operation | Cost |
-|-----------|------|
+| :--- | :--- |
 | Empirical ROC | $O(N \log N)$ |
 | Bootstrap ROCs | $O(B \cdot N \log N)$ |
-| Grid evaluation | $O(B \cdot |\mathcal{T}|)$ |
-| Variance estimation | $O(B \cdot |\mathcal{T}|)$ |
-| KS statistics | $O(B \cdot |\mathcal{T}|)$ |
+| Grid evaluation | $O(B \cdot G)$ |
+| Variance estimation | $O(B \cdot G)$ |
+| KS statistics | $O(B \cdot G)$ |
 | Sorting $Z_b$ | $O(B \log B)$ |
-| Envelope | $O((1-\alpha)B \cdot |\mathcal{T}|)$ |
+| Envelope | $O(B \cdot G)$ |
 
-**Total:** $O(B \cdot N \log N + B \cdot |\mathcal{T}|)$
+**Total:** $O(B \cdot N \log N + B \cdot G)$
 
-### 4.2 Memory
+Where $G = |\mathcal{T}|$ is the number of grid points.
 
-Primary storage: $B \times |\mathcal{T}|$ matrix of curve evaluations.
+### 4.2 MemoryS
 
-For FP32: Memory $= 4 \cdot B \cdot |\mathcal{T}|$ bytes.
+Primary storage: $B \times G$ matrix of curve evaluations.
+
+For FP32: Memory $= 4 \cdot B \cdot G$ bytes.
 
 ### 4.3 Budget Allocation
 
