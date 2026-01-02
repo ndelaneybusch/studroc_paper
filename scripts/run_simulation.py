@@ -442,25 +442,24 @@ def run_single_simulation(
     y_score = np.concatenate([scores_pos, scores_neg])
     y_score = y_score.astype(dtype)
 
-    # generate bootstraps
-    fpr, tpr, _ = roc_curve(y_true, y_score)
-    tpr = tpr.astype(dtype)
+    # Convert to torch for bootstrap generation
+    y_true_torch = torch.from_numpy(y_true)
+    y_score_torch = torch.from_numpy(y_score)
+    fpr_grid_torch = torch.from_numpy(fpr_grid)
 
-    # convert to torch
-    fpr = torch.from_numpy(fpr)
-    tpr = torch.from_numpy(tpr)
-    fpr_grid = torch.from_numpy(fpr_grid)
-
+    # Generate bootstraps using direct y_true/y_score path
     boot_tpr_matrix = generate_bootstrap_grid(
-        fpr=fpr,
-        tpr=tpr,
-        n_negatives=n_neg,
-        n_positives=n_pos,
+        y_true=y_true_torch,
+        y_score=y_score_torch,
         B=B,
-        grid=fpr_grid,
+        grid=fpr_grid_torch,
         device=None,
         batch_size=500,
     )
+
+    # Compute ROC curve for band methods that need it
+    fpr, tpr, _ = roc_curve(y_true, y_score)
+    tpr = tpr.astype(dtype)
 
     # Evaluate each method at each confidence level
     results = {
