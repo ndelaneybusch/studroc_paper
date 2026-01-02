@@ -49,8 +49,6 @@ def _haldane_logit(tpr: Tensor, n_pos: int) -> Tensor:
     return torch.log((k + 0.5) / (n_pos - k + 0.5))
 
 
-
-
 def _extend_boundary_ks_style(
     fpr_grid: Tensor,
     lower_envelope: Tensor,
@@ -87,9 +85,9 @@ def _extend_boundary_ks_style(
     alpha_adj = 1.0 - math.sqrt(1.0 - alpha)
     c_alpha = math.sqrt(-0.5 * math.log(alpha_adj / 2))
 
-    d = c_alpha / math.sqrt(n_pos)  # Vertical margin for TPR
-    # Note: horizontal margin e = c_alpha / sqrt(n_neg) is not used here
-    # because we only extend vertically (TPR), not horizontally (FPR)
+    # Effective sample size for two-sample KS test
+    n_eff = (n_pos * n_neg) / (n_pos + n_neg)
+    d = c_alpha / math.sqrt(n_eff)  # Vertical margin for TPR
 
     # Find where the band is degenerate (bootstrap variance ~= 0)
     band_width = upper_envelope - lower_envelope
@@ -276,8 +274,9 @@ def envelope_bootstrap_band(
         z_alpha = (2.0**0.5) * torch.erfinv(torch.tensor(1.0 - alpha)).item()
 
         if boundary_method == "wilson":
-            variance_floor = wilson_halfwidth_squared_torch(
-                empirical_tpr, n_pos, z_alpha
+            variance_floor = (
+                wilson_halfwidth_squared_torch(empirical_tpr, n_pos, z_alpha)
+                / z_alpha**2
             )
         elif boundary_method in ("reflected_kde", "kde", "log_concave"):
             neg_np = torch_to_numpy(y_score_t[y_true_t == 0])
