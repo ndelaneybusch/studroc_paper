@@ -49,12 +49,6 @@ def _haldane_logit(tpr: Tensor, n_pos: int) -> Tensor:
     return torch.log((k + 0.5) / (n_pos - k + 0.5))
 
 
-def _logit_std_error(tpr: Tensor, n_pos: int) -> Tensor:
-    """Compute asymptotic standard error in Haldane-corrected logit space."""
-    k = tpr * n_pos
-    p_hat = (k + 0.5) / (n_pos + 1.0)
-    p_hat = torch.clamp(p_hat, 1e-6, 1.0 - 1e-6)
-    return torch.sqrt(1.0 / (n_pos * p_hat * (1.0 - p_hat)))
 
 
 def _extend_boundary_ks_style(
@@ -242,22 +236,36 @@ def envelope_bootstrap_band(
         logit_tpr_hat = _haldane_logit(empirical_tpr, n_pos)
         logit_boot_tpr = _haldane_logit(boot_tpr, n_pos)
 
-        # 2. Compute Analytic Standard Error (Studentization Denominator)
-        # In logit space, we use the analytic asymptotic SE for stability
-        std_dev = _logit_std_error(empirical_tpr, n_pos)
+        # 2. Compute Bootstrap Standard Deviation in Logit Space
+        std_dev = torch.std(logit_boot_tpr, dim=0, correction=1)
 
         # 3. Compute Signed Deviations in Logit Space
-        # (B, K) matrix
         signed_deviations = logit_boot_tpr - logit_tpr_hat.unsqueeze(0)
 
         # 4. Studentize
-        studentized_signed = signed_deviations / std_dev.unsqueeze(0)
+        epsilon = min(1.0 / n_total, 1e-6)
+        low_var_mask = std_dev < epsilon
+
+        studentized_signed = torch.zeros_like(signed_deviations)
+
+        # Normal points
+        normal_mask = ~low_var_mask
+        if normal_mask.any():
+            studentized_signed[:, normal_mask] = (
+                signed_deviations[:, normal_mask] / std_dev[normal_mask]
+            )
+
+        # Low variance points
+        if low_var_mask.any():
+            low_devs = signed_deviations[:, low_var_mask]
+            studentized_signed[:, low_var_mask] = torch.where(
+                torch.abs(low_devs) < epsilon,
+                torch.zeros_like(low_devs),
+                low_devs / epsilon,
+            )
 
         # Prepare for retention (absolute deviations for KS)
         studentized_abs = torch.abs(studentized_signed)
-
-        # Logit path inherently handles variance floor, so we skip explicit floors.
-        # We perform retention logic on the 'studentized_signed'/'studentized_abs' vars below.
     else:
         # --- PATH B: PROBABILITY SPACE ENVELOPE ---
         # 1. Compute Bootstrap Std (Empirical)
