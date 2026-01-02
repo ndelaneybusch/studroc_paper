@@ -16,7 +16,8 @@ We present a nonparametric method for constructing simultaneous confidence bands
 - A3: Higher scores indicate positive class
 - A4: Finite variance of TPR at any fixed FPR
 
-**Target:** Construct $\mathcal{B}_\alpha(t) = [L(t), U(t)]$ such that: 
+**Target:** Construct $\mathcal{B}_\alpha(t) = [L(t), U(t)]$ such that:
+
 $$P\left(\forall t \in [0,1]: R_{\text{true}}(t) \in \mathcal{B}_\alpha(t)\right) \geq 1 - \alpha$$
 
 ---
@@ -54,6 +55,7 @@ For $b = 1, \ldots, B$:
 ### 2.4 Variance Estimation
 
 For each $t \in \mathcal{T}$:
+
 $$\hat{\sigma}_{\text{boot}}^2(t) = \frac{1}{B-1} \sum_{b=1}^{B} \left(R_b(t) - \bar{R}(t)\right)^2$$
 
 where $\bar{R}(t) = \frac{1}{B}\sum_b R_b(t)$.
@@ -82,6 +84,7 @@ where $c_t$ is the threshold corresponding to FPR $= t$, and $f$, $g$ are the sc
 **Variance Floor Application:**
 
 The final variance used for studentization is:
+
 $$\hat{\sigma}^2(t) = \max\left(\hat{\sigma}^2_{boot}(t), \sigma^2_{floor}(t)\right)$$
 
 ### 2.5 Studentized KS Statistics
@@ -95,8 +98,11 @@ We define a regularization parameter $\epsilon = \min(1/N, 10^{-6})$, where $N =
 For each bootstrap curve $b$, we compute the pointwise studentized deviation $z_b(t)$.
 1. Calculate signed deviation: $\delta_b(t) = R_b(t) - \hat{R}(t)$.
 2. **Normal Case:** If $\hat{\sigma}(t) \geq \epsilon$:
+
    $$z_b(t) = \frac{\delta_b(t)}{\hat{\sigma}(t)}$$
+
 3. **Low-Variance Case:** If $\hat{\sigma}(t) < \epsilon$ (variance is effectively zero): 
+
    $$z_b(t) = \begin{cases} 0 & \text{if } |\delta_b(t)| < \epsilon \text{ (noise)} \\ \frac{\delta_b(t)}{\epsilon} & \text{if } |\delta_b(t)| \geq \epsilon \text{ (significant shift)} \end{cases}$$
 
 For each curve, the global statistic is $Z_b = \sup_{t \in \mathcal{T}} |z_b(t)|$.
@@ -109,7 +115,7 @@ We support two methods for determining which curves to retain.
 **Option A: Original KS Retention (`retention_method="ks"`)**
 Retain the $(1-\alpha)$ fraction of curves with the smallest maximum absolute studentized deviation $Z_b$.
 
-$$\mathcal{R}_\alpha = \left\{ R_b : Z_b \leq Z_{(\lceil (1-\alpha)B \rceil)} \right\}$$
+$$\mathcal{R}_\alpha = \left\lbrace R_b : Z_b \leq Z_{(\lceil (1-\alpha)B \rceil)} \right\rbrace$$
 
 where $Z_{(k)}$ is the $k$-th order statistic. This creates a band of "most typical" curves in terms of global shape deviation.
 
