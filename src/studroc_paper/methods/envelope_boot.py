@@ -337,7 +337,7 @@ def envelope_bootstrap_band(
         # Trim based on max absolute deviation
         ks_statistics = torch.max(studentized_abs, dim=1).values
 
-        n_retain = int(np.floor((1 - alpha) * n_bootstrap))
+        n_retain = int(np.ceil((1 - alpha) * n_bootstrap))
         ks_sorted = torch.sort(ks_statistics).values
         threshold = ks_sorted[n_retain - 1] if n_retain > 0 else float("inf")
 
