@@ -388,100 +388,85 @@ FUNCTION envelope_scb(scores_neg, scores_pos, B, alpha,
 
 ## 6. Formal Specification
 
-### 6.1 Logit-space Studentized Bootstrap Envelope SCB
+### 6.1 Algorithm 1: Logit-Space Studentized Bootstrap Envelope SCB
 
-\begin{algorithm}
-\caption{Logit-Space Studentized Bootstrap Envelope SCB}
-\begin{algorithmic}[1]
-\REQUIRE Scores $\mathcal{S} = \{(y_i, s_i)\}_{i=1}^N$, Replicates $B$, Significance $\alpha$
-\STATE Compute empirical ROC $\hat{R}(t)$ and grid $\mathcal{T} = \{0, 1/n_0, \dots, 1\}$
-\STATE Define Haldane transform: $H(p) = \log\left(\frac{p \cdot n_1 + 0.5}{n_1 - p \cdot n_1 + 0.5}\right)$
-\STATE Transform empirical curve: $\hat{L}(t) \leftarrow H(\hat{R}(t))$ for all $t \in \mathcal{T}$
+**Input:** Scores $\mathcal{S} = \{(y_i, s_i)\}_{i=1}^N$, Replicates $B$, Significance $\alpha$
 
-\FOR{$b = 1$ to $B$}
-    \STATE Resample $\mathcal{S}$ to obtain bootstrap ROC $R_b(t)$
-    \STATE Transform bootstrap curve: $L_b(t) \leftarrow H(R_b(t))$ for all $t \in \mathcal{T}$
-\ENDFOR
+1.  **Preprocessing:**
+    * Compute empirical ROC $\hat{R}(t)$ and grid $\mathcal{T} = \{0, 1/n_0, \dots, 1\}$.
+    * Define Haldane transform: $H(p) = \log\left(\frac{p \cdot n_1 + 0.5}{n_1 - p \cdot n_1 + 0.5}\right)$.
+    * Transform empirical curve: $\hat{L}(t) \leftarrow H(\hat{R}(t))$ for all $t \in \mathcal{T}$.
 
-\STATE \textbf{Compute Variance in Logit Space:}
-\FOR{each $t \in \mathcal{T}$}
-    \STATE $\bar{L}(t) \leftarrow \frac{1}{B} \sum_{b=1}^B L_b(t)$
-    \STATE $\hat{\sigma}_L^2(t) \leftarrow \frac{1}{B-1} \sum_{b=1}^B (L_b(t) - \bar{L}(t))^2$
-\ENDFOR
+2.  **Bootstrap Resampling:**
+    * **For** $b = 1$ to $B$:
+        * Resample $\mathcal{S}$ to obtain bootstrap ROC $R_b(t)$.
+        * Transform bootstrap curve: $L_b(t) \leftarrow H(R_b(t))$ for all $t \in \mathcal{T}$.
 
-\STATE \textbf{Studentization \& Retention:}
-\STATE Set $\epsilon \leftarrow \min(1/N, 10^{-6})$
-\FOR{$b = 1$ to $B$}
-    \STATE Compute deviation vector: $\delta_b(t) \leftarrow L_b(t) - \hat{L}(t)$
-    \STATE Compute studentized statistic (handling low variance):
-    \FOR{each $t \in \mathcal{T}$}
-        \IF{$\hat{\sigma}_L(t) \geq \epsilon$}
-            \STATE $z_b(t) \leftarrow \delta_b(t) / \hat{\sigma}_L(t)$
-        \ELSE
-            \STATE $z_b(t) \leftarrow \mathbb{I}(|\delta_b(t)| \geq \epsilon) \cdot (\delta_b(t) / \epsilon)$
-        \ENDIF
-    \ENDFOR
-    \STATE $Z_b \leftarrow \max_{t \in \mathcal{T}} |z_b(t)|$
-\ENDFOR
+3.  **Compute Variance in Logit Space:**
+    * **For each** $t \in \mathcal{T}$:
+        * $\bar{L}(t) \leftarrow \frac{1}{B} \sum_{b=1}^B L_b(t)$
+        * $\hat{\sigma}_L^2(t) \leftarrow \frac{1}{B-1} \sum_{b=1}^B (L_b(t) - \bar{L}(t))^2$
 
-\STATE Determine threshold $C_{crit} \leftarrow$ $(1-\alpha)$-quantile of $\{Z_1, \dots, Z_B\}$
-\STATE Identify retained curves: $\mathcal{R} \leftarrow \{b : Z_b \leq C_{crit}\}$
+4.  **Studentization & Retention:**
+    * Set $\epsilon \leftarrow \min(1/N, 10^{-6})$.
+    * **For** $b = 1$ to $B$:
+        * Compute deviation vector: $\delta_b(t) \leftarrow L_b(t) - \hat{L}(t)$.
+        * **For each** $t \in \mathcal{T}$:
+            * **If** $\hat{\sigma}_L(t) \geq \epsilon$: $z_b(t) \leftarrow \delta_b(t) / \hat{\sigma}_L(t)$
+            * **Else**: $z_b(t) \leftarrow \mathbb{I}(|\delta_b(t)| \geq \epsilon) \cdot (\delta_b(t) / \epsilon)$
+        * $Z_b \leftarrow \max_{t \in \mathcal{T}} |z_b(t)|$.
 
-\STATE \textbf{Envelope Construction:}
-\FOR{each $t \in \mathcal{T}$}
-    \STATE $L_{logit}(t) \leftarrow \min_{b \in \mathcal{R}} L_b(t)$
-    \STATE $U_{logit}(t) \leftarrow \max_{b \in \mathcal{R}} L_b(t)$
-    \STATE \COMMENT{Back-transform to probability space}
-    \STATE $L(t) \leftarrow \sigma(L_{logit}(t))$, \quad $U(t) \leftarrow \sigma(U_{logit}(t))$
-\ENDFOR
+5.  **Thresholding:**
+    * Determine threshold $C_{crit} \leftarrow (1-\alpha)$-quantile of $\{Z_1, \dots, Z_B\}$.
+    * Identify retained curves: $\mathcal{R} \leftarrow \{b : Z_b \leq C_{crit}\}$.
 
-\STATE \textbf{return} Envelope $[L(t), U(t)]$ over $\mathcal{T}$
-\end{algorithmic}
-\end{algorithm}
+6.  **Envelope Construction:**
+    * **For each** $t \in \mathcal{T}$:
+        * $L_{logit}(t) \leftarrow \min_{b \in \mathcal{R}} L_b(t)$; $U_{logit}(t) \leftarrow \max_{b \in \mathcal{R}} L_b(t)$.
+        * Back-transform: $L(t) \leftarrow \sigma(L_{logit}(t))$, $U(t) \leftarrow \sigma(U_{logit}(t))$.
 
-### 6.2 Studentized Bootstrap SCB with Wilson Variance Floor
+**Return:** Envelope $[L(t), U(t)]$ over $\mathcal{T}$
 
-\begin{algorithm}
-\caption{Studentized Bootstrap SCB with Wilson Variance Floor}
-\begin{algorithmic}[1]
-\REQUIRE Scores $\mathcal{S}$, Replicates $B$, Significance $\alpha$
-\STATE Compute empirical ROC $\hat{R}(t)$ and grid $\mathcal{T} = \{0, 1/n_0, \dots, 1\}$
-\STATE $z_{\alpha/2} \leftarrow \Phi^{-1}(1-\alpha/2)$
+### 6.2 Algorithm 2: Studentized Bootstrap SCB with Wilson Variance Floor
 
-\FOR{$b = 1$ to $B$}
-    \STATE Generate bootstrap ROC $R_b(t)$ on grid $\mathcal{T}$
-\ENDFOR
+**Input:** Scores $\mathcal{S}$, Replicates $B$, Significance $\alpha$
 
-\STATE \textbf{Variance Estimation with Floor:}
-\FOR{each $t \in \mathcal{T}$}
-    \STATE $\hat{\sigma}_{boot}^2(t) \leftarrow \text{Var}(\{R_b(t)\}_{b=1}^B)$
-    \STATE \COMMENT{Calculate Wilson variance floor for $p = \hat{R}(t)$}
-    \STATE $\sigma_{floor}^2(t) \leftarrow \frac{1}{(1 + z_{\alpha/2}^2/n_1)^2} \left(\frac{p(1-p)}{n_1} + \frac{z_{\alpha/2}^2}{4n_1^2}\right)$
-    \STATE \COMMENT{Select max variance and convert to std dev}
-    \STATE $\hat{\sigma}^2(t) \leftarrow \max(\hat{\sigma}_{boot}^2(t), \sigma_{floor}^2(t))$
-    \STATE $\sigma_{floor}(t) \leftarrow \sqrt{\sigma_{floor}^2(t)}$
-\ENDFOR
+---
 
-\STATE \textbf{Studentization:}
-\STATE Set $\epsilon \leftarrow \min(1/N, 10^{-6})$
-\FOR{$b = 1$ to $B$}
-    \STATE Calculate $Z_b = \sup_{t \in \mathcal{T}} |z_b(t)|$ using effective variance $\hat{\sigma}(t)$ and $\epsilon$-logic
-\ENDFOR
+#### 1. Initialization
+* Compute empirical ROC $\hat{R}(t)$ and grid $\mathcal{T} = \{0, 1/n_0, \dots, 1\}$.
+* Calculate critical value from the standard normal distribution: $z_{\alpha/2} \leftarrow \Phi^{-1}(1-\alpha/2)$.
 
-\STATE Threshold $C_{crit} \leftarrow$ $(1-\alpha)$-quantile of $\{Z_b\}$; Retain set $\mathcal{R}$
+#### 2. Bootstrap Resampling
+* **For** $b = 1$ to $B$:
+    * Generate bootstrap ROC $R_b(t)$ on grid $\mathcal{T}$ via resampling from $\mathcal{S}$.
 
-\STATE \textbf{Envelope with Width Extension:}
-\FOR{each $t \in \mathcal{T}$}
-    \STATE $L(t) \leftarrow \min_{b \in \mathcal{R}} R_b(t)$
-    \STATE $U(t) \leftarrow \max_{b \in \mathcal{R}} R_b(t)$
-    
-    \STATE \COMMENT{Ensure band width respects theoretical minimum uncertainty}
-    \STATE $L(t) \leftarrow \min(L(t), \hat{R}(t) - \sigma_{floor}(t))$
-    \STATE $U(t) \leftarrow \max(U(t), \hat{R}(t) + \sigma_{floor}(t))$
-\ENDFOR
+#### 3. Variance Estimation with Floor
+* **For each** $t \in \mathcal{T}$:
+    * Compute bootstrap variance: $\hat{\sigma}_{boot}^2(t) \leftarrow \text{Var}(\{R_b(t)\}_{b=1}^B)$.
+    * Calculate Wilson variance floor for $p = \hat{R}(t)$:
+      $$\sigma_{floor}^2(t) \leftarrow \frac{1}{(1 + z_{\alpha/2}^2/n_1)^2} \left(\frac{p(1-p)}{n_1} + \frac{z_{\alpha/2}^2}{4n_1^2}\right)$$
+    * Select effective variance: $\hat{\sigma}^2(t) \leftarrow \max(\hat{\sigma}_{boot}^2(t), \sigma_{floor}^2(t))$.
+    * Store standard deviation: $\sigma_{floor}(t) \leftarrow \sqrt{\sigma_{floor}^2(t)}$.
 
-\STATE \textbf{Boundary Handling:}
-\STATE Clip $L(t), U(t)$ to $[0, 1]$; Enforce $L(0)=0, U(1)=1$
-\STATE \textbf{return} Envelope $[L(t), U(t)]$
-\end{algorithmic}
-\end{algorithm}
+#### 4. Studentization & Retention
+* Set $\epsilon \leftarrow \min(1/N, 10^{-6})$.
+* **For** $b = 1$ to $B$:
+    * Compute the maximum studentized deviation: $Z_b = \sup_{t \in \mathcal{T}} |z_b(t)|$, where $z_b(t)$ is the studentized score using effective variance $\hat{\sigma}(t)$ and $\epsilon$-logic for stability.
+* Determine threshold $C_{crit} \leftarrow (1-\alpha)$-quantile of $\{Z_1, \dots, Z_B\}$.
+* Identify the retained set of bootstrap curves: $\mathcal{R} \leftarrow \{b : Z_b \leq C_{crit}\}$.
+
+#### 5. Envelope Construction with Width Extension
+* **For each** $t \in \mathcal{T}$:
+    * Initial bounds from retained replicates: 
+        * $L(t) \leftarrow \min_{b \in \mathcal{R}} R_b(t)$
+        * $U(t) \leftarrow \max_{b \in \mathcal{R}} R_b(t)$
+    * **Extension:** Ensure band width respects theoretical minimum uncertainty:
+        * $L(t) \leftarrow \min(L(t), \hat{R}(t) - \sigma_{floor}(t))$
+        * $U(t) \leftarrow \max(U(t), \hat{R}(t) + \sigma_{floor}(t))$
+
+#### 6. Boundary Handling
+* Clip $L(t), U(t)$ to the range $[0, 1]$.
+* Enforce fixed anchor points: $L(0)=0, U(1)=1$.
+
+**Return:** Envelope $[L(t), U(t)]$ over $\mathcal{T}$
