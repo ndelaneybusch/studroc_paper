@@ -458,7 +458,7 @@ FUNCTION envelope_scb(scores_neg, scores_pos, B, alpha,
 
 #### 3. Variance Estimation with Floor
 * **For each** $t \in \mathcal{T}$:
-    * Compute bootstrap variance: $\hat{\sigma}_{boot}^2(t) \leftarrow \text{Var}(\{R_b(t)\}_{b=1}^B)$.
+    * Compute bootstrap variance: $\hat{\sigma}\_{boot}^2(t) \leftarrow \text{Var}(\{R\_b(t)\}\_{b=1}^B)$.
     * Calculate Wilson variance floor for $p = \hat{R}(t)$:
 
       $$\sigma_{floor}^2(t) \leftarrow \frac{1}{(1 + z_{\alpha/2}^2/n_1)^2} \left(\frac{p(1-p)}{n_1} + \frac{z_{\alpha/2}^2}{4n_1^2}\right)$$
