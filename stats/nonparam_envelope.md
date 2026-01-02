@@ -101,9 +101,14 @@ For each bootstrap curve $b$, we compute the pointwise studentized deviation $z_
 
    $$z_b(t) = \frac{\delta_b(t)}{\hat{\sigma}(t)}$$
 
-3. **Low-Variance Case:** If $\hat{\sigma}(t) < \epsilon$ (variance is effectively zero): 
+3. **Low-Variance Case:** If $\hat{\sigma}(t) < \epsilon$ (variance is effectively zero):
 
-   $$z_b(t) = \begin{cases} 0 & \text{if } |\delta_b(t)| < \epsilon \text{ (noise)} \\ \frac{\delta_b(t)}{\epsilon} & \text{if } |\delta_b(t)| \geq \epsilon \text{ (significant shift)} \end{cases}$$
+   $$
+   z_b(t) = \begin{cases} 
+   0 & \text{if } |\delta_b(t)| < \epsilon \text{ (noise)} \\ 
+   \frac{\delta_b(t)}{\epsilon} & \text{if } |\delta_b(t)| \geq \epsilon \text{ (significant shift)} 
+   \end{cases}
+   $$
 
 For each curve, the global statistic is $Z_b = \sup_{t \in \mathcal{T}} |z_b(t)|$.
 
@@ -126,7 +131,9 @@ The standard KS method can be asymmetric at boundaries (e.g., at high AUC, curve
 3. Determine thresholds $q_{up}$ and $q_{down}$ as the $(1-\alpha/2)$ and $(\alpha/2)$ quantiles of $M^+$ and $M^-$ respectively.
 4. Retain curves that satisfy:
 
-   $$M^{-}_{b} \geq q_{\text{down}} \quad \text{AND} \quad M^{+}_{b} \leq q_{\text{up}}$$
+   $$
+   M^{-}_{b} \geq q_{\text{down}} \quad \text{AND} \quad M^{+}_{b} \leq q_{\text{up}}
+   $$
 
 This method explicitly trims the most extreme $\alpha/2$ upward excursions and $\alpha/2$ downward excursions.
 
@@ -451,9 +458,11 @@ FUNCTION envelope_scb(scores_neg, scores_pos, B, alpha,
 
 #### 3. Variance Estimation with Floor
 * **For each** $t \in \mathcal{T}$:
-    * Compute bootstrap variance: $\hat{\sigma}_{boot}^2(t) \leftarrow \text{Var}(\{R_b(t)\}_{b=1}^B)$.
+    * Compute bootstrap variance: $\hat{\sigma}_{boot}^2(t) \leftarrow \text{Var}(\\{R_b(t)\\}_{b=1}^B)$.
     * Calculate Wilson variance floor for $p = \hat{R}(t)$:
+
       $$\sigma_{floor}^2(t) \leftarrow \frac{1}{(1 + z_{\alpha/2}^2/n_1)^2} \left(\frac{p(1-p)}{n_1} + \frac{z_{\alpha/2}^2}{4n_1^2}\right)$$
+      
     * Select effective variance: $\hat{\sigma}^2(t) \leftarrow \max(\hat{\sigma}_{boot}^2(t), \sigma_{floor}^2(t))$.
     * Store standard deviation: $\sigma_{floor}(t) \leftarrow \sqrt{\sigma_{floor}^2(t)}$.
 
