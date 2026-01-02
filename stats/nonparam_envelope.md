@@ -383,3 +383,105 @@ FUNCTION envelope_scb(scores_neg, scores_pos, B, alpha,
         
     RETURN T, L, U
 ```
+
+---
+
+## 6. Formal Specification
+
+### 6.1 Logit-space Studentized Bootstrap Envelope SCB
+
+\begin{algorithm}
+\caption{Logit-Space Studentized Bootstrap Envelope SCB}
+\begin{algorithmic}[1]
+\REQUIRE Scores $\mathcal{S} = \{(y_i, s_i)\}_{i=1}^N$, Replicates $B$, Significance $\alpha$
+\STATE Compute empirical ROC $\hat{R}(t)$ and grid $\mathcal{T} = \{0, 1/n_0, \dots, 1\}$
+\STATE Define Haldane transform: $H(p) = \log\left(\frac{p \cdot n_1 + 0.5}{n_1 - p \cdot n_1 + 0.5}\right)$
+\STATE Transform empirical curve: $\hat{L}(t) \leftarrow H(\hat{R}(t))$ for all $t \in \mathcal{T}$
+
+\FOR{$b = 1$ to $B$}
+    \STATE Resample $\mathcal{S}$ to obtain bootstrap ROC $R_b(t)$
+    \STATE Transform bootstrap curve: $L_b(t) \leftarrow H(R_b(t))$ for all $t \in \mathcal{T}$
+\ENDFOR
+
+\STATE \textbf{Compute Variance in Logit Space:}
+\FOR{each $t \in \mathcal{T}$}
+    \STATE $\bar{L}(t) \leftarrow \frac{1}{B} \sum_{b=1}^B L_b(t)$
+    \STATE $\hat{\sigma}_L^2(t) \leftarrow \frac{1}{B-1} \sum_{b=1}^B (L_b(t) - \bar{L}(t))^2$
+\ENDFOR
+
+\STATE \textbf{Studentization \& Retention:}
+\STATE Set $\epsilon \leftarrow \min(1/N, 10^{-6})$
+\FOR{$b = 1$ to $B$}
+    \STATE Compute deviation vector: $\delta_b(t) \leftarrow L_b(t) - \hat{L}(t)$
+    \STATE Compute studentized statistic (handling low variance):
+    \FOR{each $t \in \mathcal{T}$}
+        \IF{$\hat{\sigma}_L(t) \geq \epsilon$}
+            \STATE $z_b(t) \leftarrow \delta_b(t) / \hat{\sigma}_L(t)$
+        \ELSE
+            \STATE $z_b(t) \leftarrow \mathbb{I}(|\delta_b(t)| \geq \epsilon) \cdot (\delta_b(t) / \epsilon)$
+        \ENDIF
+    \ENDFOR
+    \STATE $Z_b \leftarrow \max_{t \in \mathcal{T}} |z_b(t)|$
+\ENDFOR
+
+\STATE Determine threshold $C_{crit} \leftarrow$ $(1-\alpha)$-quantile of $\{Z_1, \dots, Z_B\}$
+\STATE Identify retained curves: $\mathcal{R} \leftarrow \{b : Z_b \leq C_{crit}\}$
+
+\STATE \textbf{Envelope Construction:}
+\FOR{each $t \in \mathcal{T}$}
+    \STATE $L_{logit}(t) \leftarrow \min_{b \in \mathcal{R}} L_b(t)$
+    \STATE $U_{logit}(t) \leftarrow \max_{b \in \mathcal{R}} L_b(t)$
+    \STATE \COMMENT{Back-transform to probability space}
+    \STATE $L(t) \leftarrow \sigma(L_{logit}(t))$, \quad $U(t) \leftarrow \sigma(U_{logit}(t))$
+\ENDFOR
+
+\STATE \textbf{return} Envelope $[L(t), U(t)]$ over $\mathcal{T}$
+\end{algorithmic}
+\end{algorithm}
+
+### 6.2 Studentized Bootstrap SCB with Wilson Variance Floor
+
+\begin{algorithm}
+\caption{Studentized Bootstrap SCB with Wilson Variance Floor}
+\begin{algorithmic}[1]
+\REQUIRE Scores $\mathcal{S}$, Replicates $B$, Significance $\alpha$
+\STATE Compute empirical ROC $\hat{R}(t)$ and grid $\mathcal{T} = \{0, 1/n_0, \dots, 1\}$
+\STATE $z_{\alpha/2} \leftarrow \Phi^{-1}(1-\alpha/2)$
+
+\FOR{$b = 1$ to $B$}
+    \STATE Generate bootstrap ROC $R_b(t)$ on grid $\mathcal{T}$
+\ENDFOR
+
+\STATE \textbf{Variance Estimation with Floor:}
+\FOR{each $t \in \mathcal{T}$}
+    \STATE $\hat{\sigma}_{boot}^2(t) \leftarrow \text{Var}(\{R_b(t)\}_{b=1}^B)$
+    \STATE \COMMENT{Calculate Wilson variance floor for $p = \hat{R}(t)$}
+    \STATE $\sigma_{floor}^2(t) \leftarrow \frac{1}{(1 + z_{\alpha/2}^2/n_1)^2} \left(\frac{p(1-p)}{n_1} + \frac{z_{\alpha/2}^2}{4n_1^2}\right)$
+    \STATE \COMMENT{Select max variance and convert to std dev}
+    \STATE $\hat{\sigma}^2(t) \leftarrow \max(\hat{\sigma}_{boot}^2(t), \sigma_{floor}^2(t))$
+    \STATE $\sigma_{floor}(t) \leftarrow \sqrt{\sigma_{floor}^2(t)}$
+\ENDFOR
+
+\STATE \textbf{Studentization:}
+\STATE Set $\epsilon \leftarrow \min(1/N, 10^{-6})$
+\FOR{$b = 1$ to $B$}
+    \STATE Calculate $Z_b = \sup_{t \in \mathcal{T}} |z_b(t)|$ using effective variance $\hat{\sigma}(t)$ and $\epsilon$-logic
+\ENDFOR
+
+\STATE Threshold $C_{crit} \leftarrow$ $(1-\alpha)$-quantile of $\{Z_b\}$; Retain set $\mathcal{R}$
+
+\STATE \textbf{Envelope with Width Extension:}
+\FOR{each $t \in \mathcal{T}$}
+    \STATE $L(t) \leftarrow \min_{b \in \mathcal{R}} R_b(t)$
+    \STATE $U(t) \leftarrow \max_{b \in \mathcal{R}} R_b(t)$
+    
+    \STATE \COMMENT{Ensure band width respects theoretical minimum uncertainty}
+    \STATE $L(t) \leftarrow \min(L(t), \hat{R}(t) - \sigma_{floor}(t))$
+    \STATE $U(t) \leftarrow \max(U(t), \hat{R}(t) + \sigma_{floor}(t))$
+\ENDFOR
+
+\STATE \textbf{Boundary Handling:}
+\STATE Clip $L(t), U(t)$ to $[0, 1]$; Enforce $L(0)=0, U(1)=1$
+\STATE \textbf{return} Envelope $[L(t), U(t)]$
+\end{algorithmic}
+\end{algorithm}
