@@ -53,7 +53,7 @@ For $b = 1, \ldots, B$:
 
 ### 2.4 Variance Estimation
 
-For each $t \in T$: 
+For each $t \in \mathcal{T}$:
 $$\hat{\sigma}_{\text{boot}}^2(t) = \frac{1}{B-1} \sum_{b=1}^{B} \left(R_b(t) - \bar{R}(t)\right)^2$$
 
 where $\bar{R}(t) = \frac{1}{B}\sum_b R_b(t)$.
@@ -97,10 +97,7 @@ For each bootstrap curve $b$, we compute the pointwise studentized deviation $z_
 2. **Normal Case:** If $\hat{\sigma}(t) \geq \epsilon$:
    $$z_b(t) = \frac{\delta_b(t)}{\hat{\sigma}(t)}$$
 3. **Low-Variance Case:** If $\hat{\sigma}(t) < \epsilon$ (variance is effectively zero): 
-    $$z_b(t) = \begin{cases} 
-    0 & \text{if } |\delta_b(t)| < \epsilon \text{ (noise)} \\ 
-    \frac{\delta_b(t)}{\epsilon} & \text{if } |\delta_b(t)| \geq \epsilon \text{ (significant shift)} 
-    \end{cases}$$
+   $$z_b(t) = \begin{cases} 0 & \text{if } |\delta_b(t)| < \epsilon \text{ (noise)} \\ \frac{\delta_b(t)}{\epsilon} & \text{if } |\delta_b(t)| \geq \epsilon \text{ (significant shift)} \end{cases}$$
 
 For each curve, the global statistic is $Z_b = \sup_{t \in \mathcal{T}} |z_b(t)|$.
 
@@ -111,7 +108,9 @@ We support two methods for determining which curves to retain.
 
 **Option A: Original KS Retention (`retention_method="ks"`)**
 Retain the $(1-\alpha)$ fraction of curves with the smallest maximum absolute studentized deviation $Z_b$.
+
 $$\mathcal{R}_\alpha = \left\{ R_b : Z_b \leq Z_{(\lceil (1-\alpha)B \rceil)} \right\}$$
+
 where $Z_{(k)}$ is the $k$-th order statistic. This creates a band of "most typical" curves in terms of global shape deviation.
 
 **Option B: Symmetric Retention (`retention_method="symmetric"`)**
@@ -120,6 +119,7 @@ The standard KS method can be asymmetric at boundaries (e.g., at high AUC, curve
 2. For each curve $b$, find its max upward deviation $M^+_b = \sup_t s_b(t)$ and max downward deviation $M^-_b = \inf_t s_b(t)$.
 3. Determine thresholds $q_{up}$ and $q_{down}$ as the $(1-\alpha/2)$ and $(\alpha/2)$ quantiles of $M^+$ and $M^-$ respectively.
 4. Retain curves that satisfy:
+
    $$M^{-}_{b} \geq q_{\text{down}} \quad \text{AND} \quad M^{+}_{b} \leq q_{\text{up}}$$
 
 This method explicitly trims the most extreme $\alpha/2$ upward excursions and $\alpha/2$ downward excursions.
@@ -127,11 +127,13 @@ This method explicitly trims the most extreme $\alpha/2$ upward excursions and $
 ### 2.7 Envelope Construction
 
 Compute the pointwise min and max of the retained curves $\mathcal{R}_\alpha$:
+
 $$L(t) = \min_{R_b \in \mathcal{R}_\alpha} R_b(t)$$
 $$U(t) = \max_{R_b \in \mathcal{R}_\alpha} R_b(t)$$
 
 **Envelope Width Extension:**
 When using a variance floor (i.e., `boundary_method` is not `"none"` or `"ks"`), the envelope is extended to ensure minimum width based on the variance floor:
+
 $$U(t) \leftarrow \max\left(U(t), \hat{R}(t) + \sigma_{floor}(t)\right)$$
 $$L(t) \leftarrow \min\left(L(t), \hat{R}(t) - \sigma_{floor}(t)\right)$$
 
@@ -178,7 +180,7 @@ where $k = p \cdot n_1$ is the count of true positives.
 ### 3.1 Coverage Guarantees
 
 **Definition (Population Coverage).** The probability that the true population ROC curve falls entirely within the band:
-$$P\left(\forall t: R_{true}(t) \in [L(t), U(t)]\right)$$
+$$P\left(\forall t: R_{\text{true}}(t) \in [L(t), U(t)]\right)$$
 
 **Note on Future Samples:** This method constructs a *confidence band* for the underlying population curve $R_{true}$. It is **not** a *prediction band* for future empirical ROC curves $\hat{R}_{new}$. A future empirical curve has additional sampling variability relative to the current empirical curve (variance approximately doubles), so the coverage of future samples will be significantly lower than $(1-\alpha)$.
 
@@ -186,7 +188,7 @@ $$P\left(\forall t: R_{true}(t) \in [L(t), U(t)]\right)$$
 ---
 
 **Theorem 1 (Asymptotic Population Coverage).** Under A1–A4, as $n = \min(n_0, n_1) \to \infty$:
-$$P\left(\forall t: R_{true}(t) \in [L(t), U(t)]\right) \to 1 - \alpha$$
+$$P\left(\forall t: R_{\text{true}}(t) \in [L(t), U(t)]\right) \to 1 - \alpha$$
 
 *Proof sketch:* 
 
@@ -203,7 +205,7 @@ $$P\left(\forall t: R_{true}(t) \in [L(t), U(t)]\right) \to 1 - \alpha$$
 ### 3.2 Finite-Sample Bias
 
 The empirical ROC curve exhibits upward bias in finite samples:
-$$E[\hat{R}(t)] > R_{true}(t) \quad \text{for } t \in (0,1)$$
+$$E[\hat{R}(t)] > R_{\text{true}}(t) \quad \text{for } t \in (0,1)$$
 
 This arises from the composition of two empirical distribution functions: $\hat{R}(t) = \hat{G}(\hat{F}^{-1}(1-t))$. The bias is $O(n^{-1})$ and increases with ROC curvature (higher AUC implies larger bias).
 
@@ -239,7 +241,7 @@ The envelope boundaries $L(t)$ and $U(t)$ are step functions with jumps at a sub
 
 | Property | Finite Sample | Asymptotic |
 |----------|---------------|------------|
-| Population coverage | $< 1-\alpha$ (biased low) | $\to 1-\alpha$ |
+| Population coverage | $\lt 1-\alpha$ (biased low) | $\to 1-\alpha$ |
 | Future-curve coverage | $\ll 1-\alpha$ (not covered) | $\ll 1-\alpha$ |
 | Band width adapts to local variance | ✓ | ✓ |
 | Asymmetric at boundaries | ✓ | ✓ |
