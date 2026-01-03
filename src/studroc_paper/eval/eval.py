@@ -114,7 +114,11 @@ def evaluate_single_band(
     Notes
     -----
     ROC curves are pinned at (0,0) and (1,1), so bands at these points
-    should have zero width and always cover the true ROC.
+    should have zero width and always cover the true ROC. Overall coverage
+    statistics (covers_entirely, violation_above, violation_below) are
+    computed only over the actual data range, excluding FPR=0 and FPR=1.
+
+    All calculations are NaN-aware and will handle missing values appropriately.
     """
     # Validate inputs and preserve dtype from true_tpr
     true_tpr = np.asarray(true_tpr)
@@ -133,10 +137,19 @@ def evaluate_single_band(
     below = (lower_band - true_tpr) > tolerance
     pointwise_covered = ~(above | below)
 
-    # Overall coverage
-    covers_entirely = pointwise_covered.all()
-    violation_above = above.any()
-    violation_below = below.any()
+    # Mask for actual data range (exclude pinned boundaries FPR=0 and FPR=1)
+    data_range_mask = np.ones(n, dtype=bool)
+    if fpr_grid[0] == 0.0:
+        data_range_mask[0] = False
+    if fpr_grid[-1] == 1.0:
+        data_range_mask[-1] = False
+
+    # Overall coverage (restricted to actual data range)
+    covers_entirely = (
+        pointwise_covered[data_range_mask].all() if data_range_mask.any() else True
+    )
+    violation_above = above[data_range_mask].any() if data_range_mask.any() else False
+    violation_below = below[data_range_mask].any() if data_range_mask.any() else False
 
     # Violation locations
     violation_fpr_above = (
@@ -146,15 +159,33 @@ def evaluate_single_band(
         fpr_grid[below] if violation_below else np.array([], dtype=dtype)
     )
 
-    # Violation magnitudes
+    # Violation magnitudes (NaN-aware)
     violations_above_mag = np.maximum(true_tpr - upper_band, 0)
     violations_below_mag = np.maximum(lower_band - true_tpr, 0)
-    max_violation_above = violations_above_mag.max()
-    max_violation_below = violations_below_mag.max()
+    max_violation_above = (
+        np.nanmax(violations_above_mag)
+        if not np.all(np.isnan(violations_above_mag))
+        else 0.0
+    )
+    max_violation_below = (
+        np.nanmax(violations_below_mag)
+        if not np.all(np.isnan(violations_below_mag))
+        else 0.0
+    )
 
-    # Band properties
+    # Band properties (NaN-aware)
     band_widths = upper_band - lower_band
-    band_area = np.trapezoid(band_widths, fpr_grid)
+    # Use nanmean for trapezoid integration if NaNs present
+    if np.any(np.isnan(band_widths)):
+        # Filter out NaN values for integration
+        valid_mask = ~np.isnan(band_widths)
+        band_area = (
+            np.trapezoid(band_widths[valid_mask], fpr_grid[valid_mask])
+            if valid_mask.sum() > 1
+            else 0.0
+        )
+    else:
+        band_area = np.trapezoid(band_widths, fpr_grid)
 
     # Violations by region
     regions = {
@@ -252,6 +283,12 @@ def aggregate_band_results(
     -------
     BandEvaluation
         Comprehensive aggregated evaluation statistics
+
+    Notes
+    -----
+    All aggregation statistics are NaN-aware and will handle missing values
+    appropriately. Coverage statistics reflect evaluation over the actual
+    data range (excluding pinned boundaries at FPR=0 and FPR=1).
     """
     # Convert to list to allow multiple passes
     results_list: list[BandResult] = list(results)
@@ -269,10 +306,10 @@ def aggregate_band_results(
     dtype = fpr_grid.dtype
 
     # -------------------------------------------------------------------------
-    # Coverage statistics
+    # Coverage statistics (NaN-aware)
     # -------------------------------------------------------------------------
     covers = np.array([r.covers_entirely for r in results_list])
-    coverage_rate = covers.mean()
+    coverage_rate = np.nanmean(covers)
     coverage_se = np.sqrt(coverage_rate * (1 - coverage_rate) / n_sims)
 
     # Wilson score interval for coverage
@@ -288,13 +325,13 @@ def aggregate_band_results(
     coverage_ci_upper = center + margin
 
     # -------------------------------------------------------------------------
-    # Directional violations
+    # Directional violations (NaN-aware)
     # -------------------------------------------------------------------------
     violations_above = np.array([r.violation_above for r in results_list])
     violations_below = np.array([r.violation_below for r in results_list])
 
-    violation_rate_above = violations_above.mean()
-    violation_rate_below = violations_below.mean()
+    violation_rate_above = np.nanmean(violations_above)
+    violation_rate_below = np.nanmean(violations_below)
 
     # Test for directional symmetry
     # Among simulations with violations, are above/below equally likely?
@@ -312,15 +349,15 @@ def aggregate_band_results(
         direction_test_pvalue = 1.0
 
     # -------------------------------------------------------------------------
-    # Tightness metrics
+    # Tightness metrics (NaN-aware)
     # -------------------------------------------------------------------------
     band_areas = np.array([r.band_area for r in results_list], dtype=dtype)
-    mean_band_area = band_areas.mean()
-    std_band_area = band_areas.std()
+    mean_band_area = np.nanmean(band_areas)
+    std_band_area = np.nanstd(band_areas)
 
     # Stack band widths: (n_sims, n_grid)
     band_widths_matrix = np.vstack([r.band_widths for r in results_list])
-    mean_widths_by_fpr = band_widths_matrix.mean(axis=0)
+    mean_widths_by_fpr = np.nanmean(band_widths_matrix, axis=0)
 
     # Exclude pinned boundaries (FPR=0 and FPR=1) from width calculations
     # since these have zero variance by construction
@@ -330,21 +367,19 @@ def aggregate_band_results(
     if fpr_grid[-1] == 1.0:
         width_mask[-1] = False
 
-    # Mean width excluding boundaries
+    # Mean width excluding boundaries (NaN-aware)
     if width_mask.any():
-        mean_band_width = mean_widths_by_fpr[width_mask].mean()
-        sim_mean_widths = band_widths_matrix[:, width_mask].mean(
-            axis=1
-        )  # Mean width per simulation
+        mean_band_width = np.nanmean(mean_widths_by_fpr[width_mask])
+        sim_mean_widths = np.nanmean(band_widths_matrix[:, width_mask], axis=1)
     else:
-        mean_band_width = mean_widths_by_fpr.mean()
-        sim_mean_widths = band_widths_matrix.mean(axis=1)
+        mean_band_width = np.nanmean(mean_widths_by_fpr)
+        sim_mean_widths = np.nanmean(band_widths_matrix, axis=1)
 
-    # Percentiles of mean width across simulations
+    # Percentiles of mean width across simulations (NaN-aware)
     width_percentiles = {
-        "p10": np.percentile(sim_mean_widths, 10),
-        "p50": np.percentile(sim_mean_widths, 50),
-        "p90": np.percentile(sim_mean_widths, 90),
+        "p10": np.nanpercentile(sim_mean_widths, 10),
+        "p50": np.nanpercentile(sim_mean_widths, 50),
+        "p90": np.nanpercentile(sim_mean_widths, 90),
     }
 
     # Mean width by FPR region
@@ -361,15 +396,15 @@ def aggregate_band_results(
     for region_name, (lo, hi) in regions.items():
         mask = (fpr_grid >= lo) & (fpr_grid < hi if hi < 1.0 else fpr_grid <= hi)
         if mask.any():
-            width_by_fpr_region[region_name] = mean_widths_by_fpr[mask].mean()
+            width_by_fpr_region[region_name] = np.nanmean(mean_widths_by_fpr[mask])
         else:
             width_by_fpr_region[region_name] = np.nan
 
     # -------------------------------------------------------------------------
-    # Pointwise coverage/violation rates
+    # Pointwise coverage/violation rates (NaN-aware)
     # -------------------------------------------------------------------------
     pointwise_covered_matrix = np.vstack([r.pointwise_covered for r in results_list])
-    pointwise_coverage_rates = pointwise_covered_matrix.mean(axis=0)
+    pointwise_coverage_rates = np.nanmean(pointwise_covered_matrix, axis=0)
     pointwise_violation_rates = 1 - pointwise_coverage_rates
 
     # -------------------------------------------------------------------------
@@ -410,14 +445,14 @@ def aggregate_band_results(
     )
 
     # -------------------------------------------------------------------------
-    # Violation magnitudes
+    # Violation magnitudes (NaN-aware)
     # -------------------------------------------------------------------------
     max_violations = np.array(
         [max(r.max_violation_above, r.max_violation_below) for r in results_list],
         dtype=dtype,
     )
-    mean_max_violation = max_violations.mean()
-    percentile_95_max_violation = np.percentile(max_violations, 95)
+    mean_max_violation = np.nanmean(max_violations)
+    percentile_95_max_violation = np.nanpercentile(max_violations, 95)
 
     return BandEvaluation(
         n_simulations=n_sims,
@@ -577,25 +612,31 @@ def compute_pointwise_coverage_diagnostics(
     -----
     At pinned boundaries (FPR=0, FPR=1), coverage should be 100% with zero
     variance. Z-scores are set to NaN at these points as they are not meaningful.
+    All calculations are NaN-aware.
     """
     dtype = evaluation.fpr_grid.dtype
     nominal = 1 - alpha
     n_sims = evaluation.n_simulations
     fpr_grid = evaluation.fpr_grid
 
-    # Standard error of coverage at each point
+    # Standard error of coverage at each point (NaN-aware)
     pc = evaluation.pointwise_coverage_rates
-    pointwise_se = np.sqrt(pc * (1 - pc) / n_sims).astype(dtype)
+    # Handle NaNs in coverage rates
+    pc_safe = np.where(np.isnan(pc), 0.0, pc)
+    pointwise_se = np.sqrt(pc_safe * (1 - pc_safe) / n_sims).astype(dtype)
+    # Restore NaNs where original coverage was NaN
+    pointwise_se = np.where(np.isnan(pc), np.nan, pointwise_se)
 
     # Z-scores for deviation from nominal
     # Set to NaN at pinned boundaries where SE is zero by construction
     z_scores = np.full_like(pc, np.nan, dtype=dtype)
-    valid_mask = pointwise_se > 1e-10
+    valid_mask = (pointwise_se > 1e-10) & ~np.isnan(pointwise_se) & ~np.isnan(pc)
 
-    # Only compute z-scores where SE is non-zero
-    z_scores[valid_mask] = (
-        (pc[valid_mask] - nominal) / pointwise_se[valid_mask]
-    ).astype(dtype)
+    # Only compute z-scores where SE is non-zero and data is valid
+    if valid_mask.any():
+        z_scores[valid_mask] = (
+            (pc[valid_mask] - nominal) / pointwise_se[valid_mask]
+        ).astype(dtype)
 
     # Mark pinned boundaries explicitly
     is_pinned = np.zeros(len(fpr_grid), dtype=bool)
