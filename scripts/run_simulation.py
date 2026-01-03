@@ -209,6 +209,19 @@ def compute_all_bands(
         y_true=y_true,
         y_score=y_score,
         alpha=alpha,
+        boundary_method="wilson",
+        retention_method="symmetric",
+    )
+    results["envelope_wilson_symmetric"] = evaluate_single_band(
+        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
+    )
+
+    fpr_out, lower, upper = envelope_bootstrap_band(
+        boot_tpr_matrix=boot_tpr_matrix,
+        fpr_grid=fpr_grid,
+        y_true=y_true,
+        y_score=y_score,
+        alpha=alpha,
         boundary_method="none",
         retention_method="ks",
         use_logit=True,
@@ -228,6 +241,62 @@ def compute_all_bands(
         use_logit=True,
     )
     results["envelope_symmetric_logit"] = evaluate_single_band(
+        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
+    )
+
+    fpr_out, lower, upper = envelope_bootstrap_band(
+        boot_tpr_matrix=boot_tpr_matrix,
+        fpr_grid=fpr_grid,
+        y_true=y_true,
+        y_score=y_score,
+        alpha=alpha,
+        boundary_method="wilson",
+        retention_method="ks",
+        use_logit=True,
+    )
+    results["envelope_wilson_logit"] = evaluate_single_band(
+        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
+    )
+
+    fpr_out, lower, upper = envelope_bootstrap_band(
+        boot_tpr_matrix=boot_tpr_matrix,
+        fpr_grid=fpr_grid,
+        y_true=y_true,
+        y_score=y_score,
+        alpha=alpha,
+        boundary_method="wilson",
+        retention_method="symmetric",
+        use_logit=True,
+    )
+    results["envelope_wilson_symmetric_logit"] = evaluate_single_band(
+        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
+    )
+
+    fpr_out, lower, upper = envelope_bootstrap_band(
+        boot_tpr_matrix=boot_tpr_matrix,
+        fpr_grid=fpr_grid,
+        y_true=y_true,
+        y_score=y_score,
+        alpha=alpha,
+        boundary_method="kde",
+        retention_method="ks",
+        use_logit=True,
+    )
+    results["envelope_kde_logit"] = evaluate_single_band(
+        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
+    )
+
+    fpr_out, lower, upper = envelope_bootstrap_band(
+        boot_tpr_matrix=boot_tpr_matrix,
+        fpr_grid=fpr_grid,
+        y_true=y_true,
+        y_score=y_score,
+        alpha=alpha,
+        boundary_method="kde",
+        retention_method="symmetric",
+        use_logit=True,
+    )
+    results["envelope_kde_symmetric_logit"] = evaluate_single_band(
         lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
     )
 
@@ -710,10 +779,14 @@ def save_results(
         "envelope_standard",
         "envelope_symmetric",
         "envelope_kde",
-        "envelope_ks",
         "envelope_wilson",
+        "envelope_wilson_symmetric",
         "envelope_logit",
         "envelope_symmetric_logit",
+        "envelope_wilson_logit",
+        "envelope_wilson_symmetric_logit",
+        "envelope_kde_logit",
+        "envelope_kde_symmetric_logit",
         "HT_log_concave",
         "HT_log_concave_calib",
         "HT_reflected_kde",
