@@ -183,6 +183,7 @@ def plot_pareto_frontier(
     mode: Literal["mean", "n_path"] = "mean",
     nominal_alpha: float = 0.05,
     figsize: tuple[float, float] = (8, 6),
+    title: str | None = None,
     ax: Axes | None = None,
 ) -> Axes:
     """Plot Pareto frontier of mean_band_area vs coverage_rate.
@@ -198,6 +199,7 @@ def plot_pareto_frontier(
             "n_path" shows trajectory across n_total values connected by lines.
         nominal_alpha: Nominal alpha level for horizontal reference line.
         figsize: Figure size in inches (width, height).
+        title: Plot title. If None, uses default based on mode.
         ax: Matplotlib axes to plot on. If None, creates new figure.
 
     Returns:
@@ -282,7 +284,9 @@ def plot_pareto_frontier(
 
     ax.set_xlabel("Mean Band Area")
     ax.set_ylabel("Coverage Rate")
-    ax.set_title(f"Pareto Frontier: Band Area vs Coverage ({mode} mode)")
+    if title is None:
+        title = f"Pareto Frontier: Band Area vs Coverage ({mode} mode)"
+    ax.set_title(title)
 
     # Create legend with smaller markers
     ax.legend(
@@ -302,7 +306,10 @@ def plot_pareto_frontier(
 
 
 def plot_violation_proximity(
-    df: pd.DataFrame, figsize: tuple[float, float] = (8, 6), ax: Axes | None = None
+    df: pd.DataFrame,
+    figsize: tuple[float, float] = (8, 6),
+    title: str | None = None,
+    ax: Axes | None = None,
 ) -> Axes:
     """Plot violation proximity: mean_band_width vs mean_max_violation.
 
@@ -312,6 +319,7 @@ def plot_violation_proximity(
     Args:
         df: DataFrame containing columns: model, mean_band_width, mean_max_violation.
         figsize: Figure size in inches (width, height).
+        title: Plot title. If None, uses default.
         ax: Matplotlib axes to plot on. If None, creates new figure.
 
     Returns:
@@ -351,7 +359,9 @@ def plot_violation_proximity(
 
     ax.set_xlabel("Mean Band Width")
     ax.set_ylabel("Mean Max Violation")
-    ax.set_title("Violation Proximity: Band Width vs Max Violation")
+    if title is None:
+        title = "Violation Proximity: Band Width vs Max Violation"
+    ax.set_title(title)
 
     ax.legend(
         bbox_to_anchor=(1.02, 1), loc="upper left", frameon=False, markerscale=0.8
@@ -372,6 +382,7 @@ def plot_coverage_by_n_total(
     df: pd.DataFrame,
     nominal_alpha: float = 0.05,
     figsize: tuple[float, float] = (10, 6),
+    title: str | None = None,
     ax: Axes | None = None,
 ) -> Axes:
     """Plot coverage rate by sample size (n_total) on log10 scale.
@@ -383,6 +394,7 @@ def plot_coverage_by_n_total(
         df: DataFrame containing columns: model, n_total, coverage_rate, nominal_alpha.
         nominal_alpha: Nominal alpha level for horizontal reference line.
         figsize: Figure size in inches (width, height).
+        title: Plot title. If None, uses default.
         ax: Matplotlib axes to plot on. If None, creates new figure.
 
     Returns:
@@ -443,7 +455,9 @@ def plot_coverage_by_n_total(
     ax.set_xscale("log")
     ax.set_xlabel("Sample Size (n_total, log₁₀ scale)")
     ax.set_ylabel("Mean Coverage Rate")
-    ax.set_title("Coverage Rate by Sample Size")
+    if title is None:
+        title = "Coverage Rate by Sample Size"
+    ax.set_title(title)
 
     ax.legend(
         bbox_to_anchor=(1.02, 1), loc="upper left", frameon=False, markerscale=0.8
@@ -465,6 +479,7 @@ def plot_coverage_by_prevalence(
     df: pd.DataFrame,
     nominal_alpha: float = 0.05,
     figsize: tuple[float, float] = (10, 6),
+    title: str | None = None,
     ax: Axes | None = None,
 ) -> Axes:
     """Plot coverage rate by prevalence (categorical x-axis).
@@ -477,6 +492,7 @@ def plot_coverage_by_prevalence(
             nominal_alpha.
         nominal_alpha: Nominal alpha level for horizontal reference line.
         figsize: Figure size in inches (width, height).
+        title: Plot title. If None, uses default.
         ax: Matplotlib axes to plot on. If None, creates new figure.
 
     Returns:
@@ -557,7 +573,9 @@ def plot_coverage_by_prevalence(
     )
     ax.set_xlabel("Prevalence")
     ax.set_ylabel("Mean Coverage Rate")
-    ax.set_title("Coverage Rate by Prevalence")
+    if title is None:
+        title = "Coverage Rate by Prevalence"
+    ax.set_title(title)
 
     ax.legend(
         bbox_to_anchor=(1.02, 1), loc="upper left", frameon=False, markerscale=0.8
@@ -576,7 +594,10 @@ def plot_coverage_by_prevalence(
 
 
 def plot_violation_direction(
-    df: pd.DataFrame, figsize: tuple[float, float] = (10, 6), ax: Axes | None = None
+    df: pd.DataFrame,
+    figsize: tuple[float, float] = (10, 6),
+    title: str | None = None,
+    ax: Axes | None = None,
 ) -> Axes:
     """Plot violation direction as colored vertical barplot.
 
@@ -588,6 +609,7 @@ def plot_violation_direction(
     Args:
         df: DataFrame containing columns: model, violation_rate_above, violation_rate_below.
         figsize: Figure size in inches (width, height).
+        title: Plot title. If None, uses default.
         ax: Matplotlib axes to plot on. If None, creates new figure.
 
     Returns:
@@ -654,7 +676,9 @@ def plot_violation_direction(
     ax.set_xticklabels(methods, rotation=45, ha="right", fontsize=8)
     ax.set_xlabel("Method")
     ax.set_ylabel("Violation Ratio (Above / Total)")
-    ax.set_title("Violation Direction by Method")
+    if title is None:
+        title = "Violation Direction by Method"
+    ax.set_title(title)
 
     ax.set_ylim(0, 1)
     ax.grid(True, alpha=0.3, linestyle="-", linewidth=0.5, axis="y")
