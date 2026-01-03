@@ -420,7 +420,15 @@ def hsieh_turnbull_band(
         logit_tpr = np.log(tpr_clipped / (1 - tpr_clipped))
 
         # Variance on logit scale
-        logit_variance = ht_variance / (tpr_clipped * (1 - tpr_clipped)) ** 2
+        # Replace invalid variance values with simple binomial variance before transformation
+        valid_variance = np.copy(ht_variance)
+        invalid_mask = ~np.isfinite(valid_variance)
+        if np.any(invalid_mask):
+            valid_variance[invalid_mask] = (
+                tpr_empirical[invalid_mask] * (1 - tpr_empirical[invalid_mask]) / n1
+            )
+
+        logit_variance = valid_variance / (tpr_clipped * (1 - tpr_clipped)) ** 2
 
         # Standard error on logit scale
         logit_se = np.sqrt(logit_variance)
@@ -435,7 +443,15 @@ def hsieh_turnbull_band(
 
     else:
         # Direct Gaussian intervals on probability scale
-        se = np.sqrt(ht_variance)
+        # Replace invalid variance values with simple binomial variance
+        valid_variance = np.copy(ht_variance)
+        invalid_mask = ~np.isfinite(valid_variance)
+        if np.any(invalid_mask):
+            valid_variance[invalid_mask] = (
+                tpr_empirical[invalid_mask] * (1 - tpr_empirical[invalid_mask]) / n1
+            )
+
+        se = np.sqrt(valid_variance)
         lower_envelope = tpr_empirical - z_simultaneous * se
         upper_envelope = tpr_empirical + z_simultaneous * se
 

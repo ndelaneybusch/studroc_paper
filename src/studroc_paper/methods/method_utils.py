@@ -402,6 +402,8 @@ def _log_concave_mle_density_derivative(
 
     # f = exp(phi)
     # f' = f * phi'
+    # Clip phi to prevent overflow (exp(700) is near float64 max)
+    phi_eval = np.clip(phi_eval, -100, 100)
     f_eval = np.exp(phi_eval)
     f_prime_eval = f_eval * phi_prime_eval
 
@@ -476,17 +478,30 @@ def compute_hsieh_turnbull_variance(
         g_vals, _ = _kde_density_derivative(pos_scores, thresholds, reflected=False)
     elif method == "reflected_kde":
         f_vals, _ = _kde_density_derivative(
-            neg_scores, thresholds, reflected=True, lower_bound=data_floor, upper_bound=data_ceil
+            neg_scores,
+            thresholds,
+            reflected=True,
+            lower_bound=data_floor,
+            upper_bound=data_ceil,
         )
         g_vals, _ = _kde_density_derivative(
-            pos_scores, thresholds, reflected=True, lower_bound=data_floor, upper_bound=data_ceil
+            pos_scores,
+            thresholds,
+            reflected=True,
+            lower_bound=data_floor,
+            upper_bound=data_ceil,
         )
     else:
         raise ValueError(f"Unknown method: {method}")
 
-    # Protect against division by zero
+    # Protect against division by zero and extreme ratios
     f_vals = np.maximum(f_vals, 1e-12)
+    g_vals = np.maximum(g_vals, 1e-12)
     roc_slope = g_vals / f_vals
+
+    # Clip ROC slope to prevent overflow in variance calculation
+    # Extreme slopes (>1000) are unrealistic and cause numerical issues
+    roc_slope = np.clip(roc_slope, 0.0, 1000.0)
 
     # 3. Assemble Variance
     # Var = Term1 + Term2
@@ -495,5 +510,12 @@ def compute_hsieh_turnbull_variance(
     term2 = (roc_slope**2) * fpr_grid * (1 - fpr_grid) / n0
 
     variance = term1 + term2
+
+    # Replace any remaining inf/nan with simple binomial variance fallback
+    invalid_mask = ~np.isfinite(variance)
+    if np.any(invalid_mask):
+        variance[invalid_mask] = (
+            tpr_empirical[invalid_mask] * (1 - tpr_empirical[invalid_mask]) / n1
+        )
 
     return variance

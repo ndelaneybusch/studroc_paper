@@ -60,9 +60,18 @@ def working_hotelling_band(
     b_hat = s0 / s1
 
     # Covariance matrix for (a, b) via Delta Method
+    # Ensure all variance components are finite
     var_a = (1 / n1) + (b_hat**2 / n0) + (a_hat**2 / (2 * n1))
     var_b = (b_hat**2 / (2 * n0)) + (b_hat**2 / (2 * n1))
     cov_ab = (a_hat * b_hat) / (2 * n1)
+
+    # Replace any NaN/inf variance components with fallback values
+    if not np.isfinite(var_a):
+        var_a = 1.0 / n1
+    if not np.isfinite(var_b):
+        var_b = 1.0 / n1
+    if not np.isfinite(cov_ab):
+        cov_ab = 0.0
 
     # Evaluation grid (probit space)
     fpr_grid = np.linspace(0, 1, k, dtype=dtype)
@@ -72,7 +81,14 @@ def working_hotelling_band(
     x_probit = norm.ppf(fpr_clipped)
 
     # Standard error of fitted line in probit space
-    se_probit = np.sqrt(var_a + (x_probit**2 * var_b) + (2 * x_probit * cov_ab))
+    variance_probit = var_a + (x_probit**2 * var_b) + (2 * x_probit * cov_ab)
+
+    # Replace invalid variance with minimum plausible value
+    invalid_mask = ~np.isfinite(variance_probit) | (variance_probit < 0)
+    if np.any(invalid_mask):
+        variance_probit[invalid_mask] = 1.0 / n1
+
+    se_probit = np.sqrt(variance_probit)
 
     # Working-Hotelling Critical Value
     W = np.sqrt(chi2.ppf(1 - alpha, df=2))
