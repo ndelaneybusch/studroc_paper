@@ -19,14 +19,17 @@ from numpy.typing import NDArray
 from scipy.optimize import brentq
 from scipy.special import gammaln
 from scipy.stats import norm
-from studroc_paper.viz import plot_band_diagnostics
 from torch.distributions import Beta
+
+from studroc_paper.viz import plot_band_diagnostics
 
 from .method_utils import compute_empirical_roc_from_scores, wilson_halfwidth_squared_np
 
-# Type alias for curve retention method selection
 RetentionMethod = Literal["ks", "symmetric"]
+"""Type for specifying curve retention method in bootstrap band construction."""
+
 SamplingMethod = Literal["exact", "interpolate"]
+"""Type for specifying sampling strategy in bootstrap procedures."""
 
 
 # =============================================================================
@@ -53,8 +56,16 @@ class BernsteinCDF:
 
         Args:
             data: Original observations.
-            degree: Polynomial degree. Default: max(10, sqrt(n)).
-            support_extension: Fraction to extend support beyond observed range.
+            degree: Polynomial degree. Defaults to max(10, n^0.4) for MISE-optimal rate.
+            support_extension: Fraction to extend support beyond observed range. Defaults to 0.02.
+
+        Raises:
+            ValueError: If data contains fewer than 2 points.
+
+        Examples:
+            >>> data = np.random.normal(0, 1, 100)
+            >>> bp = BernsteinCDF(data, degree=15)
+            >>> cdf_values = bp.cdf(np.linspace(-3, 3, 50))
         """
         self.data_original = np.sort(np.asarray(data, dtype=np.float64))
         self.n = len(self.data_original)
@@ -85,7 +96,10 @@ class BernsteinCDF:
         self._precompute_coefficients()
 
     def _precompute_coefficients(self) -> None:
-        """Precompute all coefficients needed for CDF and PDF evaluation."""
+        """Precompute all coefficients needed for CDF and PDF evaluation.
+
+        Computes CDF coefficients F̂(k/m) and PDF coefficients m·[F̂((k+1)/m) - F̂(k/m)].
+        """
         m = self.degree
 
         # CDF coefficients: F̂(k/m) for k = 0, ..., m
@@ -97,7 +111,14 @@ class BernsteinCDF:
         self.pdf_coeffs = m * np.diff(self.cdf_coeffs)
 
     def _empirical_cdf_at_node(self, u: float) -> float:
-        """Compute empirical CDF at unit-space position u."""
+        """Compute empirical CDF at unit-space position u.
+
+        Args:
+            u: Position in unit space [0, 1].
+
+        Returns:
+            Empirical CDF value at position u.
+        """
         if u <= 0:
             return 0.0
         if u >= 1:
@@ -106,11 +127,25 @@ class BernsteinCDF:
         return np.searchsorted(self.data_original, x, side="right") / self.n
 
     def _to_unit(self, x: NDArray) -> NDArray:
-        """Transform from original support to [0, 1]."""
+        """Transform from original support to [0, 1].
+
+        Args:
+            x: Values in original support space.
+
+        Returns:
+            Transformed values in [0, 1].
+        """
         return (x - self.support_min) / self.support_range
 
     def _from_unit(self, u: float | NDArray) -> NDArray:
-        """Transform from [0, 1] to original support."""
+        """Transform from [0, 1] to original support.
+
+        Args:
+            u: Values in unit space [0, 1].
+
+        Returns:
+            Transformed values in original support space.
+        """
         return np.asarray(u) * self.support_range + self.support_min
 
     def _eval_bernstein_poly(self, u: NDArray, coeffs: NDArray) -> NDArray:
@@ -160,7 +195,14 @@ class BernsteinCDF:
         return np.sum(weighted_basis, axis=0)
 
     def cdf_unit(self, u: NDArray) -> NDArray:
-        """Evaluate BP-smoothed CDF at u ∈ [0, 1]."""
+        """Evaluate BP-smoothed CDF at u ∈ [0, 1].
+
+        Args:
+            u: Unit-space positions to evaluate, shape (N,).
+
+        Returns:
+            CDF values clipped to [0, 1], shape (N,).
+        """
         u = np.atleast_1d(u)
         result = np.zeros_like(u, dtype=np.float64)
 
@@ -181,6 +223,12 @@ class BernsteinCDF:
         """Evaluate BP-smoothed PDF at u ∈ [0, 1].
 
         This is the analytical derivative of the CDF.
+
+        Args:
+            u: Unit-space positions to evaluate, shape (N,).
+
+        Returns:
+            PDF values (non-negative), shape (N,).
         """
         u = np.atleast_1d(u)
         result = np.zeros_like(u, dtype=np.float64)
@@ -194,7 +242,14 @@ class BernsteinCDF:
         return np.maximum(result, 0)
 
     def cdf(self, x: NDArray) -> NDArray:
-        """Evaluate BP-smoothed CDF at x in original support."""
+        """Evaluate BP-smoothed CDF at x in original support.
+
+        Args:
+            x: Positions in original support space, shape (N,).
+
+        Returns:
+            CDF values, shape (N,).
+        """
         u = self._to_unit(np.atleast_1d(x))
         return self.cdf_unit(u)
 
@@ -202,12 +257,26 @@ class BernsteinCDF:
         """Evaluate BP-smoothed PDF at x in original support.
 
         Accounts for Jacobian of unit transformation.
+
+        Args:
+            x: Positions in original support space, shape (N,).
+
+        Returns:
+            PDF values, shape (N,).
         """
         u = self._to_unit(np.atleast_1d(x))
         return self.pdf_unit(u) / self.support_range
 
     def quantile_unit(self, p: float, tol: float = 1e-12) -> float:
-        """Compute quantile F̃^{-1}(p) in unit space using Brent's method."""
+        """Compute quantile F̃^{-1}(p) in unit space using Brent's method.
+
+        Args:
+            p: Probability level in [0, 1].
+            tol: Convergence tolerance for root-finding. Defaults to 1e-12.
+
+        Returns:
+            Quantile value in unit space [0, 1].
+        """
         if p <= 0:
             return 0.0
         if p >= 1:
@@ -232,17 +301,34 @@ class BernsteinCDF:
             return (lo + hi) / 2
 
     def quantile(self, p: float, tol: float = 1e-12) -> float:
-        """Compute quantile F̃^{-1}(p) in original support."""
+        """Compute quantile F̃^{-1}(p) in original support.
+
+        Args:
+            p: Probability level in [0, 1].
+            tol: Convergence tolerance for root-finding. Defaults to 1e-12.
+
+        Returns:
+            Quantile value in original support space.
+        """
         return float(self._from_unit(self.quantile_unit(p, tol)))
 
     def sample(self, n_samples: int, rng: np.random.Generator | None = None) -> NDArray:
-        """Generate samples using the Beta mixture property (Vectorized/Exact).
+        """Generate samples using the Beta mixture property.
 
-        This uses a generative process. The Bernstein PDF is a mixture of Beta
-        distributions:
+        The Bernstein PDF is a mixture of Beta distributions:
             f(u) = Σ w_k * Beta(u | k+1, m-k)
 
-        Complexity: O(N).
+        Args:
+            n_samples: Number of samples to generate.
+            rng: Random number generator. Defaults to np.random.default_rng().
+
+        Returns:
+            Samples in original support space, shape (n_samples,).
+
+        Examples:
+            >>> data = np.random.normal(0, 1, 100)
+            >>> bp = BernsteinCDF(data)
+            >>> samples = bp.sample(1000)
         """
         if rng is None:
             rng = np.random.default_rng()
@@ -278,18 +364,25 @@ class BernsteinCDF:
         device: torch.device | None = None,
         dtype: torch.dtype = torch.float32,
     ) -> torch.Tensor:
-        """Generate batched samples using PyTorch (Vectorized/Parallel).
+        """Generate batched samples using PyTorch for parallel efficiency.
 
         Generates B bootstrap replicates of n samples each in a single pass.
 
         Args:
             n_samples: Number of samples per bootstrap (n).
             n_bootstraps: Number of bootstrap replicates (B).
-            device: Torch device.
-            dtype: Target dtype for the output samples.
+            device: Torch device. Defaults to CUDA if available, otherwise CPU.
+            dtype: Target dtype for the output samples. Defaults to torch.float32.
 
         Returns:
-            Tensor of shape (B, n) containing sampled values.
+            Tensor of shape (B, n) containing sampled values in original support space.
+
+        Examples:
+            >>> data = np.random.normal(0, 1, 100)
+            >>> bp = BernsteinCDF(data)
+            >>> batched = bp.sample_batched(n_samples=50, n_bootstraps=1000)
+            >>> batched.shape
+            torch.Size([1000, 50])
         """
         if device is None:
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -334,7 +427,16 @@ class BernsteinCDF:
 
 @dataclass
 class ExactBPROC:
-    """Container for exact BP-ROC computation results."""
+    """Container for exact BP-ROC computation results.
+
+    Attributes:
+        fpr: False positive rate grid values.
+        tpr: True positive rate values at each FPR.
+        thresholds: Decision thresholds corresponding to each FPR.
+        roc_slope: ROC curve slope (dTPR/dFPR) at each point.
+        pdf_neg_at_c: Negative class PDF evaluated at each threshold.
+        pdf_pos_at_c: Positive class PDF evaluated at each threshold.
+    """
 
     fpr: NDArray
     tpr: NDArray
@@ -361,10 +463,18 @@ def _compute_bp_roc_exact(
         bp_neg: BernsteinCDF for negative class.
         bp_pos: BernsteinCDF for positive class.
         fpr_grid: Array of FPR values to evaluate.
-        compute_derivatives: Whether to compute R'(t) = g(c)/f(c).
+        compute_derivatives: Whether to compute R'(t) = g(c)/f(c). Defaults to True.
 
     Returns:
         ExactBPROC with all computed quantities.
+
+    Examples:
+        >>> neg_data = np.random.normal(0, 1, 100)
+        >>> pos_data = np.random.normal(1.5, 1, 100)
+        >>> bp_neg = BernsteinCDF(neg_data)
+        >>> bp_pos = BernsteinCDF(pos_data)
+        >>> fpr = np.linspace(0, 1, 50)
+        >>> roc = _compute_bp_roc_exact(bp_neg, bp_pos, fpr)
     """
     fpr_grid = np.atleast_1d(fpr_grid)
     n_points = len(fpr_grid)
@@ -423,7 +533,16 @@ def _compute_bp_roc_exact(
 def _compute_empirical_roc(
     scores_neg: NDArray, scores_pos: NDArray, fpr_grid: NDArray
 ) -> NDArray:
-    """Compute empirical ROC (step function) at given FPR values."""
+    """Compute empirical ROC (step function) at given FPR values.
+
+    Args:
+        scores_neg: Negative class scores.
+        scores_pos: Positive class scores.
+        fpr_grid: FPR values to evaluate.
+
+    Returns:
+        TPR values at each FPR point.
+    """
     tpr = np.zeros(len(fpr_grid))
 
     for i, t in enumerate(fpr_grid):
@@ -455,30 +574,37 @@ def bp_smoothed_bootstrap_band(
     plot: bool = False,
     plot_title: str | None = None,
 ) -> tuple[NDArray, NDArray, NDArray]:
-    """Construct SCB using BP-smoothed bootstrap with exact numerical methods.
+    """Construct simultaneous confidence band using BP-smoothed bootstrap.
 
-    Key features:
-    1. Center ROC computed exactly via numerical CDF/quantile
-    2. ROC slope computed analytically from BP PDFs
-    3. Bootstrap samples drawn from BP distributions
-    4. Studentized retention with Wilson score floor
+    This method combines Bernstein polynomial smoothing with studentized bootstrap
+    to create confidence bands for ROC curves. Key features include exact numerical
+    ROC computation (no Monte Carlo), analytical derivative calculation, and
+    variance stabilization via Wilson score floor.
 
     Args:
-        y_true: True binary labels (numpy array or torch tensor).
-        y_score: Predicted scores (numpy array or torch tensor).
-        fpr_grid: FPR evaluation points (numpy array or torch tensor).
-        alpha: Significance level (default 0.05).
-        n_bootstrap: Number of bootstrap replicates (default 2000).
-        bp_degree: Bernstein polynomial degree. Default: max(10, sqrt(n)).
-        retention_method: 'ks' for KS-based retention or 'symmetric' for
-            two-sided trimming (default 'ks').
-        random_seed: Random seed for reproducibility (default None).
-        plot: If True, generate diagnostic plots using the viz module (default False).
-        plot_title: Optional custom title for the diagnostic plots. If None, uses
-            method description.
+        y_true: True binary labels (0/1). Accepts numpy array or torch tensor.
+        y_score: Predicted scores (higher = more positive). Accepts numpy array or torch tensor.
+        fpr_grid: FPR evaluation points. Accepts numpy array or torch tensor.
+        alpha: Significance level. Defaults to 0.05 for 95% confidence.
+        n_bootstrap: Number of bootstrap replicates. Defaults to 2000.
+        bp_degree: Bernstein polynomial degree. Defaults to max(10, n^0.4).
+        retention_method: Curve retention strategy - 'ks' for KS-based or 'symmetric'
+            for two-sided trimming. Defaults to 'ks'.
+        random_seed: Random seed for reproducibility. Defaults to None.
+        plot: Whether to generate diagnostic plots. Defaults to False.
+        plot_title: Custom title for plots. Defaults to method description.
 
     Returns:
-        Tuple of (fpr_grid, lower_band, upper_band).
+        Tuple of (fpr_grid, lower_band, upper_band) as numpy arrays.
+
+    Examples:
+        >>> import numpy as np
+        >>> y_true = np.array([0] * 100 + [1] * 100)
+        >>> y_score = np.concatenate(
+        ...     [np.random.normal(0, 1, 100), np.random.normal(2, 1, 100)]
+        ... )
+        >>> fpr = np.linspace(0, 1, 100)
+        >>> fpr_out, lower, upper = bp_smoothed_bootstrap_band(y_true, y_score, fpr)
     """
     rng = np.random.default_rng(random_seed)
 

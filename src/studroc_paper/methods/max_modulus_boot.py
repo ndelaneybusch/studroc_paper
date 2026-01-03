@@ -1,4 +1,9 @@
-"""Logit-Space Studentized Bootstrap Confidence Bands for ROC Curves."""
+"""Max-Modulus Bootstrap Confidence Bands for ROC Curves.
+
+This module implements simultaneous confidence bands using the max-modulus method
+with logit-space studentization. The approach addresses boundary collapse issues
+in standard bootstrap ROC bands by applying Haldane-Anscombe correction.
+"""
 
 import numpy as np
 import torch
@@ -22,6 +27,13 @@ def _compute_empirical_roc(y_true: Tensor, y_score: Tensor, fpr_grid: Tensor) ->
 
     Returns:
         TPR values at fpr_grid points.
+
+    Examples:
+        >>> y_true = torch.tensor([0, 0, 1, 1])
+        >>> y_score = torch.tensor([0.1, 0.4, 0.35, 0.8])
+        >>> fpr_grid = torch.tensor([0.0, 0.5, 1.0])
+        >>> _compute_empirical_roc(y_true, y_score, fpr_grid)
+        tensor([0.0, 0.5, 1.0])
     """
     neg_scores = y_score[y_true == 0]
     pos_scores = y_score[y_true == 1]
@@ -40,6 +52,11 @@ def _haldane_logit(tpr: Tensor, n_pos: int) -> Tensor:
 
     Returns:
         Logit-transformed values.
+
+    Examples:
+        >>> tpr = torch.tensor([0.0, 0.5, 1.0])
+        >>> _haldane_logit(tpr, n_pos=10)
+        tensor([-2.9444, 0.0000, 2.9444])
     """
     k = tpr * n_pos
     numerator = k + 0.5
@@ -59,13 +76,18 @@ def _logit_std_error(tpr: Tensor, n_pos: int) -> Tensor:
 
     Returns:
         Estimated standard error tensor.
+
+    Examples:
+        >>> tpr = torch.tensor([0.5])
+        >>> _logit_std_error(tpr, n_pos=100)
+        tensor([0.2000])
     """
     # Continuity-corrected proportion
     k = tpr * n_pos
     p_hat = (k + 0.5) / (n_pos + 1.0)
 
     # Asymptotic variance for log odds
-    # Clamp p_hat slightly to ensure numerical stability, though +0.5 helps
+    # Clamping ensures numerical stability at extreme values
     p_hat = torch.clamp(p_hat, 1e-6, 1.0 - 1e-6)
     variance = 1.0 / (n_pos * p_hat * (1.0 - p_hat))
 
@@ -79,11 +101,11 @@ def logit_bootstrap_band(
     y_score: NDArray | Tensor,
     alpha: float = 0.05,
 ) -> tuple[NDArray, NDArray, NDArray]:
-    """Compute Simultaneous Confidence Bands using Logit-Space Studentization.
+    """Compute simultaneous confidence bands using logit-space studentization.
 
-    This method addresses the "boundary collapse" problem of standard bootstrap ROC
+    This method addresses the boundary collapse problem of standard bootstrap ROC
     bands by transforming the bootstrap distribution into logit space using the
-    Haldane-Anscombe correction. It constructs the band using the "Max-Modulus"
+    Haldane-Anscombe correction. It constructs the band using the max-modulus
     method, where a single critical value is derived from the supremum of the
     studentized deviations.
 
@@ -96,14 +118,28 @@ def logit_bootstrap_band(
         fpr_grid: (n_grid_points,) array of FPR values.
         y_true: Array of true binary labels (0 or 1).
         y_score: Array of predicted scores.
-        alpha: Significance level (default 0.05).
+        alpha: Significance level. Defaults to 0.05.
 
     Returns:
         Tuple of (fpr_grid, lower_envelope, upper_envelope) as numpy arrays.
+
+    Examples:
+        >>> import numpy as np
+        >>> y_true = np.array([0, 0, 1, 1])
+        >>> y_score = np.array([0.1, 0.4, 0.35, 0.8])
+        >>> fpr_grid = np.array([0.0, 0.5, 1.0])
+        >>> boot_tpr = np.array([[0.0, 0.5, 1.0], [0.0, 0.6, 1.0]])
+        >>> fpr, lower, upper = logit_bootstrap_band(
+        ...     boot_tpr, fpr_grid, y_true, y_score
+        ... )
+        >>> fpr.shape
+        (3,)
+        >>> lower.shape == upper.shape == (3,)
+        True
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # Preserve dtype
+    # Preserve dtype for output arrays
     if isinstance(y_score, np.ndarray):
         dtype = y_score.dtype
     elif isinstance(y_score, torch.Tensor):
@@ -117,59 +153,49 @@ def logit_bootstrap_band(
     y_true_t = numpy_to_torch(y_true, device)
     y_score_t = numpy_to_torch(y_score, device).float()
 
-    # Get sample size
     n_pos = int((y_true_t == 1).sum().item())
 
-    # 1. Compute Empirical ROC (Center of the band)
+    # Compute empirical ROC curve (center of the band)
     neg_scores = y_score_t[y_true_t == 0]
     pos_scores = y_score_t[y_true_t == 1]
     tpr_hat = compute_empirical_roc_from_scores(neg_scores, pos_scores, fpr)
 
-    # 2. Transform to Logit Space (Haldane Correction)
-    # We transform the center estimate and the bootstrap replicates
+    # Transform to logit space with Haldane correction
     logit_tpr_hat = _haldane_logit(tpr_hat, n_pos)
     logit_boot_tpr = _haldane_logit(boot_tpr, n_pos)
 
-    # 3. Compute Asymptotic Standard Error in Logit Space
-    # We use the SE of the empirical curve to studentize
+    # Compute asymptotic standard error in logit space
     logit_se = _logit_std_error(tpr_hat, n_pos)
 
-    # 4. Compute Studentized Deviations (Max-Modulus Statistic)
+    # Compute studentized deviations (max-modulus statistic)
     # Z_b = (theta*_b - theta_hat) / sigma_hat
-    # shape: (n_bootstrap, n_grid)
     deviations = (logit_boot_tpr - logit_tpr_hat.unsqueeze(0)) / logit_se.unsqueeze(0)
 
-    # Compute the supremum of absolute deviations for each bootstrap replicate
+    # Compute supremum of absolute deviations for each bootstrap replicate
     # D_b = max_k |Z_{b,k}|
-    # shape: (n_bootstrap,)
     max_abs_deviations = torch.max(torch.abs(deviations), dim=1).values
 
-    # 5. Determine Critical Value c_alpha
-    # We want the (1 - alpha) quantile of the max deviations
-    # This critical value ensures simultaneous coverage across the grid
+    # Determine critical value c_alpha
+    # (1 - alpha) quantile ensures simultaneous coverage across the grid
     c_alpha = torch.quantile(max_abs_deviations, 1.0 - alpha)
 
-    # 6. Construct Band in Logit Space
-    # Band = theta_hat +/- c_alpha * sigma_hat
+    # Construct band in logit space: theta_hat +/- c_alpha * sigma_hat
     margin = c_alpha * logit_se
     logit_lower = logit_tpr_hat - margin
     logit_upper = logit_tpr_hat + margin
 
-    # 7. Transform Back to Probability Space (Sigmoid/Expit)
+    # Transform back to probability space using sigmoid
     lower_envelope = torch.sigmoid(logit_lower)
     upper_envelope = torch.sigmoid(logit_upper)
 
-    # 8. Boundary Enforcement
-    # The logit transform naturally respects (0,1), but we enforce
-    # hard anchors at FPR=0 and FPR=1 for cleanliness.
+    # Enforce boundary anchors at FPR endpoints
     lower_envelope[0] = 0.0
     upper_envelope[-1] = 1.0
 
-    # Ensure logical consistency (precision errors could cause upper < lower rarely)
-    # though unlikely with symmetric margin
+    # Ensure logical consistency (prevent numerical precision errors)
     upper_envelope = torch.maximum(upper_envelope, lower_envelope)
 
-    # Convert to numpy
+    # Convert to numpy arrays with original dtype
     fpr_np = torch_to_numpy(fpr).astype(dtype)
     lower_np = torch_to_numpy(lower_envelope).astype(dtype)
     upper_np = torch_to_numpy(upper_envelope).astype(dtype)

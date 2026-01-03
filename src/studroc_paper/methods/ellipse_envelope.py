@@ -34,7 +34,11 @@ def _solve_quartic_numpy(coefficients: NDArray) -> NDArray:
         coefficients: Array of shape (5,) with [p4, p3, p2, p1, p0].
 
     Returns:
-        Array of real roots.
+        Array of real roots (imaginary parts < 1e-10 are filtered out).
+
+    Examples:
+        >>> coeffs = np.array([1, 0, -5, 0, 4])  # x^4 - 5x^2 + 4
+        >>> roots = _solve_quartic_numpy(coeffs)
     """
     roots = np.roots(coefficients)
     # Extract real roots (with small imaginary tolerance)
@@ -49,7 +53,13 @@ def _convert_to_numpy(arr: "NDArray | Tensor") -> tuple[NDArray, "np.dtype"]:
         arr: Input array (numpy or torch tensor).
 
     Returns:
-        Tuple of (numpy array, dtype).
+        Tuple of (numpy array, original dtype).
+
+    Examples:
+        >>> arr_np = np.array([1, 2, 3], dtype=np.float32)
+        >>> result, dtype = _convert_to_numpy(arr_np)
+        >>> dtype
+        dtype('float32')
     """
     if TORCH_AVAILABLE and isinstance(arr, Tensor):
         numpy_arr = arr.detach().cpu().numpy()
@@ -63,13 +73,24 @@ def _estimate_binormal_parameters(
 ) -> tuple[float, float, float, float, int, int]:
     """Estimate binormal model parameters from data.
 
+    Computes sample means and standard deviations for each class, applying
+    a minimum standard deviation floor to prevent numerical degeneracy.
+
     Args:
         y_true: Binary class labels (0/1).
         y_score: Continuous unbounded prediction scores.
-        minimum_std: Minimum allowed standard deviation to prevent degeneracy.
+        minimum_std: Minimum allowed standard deviation to prevent degeneracy. Defaults to 1e-8.
 
     Returns:
-        Tuple of (mu0, std0, mu1, std1, n0, n1).
+        Tuple of (mu0, std0, mu1, std1, n0, n1) where mu and std are the mean
+        and standard deviation for each class, and n is the sample count.
+
+    Examples:
+        >>> y_true = np.array([0, 0, 1, 1])
+        >>> y_score = np.array([0.2, 0.4, 0.7, 0.9])
+        >>> mu0, std0, mu1, std1, n0, n1 = _estimate_binormal_parameters(
+        ...     y_true, y_score
+        ... )
     """
     negative_scores = y_score[y_true == 0]
     positive_scores = y_score[y_true == 1]
@@ -112,11 +133,14 @@ def _compute_ellipse_coefficients(
 ) -> tuple[float, float, float, float, float, float, float, float]:
     """Compute the ellipse equation coefficients for a given cutoff.
 
-    Following Demidenko (2012) notation:
-    - γ̂_k(c) = (x̄_k - c) / s_k
-    - A_k = (1/n_k + γ̂_k²(c) / (2(n_k-1)))^(-1)
-    - B_k = A_k * σ_k
-    - D_k = γ̂_k(c) * A_k² * σ_k / (n_k-1)
+    Following Demidenko (2012) notation, computes standardized statistics and
+    their variance-adjusted coefficients for the confidence ellipse.
+
+    Notation:
+        - γ̂_k(c) = (x̄_k - c) / s_k (standardized location)
+        - A_k = (1/n_k + γ̂_k²(c) / (2(n_k-1)))^(-1) (inverse variance weight)
+        - B_k = 2*A_k / σ_k (gradient coefficient)
+        - D_k = γ̂_k(c) * A_k² / (σ_k * (n_k-1)) (curvature coefficient)
 
     Args:
         cutoff: Decision threshold c.
@@ -178,17 +202,23 @@ def _solve_envelope_quartic(
 ) -> tuple[NDArray, NDArray]:
     """Solve the quartic equation for the ellipse envelope.
 
-    The quartic coefficients from Demidenko (2012) appendix:
-    p4*η^4 + p3*η^3 + p2*η^2 + p1*η + p0 = 0
+    Uses the Demidenko (2012) appendix quartic formulation to find envelope
+    points in the (u, v) offset space.
+
+    The quartic coefficients satisfy:
+        p4*η^4 + p3*η^3 + p2*η^2 + p1*η + p0 = 0
 
     Args:
-        a_negative, a_positive: A coefficients.
-        b_negative, b_positive: B coefficients.
-        d_negative, d_positive: D coefficients.
+        a_negative: A coefficient for negative class.
+        a_positive: A coefficient for positive class.
+        b_negative: B coefficient for negative class.
+        b_positive: B coefficient for positive class.
+        d_negative: D coefficient for negative class.
+        d_positive: D coefficient for positive class.
         chi2_critical: Chi-squared critical value.
 
     Returns:
-        Tuple of (u_values, v_values) for envelope points.
+        Tuple of (u_values, v_values) for envelope points in offset space.
     """
     q = chi2_critical
 
@@ -292,17 +322,12 @@ def ellipse_envelope_band(
         curve revisited". Journal of Applied Statistics, 39(1), 67-79.
         https://doi.org/10.1080/02664763.2011.578616
 
-    Example:
+    Examples:
         >>> import numpy as np
-        >>> from ellipse_envelope import ellipse_envelope_band
-        >>> # Generate sample data
         >>> np.random.seed(42)
         >>> y_true = np.array([0] * 100 + [1] * 100)
         >>> y_score = np.concatenate(
-        ...     [
-        ...         np.random.normal(0, 1, 100),  # Negative class
-        ...         np.random.normal(1.5, 1.2, 100),  # Positive class
-        ...     ]
+        ...     [np.random.normal(0, 1, 100), np.random.normal(1.5, 1.2, 100)]
         ... )
         >>> fpr, lower, upper = ellipse_envelope_band(y_true, y_score)
     """

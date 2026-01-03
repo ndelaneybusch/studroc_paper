@@ -1,4 +1,15 @@
-"""Shared utilities for PyTorch-based methods."""
+"""Shared utilities for PyTorch-based ROC analysis methods.
+
+This module provides core utilities for computing empirical ROC curves,
+variance estimates, and density-based calculations. Key functionality includes:
+
+- Tensor/array conversion utilities for PyTorch and NumPy interoperability
+- Interpolation functions for ROC curve evaluation
+- Empirical ROC computation from score distributions
+- Wilson score interval calculations for binomial confidence
+- Hsieh-Turnbull variance estimation using KDE and log-concave MLE
+- Density and derivative estimation with reflection and adaptive bandwidth
+"""
 
 from typing import Literal
 
@@ -14,12 +25,27 @@ from torch import Tensor
 def numpy_to_torch(arr: NDArray | Tensor, device: torch.device | None = None) -> Tensor:
     """Convert numpy array or torch tensor to tensor on specified device.
 
+    Handles both numpy arrays and existing tensors, moving them to the
+    target device. If no device is specified, automatically selects CUDA
+    if available, otherwise CPU.
+
     Args:
         arr: Input numpy array or torch tensor.
-        device: Target device (defaults to CUDA if available).
+        device: Target device. Defaults to None (auto-select CUDA or CPU).
 
     Returns:
         PyTorch tensor on the specified device.
+
+    Examples:
+        >>> import numpy as np
+        >>> arr = np.array([1.0, 2.0, 3.0])
+        >>> tensor = numpy_to_torch(arr)
+        >>> tensor.device.type in ["cuda", "cpu"]
+        True
+        >>> existing_tensor = torch.tensor([1.0, 2.0])
+        >>> result = numpy_to_torch(existing_tensor, device=torch.device("cpu"))
+        >>> result.device.type
+        'cpu'
     """
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -35,11 +61,25 @@ def numpy_to_torch(arr: NDArray | Tensor, device: torch.device | None = None) ->
 def torch_to_numpy(tensor: Tensor | NDArray) -> NDArray:
     """Convert tensor or numpy array to numpy array.
 
+    Handles conversion from PyTorch tensors to numpy arrays, automatically
+    detaching from computational graph and moving to CPU if necessary.
+    If input is already a numpy array, returns it unchanged.
+
     Args:
         tensor: Input PyTorch tensor or numpy array.
 
     Returns:
         Numpy array with preserved dtype.
+
+    Examples:
+        >>> tensor = torch.tensor([1.0, 2.0, 3.0])
+        >>> arr = torch_to_numpy(tensor)
+        >>> isinstance(arr, np.ndarray)
+        True
+        >>> existing_arr = np.array([1.0, 2.0])
+        >>> result = torch_to_numpy(existing_arr)
+        >>> result is existing_arr
+        True
     """
     # If already numpy array, return as-is
     if isinstance(tensor, np.ndarray):
@@ -50,10 +90,26 @@ def torch_to_numpy(tensor: Tensor | NDArray) -> NDArray:
 
 
 def torch_step_interp(x: Tensor, xp: Tensor, fp: Tensor) -> Tensor:
-    """
-    Step-function interpolation (right-continuous).
+    """Step-function interpolation (right-continuous).
 
-    For x between xp[j] and xp[j+1], returns fp[j].
+    Implements a right-continuous step function where for each query point x
+    between xp[j] and xp[j+1], the function returns fp[j]. This is the standard
+    convention for empirical cumulative distribution functions.
+
+    Args:
+        x: Query points at which to evaluate the step function.
+        xp: X-coordinates of step discontinuities (must be increasing).
+        fp: Y-values corresponding to each step level.
+
+    Returns:
+        Interpolated step function values at x positions.
+
+    Examples:
+        >>> xp = torch.tensor([0.0, 0.5, 1.0])
+        >>> fp = torch.tensor([0.0, 0.7, 1.0])
+        >>> x = torch.tensor([0.25, 0.75])
+        >>> torch_step_interp(x, xp, fp)
+        tensor([0.0000, 0.7000])
     """
     # Find insertion indices
     indices = torch.searchsorted(xp, x, right=True) - 1
@@ -64,6 +120,9 @@ def torch_step_interp(x: Tensor, xp: Tensor, fp: Tensor) -> Tensor:
 def torch_interp(x: Tensor, xp: Tensor, fp: Tensor) -> Tensor:
     """Linear interpolation equivalent to np.interp.
 
+    Performs piecewise linear interpolation between data points.
+    Values outside the range of xp are clamped to boundary values.
+
     Args:
         x: X-coordinates at which to evaluate.
         xp: X-coordinates of data points (must be increasing).
@@ -71,6 +130,13 @@ def torch_interp(x: Tensor, xp: Tensor, fp: Tensor) -> Tensor:
 
     Returns:
         Interpolated values at x positions.
+
+    Examples:
+        >>> xp = torch.tensor([0.0, 1.0, 2.0])
+        >>> fp = torch.tensor([0.0, 1.0, 0.5])
+        >>> x = torch.tensor([0.5, 1.5])
+        >>> torch_interp(x, xp, fp)
+        tensor([0.5000, 0.7500])
     """
     # Find indices where x would be inserted
     indices = torch.searchsorted(xp, x)
@@ -94,7 +160,10 @@ def compute_empirical_roc_from_scores(
 ) -> Tensor:
     """Compute empirical ROC curve and interpolate at fpr_grid points.
 
-    Vectorized computation using PyTorch.
+    Calculates the empirical receiver operating characteristic (ROC) curve
+    by evaluating true positive rate (TPR) at all possible thresholds from
+    the negative class scores, then interpolates to the requested FPR grid
+    using step interpolation (right-continuous).
 
     Args:
         neg_scores: Tensor of negative class scores.
@@ -103,38 +172,35 @@ def compute_empirical_roc_from_scores(
 
     Returns:
         TPR values at fpr_grid points.
+
+    Examples:
+        >>> neg = torch.tensor([0.2, 0.4, 0.5, 0.6])
+        >>> pos = torch.tensor([0.6, 0.7, 0.8, 0.9])
+        >>> fpr = torch.tensor([0.0, 0.25, 0.5, 1.0])
+        >>> tpr = compute_empirical_roc_from_scores(neg, pos, fpr)
+        >>> tpr.shape
+        torch.Size([4])
     """
     device = neg_scores.device
 
-    # Get thresholds from negative scores (sorted descending)
-    # Note: We use all negative scores as candidate thresholds
+    # Use all negative scores as candidate thresholds (sorted descending)
     thresholds = torch.sort(neg_scores, descending=True).values
 
     n_neg = len(neg_scores)
     n_pos = len(pos_scores)
 
-    # Vectorized computation: for each threshold, compute FPR and TPR
-    # Shape: (n_thresholds,)
-    # Uses broadcasting: (1, n_neg) >= (n_thresholds, 1) -> (n_thresholds, n_neg)
-    # This is O(N^2) memory, which is fine for typical N (~1000s)
-    # but be careful for very large N.
-
-    # Expanding dimensions for broadcasting
-    # neg_scores: (N_neg,) -> (1, N_neg)
-    # thresholds: (N_neg,) -> (N_neg, 1)
-
-    # Determine dtype from inputs
+    # Vectorized computation using broadcasting
+    # Shape: (n_thresholds,) computed via (1, n_neg) >= (n_thresholds, 1)
+    # Memory is O(N^2), acceptable for typical sample sizes
     dtype = neg_scores.dtype
 
-    # Calculate FPR for each threshold
-    # FPR = FP / N_neg = sum(neg_scores >= threshold) / N_neg
-    # Note: sum() returns long for int/bool inputs, so we must cast to original dtype
+    # Calculate FPR: FP / N_neg = sum(neg_scores >= threshold) / N_neg
+    # sum() returns long for bool inputs, so cast to original dtype
     fpr_emp = (neg_scores.unsqueeze(0) >= thresholds.unsqueeze(1)).sum(dim=1).to(
         dtype=dtype
     ) / n_neg
 
-    # Calculate TPR for each threshold
-    # TPR = TP / N_pos = sum(pos_scores >= threshold) / N_pos
+    # Calculate TPR: TP / N_pos = sum(pos_scores >= threshold) / N_pos
     tpr_emp = (pos_scores.unsqueeze(0) >= thresholds.unsqueeze(1)).sum(dim=1).to(
         dtype=dtype
     ) / n_pos
@@ -155,7 +221,7 @@ def compute_empirical_roc_from_scores(
         ]
     )
 
-    # Interpolate at fpr_grid points (Step interpolation for empirical ROC)
+    # Interpolate at fpr_grid points using step interpolation
     return torch_step_interp(fpr_grid, fpr_emp, tpr_emp)
 
 
@@ -187,6 +253,14 @@ def wilson_halfwidth_squared_np(p: NDArray, n: int, z: float) -> NDArray:
 
     Returns:
         Squared half-width of Wilson interval at each p value (variance floor).
+
+    Examples:
+        >>> p = np.array([0.0, 0.5, 1.0])
+        >>> n = 100
+        >>> z = 1.96  # 95% confidence
+        >>> var_floor = wilson_halfwidth_squared_np(p, n, z)
+        >>> np.all(var_floor > 0)
+        True
     """
     if n <= 0:
         return np.zeros_like(p)
@@ -218,6 +292,14 @@ def wilson_halfwidth_squared_torch(p: Tensor, n: int, z: float) -> Tensor:
 
     Returns:
         Squared half-width of Wilson interval at each p value (variance floor).
+
+    Examples:
+        >>> p = torch.tensor([0.0, 0.5, 1.0])
+        >>> n = 100
+        >>> z = 1.96  # 95% confidence
+        >>> var_floor = wilson_halfwidth_squared_torch(p, n, z)
+        >>> torch.all(var_floor > 0)
+        tensor(True)
     """
     if n <= 0:
         return torch.zeros_like(p)
@@ -233,8 +315,23 @@ def wilson_halfwidth_squared_torch(p: Tensor, n: int, z: float) -> Tensor:
 
 
 def _sheather_jones_bandwidth(data: NDArray) -> float:
-    """
-    Compute Improved Sheather-Jones bandwidth using KDEpy.
+    """Compute Improved Sheather-Jones bandwidth using KDEpy.
+
+    Uses the Improved Sheather-Jones (ISJ) method for optimal bandwidth
+    selection in kernel density estimation. This method minimizes
+    asymptotic mean integrated squared error.
+
+    Args:
+        data: Input data array for bandwidth estimation.
+
+    Returns:
+        Optimal bandwidth value.
+
+    Examples:
+        >>> data = np.random.randn(100)
+        >>> bw = _sheather_jones_bandwidth(data)
+        >>> bw > 0
+        True
     """
     # KDEpy handles ISJ bandwidth selection efficiently
     # We fit on the data to extract the computed bandwidth.
@@ -250,28 +347,40 @@ def _kde_density_derivative(
     lower_bound: float | None = None,
     upper_bound: float | None = None,
 ) -> tuple[NDArray, NDArray]:
-    """
-    Compute density and derivative using KDE.
+    """Compute density and derivative using KDE.
 
     Uses KDEpy for optimal bandwidth selection, then computes exact
-    Gaussian mixture density and derivatives manually (handling reflection).
+    Gaussian mixture density and derivatives manually. Supports boundary
+    reflection to reduce edge bias near data boundaries.
 
     Args:
         data: Input data array.
         eval_points: Points at which to evaluate density and derivative.
-        bw_method: Bandwidth selection method ('ISJ' or 'silverman').
-        reflected: If True, use boundary reflection to reduce edge bias.
-        lower_bound: Lower boundary for reflection. If None, uses np.min(data).
-        upper_bound: Upper boundary for reflection. If None, uses np.max(data).
+        bw_method: Bandwidth selection method ('ISJ' or 'silverman'). Defaults to 'ISJ'.
+        reflected: If True, use boundary reflection to reduce edge bias. Defaults to False.
+        lower_bound: Lower boundary for reflection. Defaults to None (uses np.min(data)).
+        upper_bound: Upper boundary for reflection. Defaults to None (uses np.max(data)).
 
     Returns:
         Tuple of (density, derivative) arrays at eval_points.
+
+    Examples:
+        >>> data = np.random.randn(100)
+        >>> eval_pts = np.linspace(-3, 3, 50)
+        >>> density, deriv = _kde_density_derivative(data, eval_pts)
+        >>> density.shape == eval_pts.shape
+        True
+        >>> deriv.shape == eval_pts.shape
+        True
     """
-    # 1. Determine bandwidth using Improved Sheather-Jones (ISJ)
-    try:
-        h = _sheather_jones_bandwidth(data)
-    except Exception:
-        # Fallback if ISJ fails (e.g., too few unique points)
+    # Determine bandwidth using Improved Sheather-Jones (ISJ)
+    if bw_method == "ISJ":
+        try:
+            h = _sheather_jones_bandwidth(data)
+        except Exception:
+            bw_method = "silverman"
+
+    if bw_method == "silverman":
         try:
             h = float(FFTKDE(kernel="gaussian", bw="silverman").fit(data).bw)
         except Exception:
@@ -281,18 +390,17 @@ def _kde_density_derivative(
         h = 1e-6
 
     if reflected:
-        # 2. Augment data (Reflection)
+        # Augment data using boundary reflection
         L = lower_bound if lower_bound is not None else np.min(data)
         U = upper_bound if upper_bound is not None else np.max(data)
-        # Reflect around the TRUE boundaries
-        # D_aug = [D, 2*L - D, 2*U - D]
+        # Reflect around the boundaries: D_aug = [D, 2*L - D, 2*U - D]
         data_aug = np.concatenate([data, 2 * L - data, 2 * U - data])
-        n_aug = len(data_aug)  # = 3 * n
+        n_aug = len(data_aug)
     else:
         n_aug = len(data)
         data_aug = data
 
-    # 3. Vectorized Gaussian Sum computation
+    # Vectorized Gaussian sum computation
     eval_points = np.asarray(eval_points)
     pdf = np.zeros_like(eval_points)
     deriv = np.zeros_like(eval_points)
@@ -309,17 +417,17 @@ def _kde_density_derivative(
     for i in range(0, len(eval_points), chunk_size):
         x_chunk = eval_points[i : i + chunk_size]
 
-        # u = (x - xi) / h
+        # Compute standardized distances: u = (x - xi) / h
         u = (x_chunk[:, None] - data_aug[None, :]) / h
 
-        # K(u)
+        # Gaussian kernel: K(u) = (1/sqrt(2π)) * exp(-u²/2)
         k_u = const_norm * np.exp(-0.5 * u**2)
 
-        # sum K(u)
+        # Density: sum of kernels
         sum_k = np.sum(k_u, axis=1)
         pdf[i : i + chunk_size] = sum_k * factor_pdf * correction
 
-        # sum -u * K(u)
+        # Derivative: sum of kernel derivatives
         sum_k_prime = np.sum(-u * k_u, axis=1)
         deriv[i : i + chunk_size] = sum_k_prime * factor_deriv * correction
 
@@ -329,12 +437,29 @@ def _kde_density_derivative(
 def _log_concave_mle_density_derivative(
     data: NDArray, eval_points: NDArray
 ) -> tuple[NDArray, NDArray]:
-    """
-    Estimate density and derivative using Log-Concave MLE via Convex Optimization.
+    """Estimate density and derivative using Log-Concave MLE.
 
-    Solves the binned Log-Concave Maximum Likelihood problem using cvxpy.
+    Solves the binned log-concave maximum likelihood estimation problem
+    using convex optimization (cvxpy). The density is constrained to have
+    a concave logarithm, which is a common shape constraint in statistics.
+
+    Args:
+        data: Input data array for density estimation.
+        eval_points: Points at which to evaluate the estimated density and derivative.
+
+    Returns:
+        Tuple of (density, derivative) arrays at eval_points.
+
+    Examples:
+        >>> data = np.random.randn(100)
+        >>> eval_pts = np.linspace(-3, 3, 50)
+        >>> density, deriv = _log_concave_mle_density_derivative(data, eval_pts)
+        >>> density.shape == eval_pts.shape
+        True
+        >>> np.all(density >= 0)
+        True
     """
-    # 1. Bin data to a fine grid
+    # Bin data to a fine grid
     n_bins = 200
     # Include some buffer for tails
     data_min, data_max = np.min(data), np.max(data)
@@ -348,31 +473,28 @@ def _log_concave_mle_density_derivative(
 
     counts, _ = np.histogram(data, bins=grid_edges)
 
-    # 2. Setup Convex Problem
+    # Setup convex optimization problem
     # Variable: phi = log(f) at grid_centers
     phi = cp.Variable(n_bins)
 
-    # Objective: Maximize Log-Likelihood ~ sum(counts * phi) - n * integral(exp(phi))
-    # Approximation: integral approx sum(width * exp(phi))
-    # Obj = sum(counts * phi) - sum(widths * exp(phi))
-    # This corresponds to a Poisson regression with convexity constraint
-
+    # Objective: Maximize log-likelihood ~ sum(counts * phi) - n * integral(exp(phi))
+    # Integral approximation: sum(width * exp(phi))
+    # This corresponds to Poisson regression with concavity constraint
     likelihood_term = counts @ phi
     integral_term = cp.sum(cp.multiply(widths, cp.exp(phi)))
 
     objective = cp.Maximize(likelihood_term - integral_term)
 
-    # Constraints: Concavity
+    # Constraints: Concavity of log-density
     # Discrete 2nd derivative <= 0
     # For uniform grid: phi[i-1] - 2*phi[i] + phi[i+1] <= 0
-    # Vectorized: cp.diff(phi, k=2) <= 0
     constraints = [cp.diff(phi, k=2) <= 0]
 
-    # 3. Solve
+    # Solve the optimization problem
     prob = cp.Problem(objective, constraints)
 
     try:
-        # SCS is a robust first-order solver, often default
+        # SCS is a robust first-order solver
         prob.solve(solver=cp.SCS, eps=1e-4)
     except cp.SolverError:
         try:
@@ -381,7 +503,7 @@ def _log_concave_mle_density_derivative(
             pass
 
     if phi.value is None or np.all(np.isnan(phi.value)):
-        # Solver failed -> Fallback to normal approximation
+        # Solver failed, fallback to normal approximation
         mu, std = np.mean(data), np.std(data)
         phi_res = -0.5 * ((grid_centers - mu) / std) ** 2 - np.log(
             std * np.sqrt(2 * np.pi)
@@ -389,8 +511,7 @@ def _log_concave_mle_density_derivative(
     else:
         phi_res = phi.value
 
-    # 4. Interpolate result
-    # Fit cubic spline to the log-density phi
+    # Interpolate result using cubic spline on log-density
     try:
         tck = interpolate.splrep(grid_centers, phi_res, k=3, s=0)
     except Exception:
@@ -400,16 +521,16 @@ def _log_concave_mle_density_derivative(
     phi_eval = interpolate.splev(eval_points, tck)
     phi_prime_eval = interpolate.splev(eval_points, tck, der=1)
 
-    # f = exp(phi)
-    # f' = f * phi'
+    # Compute density and derivative
+    # f = exp(phi), f' = f * phi'
     # Clip phi to prevent overflow (exp(700) is near float64 max)
     phi_eval = np.clip(phi_eval, -100, 100)
     f_eval = np.exp(phi_eval)
     f_prime_eval = f_eval * phi_prime_eval
 
     # Normalize density (integral = 1)
-    # The term - integral(exp(phi)) forces sum(widths*exp(phi)) ~= N_total
-    # So f integrates to N. We must divide by N.
+    # The optimization forces sum(widths*exp(phi)) ~= N_total
+    # So we divide by N to normalize
     n_total = np.sum(counts)
     if n_total > 0:
         f_eval /= n_total
@@ -426,50 +547,59 @@ def compute_hsieh_turnbull_variance(
     data_floor: float | None = None,
     data_ceil: float | None = None,
 ) -> NDArray:
-    """
-    Compute Asymptotic Variance of ROC curve using Hsieh-Turnbull formula.
+    """Compute asymptotic variance of ROC curve using Hsieh-Turnbull formula.
 
-    Var(R(t)) = R(t)(1-R(t))/n1 + (g(c)/f(c))^2 * t(1-t)/n0
+    Uses the Hsieh-Turnbull asymptotic variance formula for empirical ROC curves:
+        Var(R(t)) = R(t)(1-R(t))/n1 + (g(c)/f(c))^2 * t(1-t)/n0
+
+    where R(t) is the TPR at FPR=t, f is the negative class density,
+    g is the positive class density, and c is the threshold at FPR=t.
 
     Args:
-        neg_scores: Control scores
-        pos_scores: Case scores
-        fpr_grid: FPR values t over which to evaluate.
-        method: 'reflected_kde' or 'log_concave' or 'kde'.
-        data_floor: Optional lower boundary for reflected KDE. If None, uses np.min(data).
-        data_ceil: Optional upper boundary for reflected KDE. If None, uses np.max(data).
+        neg_scores: Negative class (control) scores.
+        pos_scores: Positive class (case) scores.
+        fpr_grid: FPR values at which to evaluate variance.
+        method: Density estimation method. Defaults to 'reflected_kde'.
+            Options: 'reflected_kde', 'log_concave', 'kde'.
+        data_floor: Optional lower boundary for reflected KDE. Defaults to None (uses data minimum).
+        data_ceil: Optional upper boundary for reflected KDE. Defaults to None (uses data maximum).
 
     Returns:
-        Variance array matching fpr_grid.
+        Variance array matching fpr_grid shape.
+
+    Examples:
+        >>> neg = np.random.randn(100)
+        >>> pos = np.random.randn(100) + 1.0
+        >>> fpr = np.linspace(0.01, 0.99, 50)
+        >>> var = compute_hsieh_turnbull_variance(neg, pos, fpr)
+        >>> var.shape == fpr.shape
+        True
+        >>> np.all(var > 0)
+        True
     """
     n0 = len(neg_scores)
     n1 = len(pos_scores)
 
-    # 1. Compute Thresholds and R(t)
-    # Note: For the 'center' R(t) term, we use empirical probabilities
-    # as they are unbiased and standard.
+    # Compute thresholds and R(t)
     # Threshold c corresponds to F_neg(c) = 1 - t
-    # For t=0 (c=inf), t=1 (c=-inf).
-
-    # Using numpy quantile for consistency
-    # Handle boundaries carefully
+    # For t=0 (c=inf), t=1 (c=-inf)
     thresholds = np.zeros_like(fpr_grid)
     valid_mask = (fpr_grid > 0) & (fpr_grid < 1)
 
     if np.any(valid_mask):
         thresholds[valid_mask] = np.quantile(neg_scores, 1 - fpr_grid[valid_mask])
 
-    # Set boundary thresholds to min/max with buffer for density eval
+    # Set boundary thresholds with buffer for density evaluation
     min_score = min(np.min(neg_scores), np.min(pos_scores))
     max_score = max(np.max(neg_scores), np.max(pos_scores))
 
     thresholds[fpr_grid <= 0] = max_score + 0.1
     thresholds[fpr_grid >= 1] = min_score - 0.1
 
-    # Compute R(t) = P(Y > c)
+    # Compute R(t) = P(Y > c) using empirical probabilities
     tpr_empirical = np.mean(pos_scores[:, None] > thresholds[None, :], axis=0)
 
-    # 2. Estimate Densities and Slopes
+    # Estimate densities and ROC slopes
     if method == "log_concave":
         f_vals, _ = _log_concave_mle_density_derivative(neg_scores, thresholds)
         g_vals, _ = _log_concave_mle_density_derivative(pos_scores, thresholds)
@@ -499,19 +629,18 @@ def compute_hsieh_turnbull_variance(
     g_vals = np.maximum(g_vals, 1e-12)
     roc_slope = g_vals / f_vals
 
-    # Clip ROC slope to prevent overflow in variance calculation
+    # Clip ROC slope to prevent overflow
     # Extreme slopes (>1000) are unrealistic and cause numerical issues
     roc_slope = np.clip(roc_slope, 0.0, 1000.0)
 
-    # 3. Assemble Variance
+    # Assemble variance components
     # Var = Term1 + Term2
-
     term1 = tpr_empirical * (1 - tpr_empirical) / n1
     term2 = (roc_slope**2) * fpr_grid * (1 - fpr_grid) / n0
 
     variance = term1 + term2
 
-    # Replace any remaining inf/nan with simple binomial variance fallback
+    # Replace any remaining inf/nan with binomial variance fallback
     invalid_mask = ~np.isfinite(variance)
     if np.any(invalid_mask):
         variance[invalid_mask] = (

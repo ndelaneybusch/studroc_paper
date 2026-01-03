@@ -42,12 +42,25 @@ def _check_log_concavity_assumptions(
         neg_scores: Control/negative class scores.
         pos_scores: Case/positive class scores.
         kurtosis_threshold: Threshold for excess kurtosis above which a
-            warning is issued. Default 2.0 is conservative (normal = 0,
+            warning is issued. Defaults to 2.0 (conservative, as normal = 0,
             Laplace ≈ 3, t(5) ≈ 6, heavier tails → higher values).
 
     Returns:
         Tuple of (passes_check, message) where passes_check is False if
         the data appears to violate log-concavity assumptions.
+
+    Examples:
+        >>> neg = np.random.normal(0, 1, 1000)
+        >>> pos = np.random.normal(1, 1, 1000)
+        >>> passes, msg = _check_log_concavity_assumptions(neg, pos)
+        >>> passes
+        True
+        >>> # Heavy-tailed data
+        >>> neg_heavy = np.random.standard_t(3, 1000)
+        >>> pos_heavy = np.random.standard_t(3, 1000) + 1
+        >>> passes, msg = _check_log_concavity_assumptions(neg_heavy, pos_heavy)
+        >>> passes
+        False
     """
     neg_kurtosis = stats.kurtosis(neg_scores, fisher=True)  # Excess kurtosis
     pos_kurtosis = stats.kurtosis(pos_scores, fisher=True)
@@ -161,35 +174,38 @@ def hsieh_turnbull_band(
     Args:
         y_true: Array of binary class labels (0/1) (numpy array or torch tensor).
         y_score: Array of continuous scores (numpy array or torch tensor).
-        k: Number of evaluation points on the FPR grid.
-        alpha: Significance level (e.g., 0.05 for 95% confidence).
-        use_logit_transform: If True (default), construct intervals on the logit
+        k: Number of evaluation points on the FPR grid. Defaults to 1000.
+        alpha: Significance level (e.g., 0.05 for 95% confidence). Defaults to 0.05.
+        use_logit_transform: If True, construct intervals on the logit
             scale for stable boundary behavior. If False, use direct Gaussian
-            intervals on the probability scale.
+            intervals on the probability scale. Defaults to True.
         density_method: Method for estimating score densities. Options:
             - "log_concave": Log-concave MLE via convex optimization. More
               robust to outliers and provides smooth derivative estimates.
             - "reflected_kde": Reflected kernel density estimation with ISJ
               bandwidth. May exhibit instability in tails.
+            Defaults to "log_concave".
         n_bootstraps: Number of bootstrap replicates to use for calibrating the
-            critical value. If > 0 (default 2000), uses bootstrap calibration
+            critical value. If > 0, uses bootstrap calibration
             which provides tighter, more accurate bands than the Bonferroni
             heuristic. If 0, uses the conservative `sqrt(k)` heuristic.
-        check_assumptions: If True (default), run heuristic checks for gross
+            Defaults to 2000.
+        check_assumptions: If True, run heuristic checks for gross
             violations of log-concavity assumptions and issue warnings.
+            Defaults to True.
         use_wilson_variance_floor: If True, apply a Wilson score interval variance
             floor to stabilize bands when the estimated ROC slope is near 0. The
             Wilson variance provides a principled minimum uncertainty based on exact
-            binomial theory. Default False.
+            binomial theory. Defaults to False.
         data_floor: Optional lower boundary for reflected KDE. When using reflected_kde
             method, data is reflected around this boundary. If None, uses np.min(data).
             Useful when the theoretical support is known (e.g., scores in [0, 1]).
         data_ceil: Optional upper boundary for reflected KDE. When using reflected_kde
             method, data is reflected around this boundary. If None, uses np.max(data).
             Useful when the theoretical support is known (e.g., scores in [0, 1]).
-        plot: If True, generate diagnostic plots using the viz module (default False).
+        plot: If True, generate diagnostic plots using the viz module. Defaults to False.
         plot_title: Optional custom title for the diagnostic plots. If None, uses
-            "Hsieh-Turnbull".
+            a descriptive title based on method parameters.
 
     Returns:
         Tuple of (fpr_grid, lower_envelope, upper_envelope) as numpy arrays.
@@ -197,6 +213,43 @@ def hsieh_turnbull_band(
     Raises:
         ValueError: If y_true contains values other than 0 and 1, or if there
             are fewer than 2 samples per class.
+
+    Examples:
+        >>> # Basic usage with normal distributions
+        >>> np.random.seed(42)
+        >>> y_true = np.concatenate([np.zeros(100), np.ones(100)])
+        >>> y_score = np.concatenate(
+        ...     [np.random.normal(0, 1, 100), np.random.normal(1, 1, 100)]
+        ... )
+        >>> fpr, lower, upper = hsieh_turnbull_band(y_true, y_score, k=100, alpha=0.05)
+        >>> fpr.shape
+        (100,)
+        >>> lower.shape
+        (100,)
+        >>> upper.shape
+        (100,)
+        >>> # All values should be in [0, 1]
+        >>> np.all((lower >= 0) & (lower <= 1))
+        True
+        >>> np.all((upper >= 0) & (upper <= 1))
+        True
+
+        >>> # Using reflected KDE for bounded scores
+        >>> y_score_bounded = np.concatenate(
+        ...     [np.random.beta(2, 5, 100), np.random.beta(5, 2, 100)]
+        ... )
+        >>> fpr, lower, upper = hsieh_turnbull_band(
+        ...     y_true,
+        ...     y_score_bounded,
+        ...     density_method="reflected_kde",
+        ...     data_floor=0.0,
+        ...     data_ceil=1.0,
+        ... )
+
+        >>> # Without logit transform
+        >>> fpr, lower, upper = hsieh_turnbull_band(
+        ...     y_true, y_score, use_logit_transform=False
+        ... )
 
     References:
         Hsieh, F. and Turnbull, B.W. (1996). "Nonparametric and Semiparametric
@@ -216,7 +269,7 @@ def hsieh_turnbull_band(
         y_score = y_score.detach().cpu().numpy()
         dtype = y_score.dtype
     else:
-        # User passed numpy, create torch tensors if needed later
+        # Input is numpy; create torch tensors if needed later
         y_score_torch = None
         y_true_torch = None
         y_score = np.asarray(y_score)

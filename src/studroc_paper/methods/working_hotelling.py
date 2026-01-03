@@ -1,4 +1,11 @@
-"""Working-Hotelling Simultaneous Confidence Bands."""
+"""Working-Hotelling simultaneous confidence bands for ROC curves.
+
+This module implements the Working-Hotelling method for constructing simultaneous
+confidence bands around ROC curves under the binormal assumption. The method
+assumes that the scores for positive and negative classes follow normal
+distributions and uses the chi-squared distribution to control the family-wise
+error rate across the entire curve.
+"""
 
 import numpy as np
 from numpy.typing import NDArray
@@ -14,16 +21,56 @@ def working_hotelling_band(
 ) -> tuple[NDArray, NDArray, NDArray]:
     """Compute Working-Hotelling simultaneous confidence bands for ROC curves.
 
-    Uses the binormal assumption.
+    This function constructs simultaneous confidence bands that control the
+    family-wise error rate across the entire ROC curve. The method assumes
+    scores follow binormal distributions and uses the delta method to estimate
+    parameter uncertainty.
 
     Args:
-        y_true: Array of binary class labels (0/1) (numpy array or torch tensor).
-        y_score: Array of continuous scores (numpy array or torch tensor).
-        k: Number of evaluation points on the grid.
-        alpha: Significance level (e.g., 0.05 for 95% confidence).
+        y_true: Binary class labels (0 for negative, 1 for positive). Accepts
+            numpy arrays or torch tensors (including CUDA tensors).
+        y_score: Continuous prediction scores, with higher values indicating
+            stronger predictions for the positive class. Accepts numpy arrays
+            or torch tensors (including CUDA tensors).
+        k: Number of uniformly-spaced evaluation points along the FPR axis.
+            Must be positive. Defaults to 1000.
+        alpha: Significance level for the confidence band. The resulting band
+            has coverage probability 1-alpha. Must be in (0, 1). Defaults to 0.05.
 
     Returns:
-        Tuple of (fpr_grid, lower_envelope, upper_envelope) as numpy arrays.
+        A tuple containing three numpy arrays of length k:
+            - fpr_grid: False positive rates uniformly spaced from 0 to 1.
+            - lower_envelope: Lower confidence bound on TPR at each FPR.
+            - upper_envelope: Upper confidence bound on TPR at each FPR.
+
+    Notes:
+        The method fits a binormal ROC model using method of moments estimation,
+        then constructs confidence bands in probit space using the Working-Hotelling
+        approach. The critical value is derived from the chi-squared distribution
+        with 2 degrees of freedom to ensure simultaneous coverage.
+
+        The implementation includes safeguards against degenerate cases where
+        sample sizes are small or variances are near-zero, replacing problematic
+        values with small constants to prevent numerical failures.
+
+    Examples:
+        >>> import numpy as np
+        >>> rng = np.random.default_rng(42)
+        >>> y_true = np.array([0, 0, 1, 1])
+        >>> y_score = np.array([0.1, 0.4, 0.35, 0.8])
+        >>> fpr, lower, upper = working_hotelling_band(y_true, y_score, k=100)
+        >>> fpr.shape
+        (100,)
+        >>> lower.shape
+        (100,)
+        >>> upper.shape
+        (100,)
+        >>> lower[0]  # Lower bound at FPR=0
+        0.0
+        >>> upper[-1]  # Upper bound at FPR=1
+        1.0
+        >>> np.all(lower <= upper)
+        True
     """
     # Convert to numpy arrays, handling torch tensors (including CUDA)
     if isinstance(y_score, Tensor):

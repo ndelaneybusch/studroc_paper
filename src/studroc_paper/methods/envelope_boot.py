@@ -1,4 +1,23 @@
-"""Envelope Bootstrap Confidence Bands using PyTorch."""
+"""Envelope Bootstrap Confidence Bands using PyTorch.
+
+This module provides methods for constructing simultaneous confidence bands
+for ROC curves using studentized bootstrap envelope techniques. It implements
+multiple boundary correction methods and curve retention strategies, with
+optional GPU acceleration via PyTorch.
+
+The main function, envelope_bootstrap_band, computes confidence bands by:
+1. Studentizing bootstrap ROC curves relative to the empirical ROC
+2. Selecting curves based on their consistency with the empirical ROC
+3. Taking the pointwise envelope of retained curves
+4. Applying boundary corrections where bootstrap variance collapses
+
+Key features:
+- Studentized bootstrap for improved finite-sample coverage
+- Multiple boundary correction methods (Wilson, KS-style, density-based)
+- Logit-space construction option for variance stabilization
+- GPU acceleration for large bootstrap samples
+- Diagnostic visualization integration
+"""
 
 import math
 from typing import Literal
@@ -35,6 +54,14 @@ def _compute_empirical_roc(y_true: Tensor, y_score: Tensor, fpr_grid: Tensor) ->
 
     Returns:
         TPR values at fpr_grid points.
+
+    Examples:
+        >>> y_true = torch.tensor([0, 0, 1, 1])
+        >>> y_score = torch.tensor([0.1, 0.4, 0.35, 0.8])
+        >>> fpr_grid = torch.linspace(0, 1, 11)
+        >>> tpr = _compute_empirical_roc(y_true, y_score, fpr_grid)
+        >>> tpr.shape
+        torch.Size([11])
     """
     # Separate scores by class
     neg_scores = y_score[y_true == 0]
@@ -44,7 +71,24 @@ def _compute_empirical_roc(y_true: Tensor, y_score: Tensor, fpr_grid: Tensor) ->
 
 
 def _haldane_logit(tpr: Tensor, n_pos: int) -> Tensor:
-    """Apply Logit transform with Haldane-Anscombe correction (+0.5)."""
+    """Apply Logit transform with Haldane-Anscombe correction (+0.5).
+
+    The Haldane-Anscombe correction adds 0.5 to both the numerator and
+    denominator before computing the logit, preventing infinities at the
+    boundaries (TPR = 0 or TPR = 1).
+
+    Args:
+        tpr: Tensor of true positive rates in [0, 1].
+        n_pos: Number of positive samples.
+
+    Returns:
+        Logit-transformed TPR values with Haldane-Anscombe correction.
+
+    Examples:
+        >>> tpr = torch.tensor([0.0, 0.5, 1.0])
+        >>> _haldane_logit(tpr, n_pos=100)
+        tensor([-5.2983,  0.0000,  5.2983])
+    """
     k = tpr * n_pos
     return torch.log((k + 0.5) / (n_pos - k + 0.5))
 
@@ -61,8 +105,8 @@ def _extend_boundary_ks_style(
     """Extend confidence band at boundaries using KS-style margins.
 
     At the corners of ROC space where bootstrap variance collapses to zero,
-    extend the confidence band using the same horizontal (e) and vertical (d)
-    margins used in the fixed-width KS band (Campbell 1994).
+    extend the confidence band using the same horizontal and vertical margins
+    used in the fixed-width KS band (Campbell 1994).
 
     This ensures the band connects smoothly from the interior (where bootstrap
     provides genuine variance) to the corners (0,0) and (1,1), with statistical
@@ -79,6 +123,17 @@ def _extend_boundary_ks_style(
 
     Returns:
         Tuple of (extended_lower, extended_upper) envelopes.
+
+    Examples:
+        >>> fpr_grid = torch.linspace(0, 1, 101)
+        >>> lower = torch.zeros(101)
+        >>> upper = torch.ones(101)
+        >>> empirical_tpr = fpr_grid  # Perfect diagonal
+        >>> lower_ext, upper_ext = _extend_boundary_ks_style(
+        ...     fpr_grid, lower, upper, empirical_tpr, n_neg=100, n_pos=100, alpha=0.05
+        ... )
+        >>> lower_ext.shape
+        torch.Size([101])
     """
     # KS critical value (Smirnov approximation)
     # For two one-sided tests combined: alpha_adj = 1 - sqrt(1 - alpha)
@@ -168,10 +223,10 @@ def envelope_bootstrap_band(
         fpr_grid: (n_grid_points,) array of FPR values.
         y_true: Array of true binary labels (0 or 1) from original data.
         y_score: Array of predicted scores from original data.
-        alpha: Significance level (default 0.05).
+        alpha: Significance level. Defaults to 0.05.
         boundary_method: Method for handling zero-variance boundaries where
             bootstrap collapses. Options:
-            - "wilson": Use Wilson-score-based variance floor (default).
+            - "wilson": Use Wilson-score-based variance floor.
               Provides a principled minimum variance based on binomial
               confidence intervals, ensuring non-degenerate bands at TPR=0/1.
             - "reflected_kde": Use Hsieh-Turnbull asymptotic variance with
@@ -183,23 +238,56 @@ def envelope_bootstrap_band(
             - "ks": Use KS-style margin extension (Campbell 1994).
               Extends the band from interior points to corners using
               horizontal/vertical margins based on sample sizes.
-            - "none": No boundary correction (original behavior).
+            - "none": No boundary correction.
+            Defaults to "none".
         retention_method: Method for selecting which bootstrap curves to retain.
             Options:
             - "ks": Retain (1-α) curves with smallest studentized KS statistic
-              (maximum absolute deviation from empirical). Default.
+              (maximum absolute deviation from empirical).
             - "symmetric": Trim α/2 from curves that deviate most upward and
               α/2 from curves that deviate most downward. This addresses
               asymmetric alpha mass at high AUC where positive deviations
               are bounded by 1 but negative deviations are not.
+            Defaults to "ks".
         use_logit: If True, construct the bands in logit space to stabilize
-            the variance of the ROC curve.
-        plot: If True, generate diagnostic plots using the viz module (default False).
+            the variance of the ROC curve. Defaults to False.
+        plot: If True, generate diagnostic plots using the viz module. Defaults to False.
         plot_title: Optional custom title for the diagnostic plots. If None, uses
-            method description.
+            method description. Defaults to None.
 
     Returns:
         Tuple of (fpr_grid, lower_envelope, upper_envelope) as numpy arrays.
+
+    Examples:
+        >>> import numpy as np
+        >>> from sklearn.datasets import make_classification
+        >>> from sklearn.model_selection import train_test_split
+        >>> from sklearn.linear_model import LogisticRegression
+        >>> # Generate data
+        >>> X, y = make_classification(n_samples=200, random_state=42)
+        >>> X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.5)
+        >>> # Fit model and get scores
+        >>> model = LogisticRegression().fit(X_train, y_train)
+        >>> y_score = model.predict_proba(X_test)[:, 1]
+        >>> # Generate bootstrap samples (simplified)
+        >>> fpr_grid = np.linspace(0, 1, 101)
+        >>> boot_tpr = np.random.rand(1000, 101)  # Mock bootstrap samples
+        >>> # Compute envelope band
+        >>> fpr, lower, upper = envelope_bootstrap_band(
+        ...     boot_tpr_matrix=boot_tpr,
+        ...     fpr_grid=fpr_grid,
+        ...     y_true=y_test,
+        ...     y_score=y_score,
+        ...     alpha=0.05,
+        ...     boundary_method="wilson",
+        ...     retention_method="ks",
+        ... )
+        >>> fpr.shape
+        (101,)
+        >>> lower.shape
+        (101,)
+        >>> upper.shape
+        (101,)
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
