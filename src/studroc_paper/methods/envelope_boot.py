@@ -193,8 +193,7 @@ def envelope_bootstrap_band(
               asymmetric alpha mass at high AUC where positive deviations
               are bounded by 1 but negative deviations are not.
         use_logit: If True, construct the bands in logit space to stabilize
-            the variance of the ROC curve. When doing so, it's recommended that
-            the boundary method is set to "none" or "ks".
+            the variance of the ROC curve.
         plot: If True, generate diagnostic plots using the viz module (default False).
         plot_title: Optional custom title for the diagnostic plots. If None, uses
             method description.
@@ -236,13 +235,45 @@ def envelope_bootstrap_band(
         logit_tpr_hat = _haldane_logit(empirical_tpr, n_pos)
         logit_boot_tpr = _haldane_logit(boot_tpr, n_pos)
 
-        # 2. Compute Bootstrap Standard Deviation in Logit Space
-        std_dev = torch.std(logit_boot_tpr, dim=0, correction=1)
+        # 2. Compute Bootstrap Variance in Logit Space
+        bootstrap_var_logit = torch.var(logit_boot_tpr, dim=0, correction=1)
 
-        # 3. Compute Signed Deviations in Logit Space
+        # 3. Apply Variance Floors (transform from probability to logit space)
+        if boundary_method == "wilson":
+            variance_floor_prob = (
+                wilson_halfwidth_squared_torch(empirical_tpr, n_pos, z_alpha)
+                / z_alpha**2
+            )
+        elif boundary_method in ("reflected_kde", "kde", "log_concave"):
+            neg_np = torch_to_numpy(y_score_t[y_true_t == 0])
+            pos_np = torch_to_numpy(y_score_t[y_true_t == 1])
+            fpr_np = torch_to_numpy(fpr)
+            ht_var = compute_hsieh_turnbull_variance(
+                neg_np, pos_np, fpr_np, method=boundary_method
+            )
+            variance_floor_prob = numpy_to_torch(ht_var, device).float()
+        else:
+            variance_floor_prob = torch.zeros_like(empirical_tpr)
+
+        if boundary_method not in ("none", "ks"):
+            # Transform variance floor to logit space using Jacobian
+            # Jacobian of logit: d(logit(p))/dp = 1/(p(1-p))
+            # Variance transforms as: var_logit = var_prob * jacobian^2
+            p_safe = torch.clamp(empirical_tpr, 1e-6, 1.0 - 1e-6)
+            jacobian = 1.0 / (p_safe * (1.0 - p_safe))
+            variance_floor_logit = variance_floor_prob * jacobian.pow(2)
+
+            # Apply floor in logit space
+            bootstrap_var_logit = torch.maximum(
+                bootstrap_var_logit, variance_floor_logit
+            )
+
+        std_dev = torch.sqrt(bootstrap_var_logit)
+
+        # 4. Compute Signed Deviations in Logit Space
         signed_deviations = logit_boot_tpr - logit_tpr_hat.unsqueeze(0)
 
-        # 4. Studentize
+        # 5. Studentize
         epsilon = min(1.0 / n_total, 1e-6)
         low_var_mask = std_dev < epsilon
 
@@ -393,16 +424,13 @@ def envelope_bootstrap_band(
 
     # Generate diagnostic plots if requested
     if plot:
-        # Diagnostic plotting (unchanged logic, just casting)
-        # Note: 'bootstrap_var' might not be defined in logit path, so we mock it for viz
         if use_logit:
-            # Create a pseudo-variance for visualization based on logit SE projected back
+            # Project logit-space variance back to probability space for visualization
             # Delta_p approx p(1-p) * Delta_logit
             p = empirical_tpr
             deriv = p * (1 - p)
-            # This is just for the plot diagnostic
             bootstrap_var_np = torch_to_numpy((std_dev * deriv) ** 2).astype(dtype)
-            variance_floor_np = np.zeros_like(bootstrap_var_np)
+            variance_floor_np = torch_to_numpy(variance_floor_prob).astype(dtype)
         else:
             bootstrap_var_np = torch_to_numpy(bootstrap_var).astype(dtype)
             variance_floor_np = torch_to_numpy(variance_floor).astype(dtype)
