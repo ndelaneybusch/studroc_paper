@@ -7,6 +7,7 @@ Produces two types of DataFrames per alpha level:
 """
 
 import json
+import pickle
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -298,6 +299,10 @@ if __name__ == "__main__":
     else:
         folder = "."
 
+    output_folder = None
+    if len(sys.argv) > 2:
+        output_folder = sys.argv[2]
+
     dfs = process_folder(folder)
     info = get_available_keys(dfs)
 
@@ -305,3 +310,11 @@ if __name__ == "__main__":
     for key in info["keys"]:
         df = dfs[key]
         print(f"  {key}: {len(df)} rows x {len(df.columns)} columns")
+
+    if output_folder is not None:
+        output_path = Path(output_folder)
+        output_path.mkdir(parents=True, exist_ok=True)
+        pickle_file = output_path / "aggregated_results.pkl"
+        with open(pickle_file, "wb") as f:
+            pickle.dump(dfs, f)
+        print(f"\nSaved DataFrames to {pickle_file}")
