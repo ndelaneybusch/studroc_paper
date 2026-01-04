@@ -21,6 +21,13 @@ from .plot_aggregate_curve import (
     plot_coverage_by_region,
     plot_regionwise_pareto_frontier,
 )
+from .plot_indiv import (
+    create_diverging_hcl_colormap,
+    create_hcl_colormap,
+    plot_data_property_lines,
+    plot_violation_heatmap,
+    plot_violation_location_gradient,
+)
 
 __all__ = [
     # Band diagnostics
@@ -38,8 +45,14 @@ __all__ = [
     # Curve/region analysis plots
     "plot_coverage_by_region",
     "plot_regionwise_pareto_frontier",
+    # Individual analysis plots
+    "plot_violation_heatmap",
+    "plot_violation_location_gradient",
+    "plot_data_property_lines",
     # Utilities
     "get_method_color",
     "get_method_colors_dict",
     "set_publication_style",
+    "create_hcl_colormap",
+    "create_diverging_hcl_colormap",
 ]

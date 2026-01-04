@@ -4,7 +4,8 @@ Provides publication-quality plots for analyzing the aggregate behavior of
 different ROC confidence band methods across synthetic datasets. This module
 focuses on regionwise analysis, where the false positive rate (FPR) range
 [0, 100] is divided into regions (e.g., 0-10%, 10-30%) and coverage
-statistics are computed separately for each region.
+statistics are computed separately for each region, called the "curve" data
+frame.
 
 Key functionality:
     - Coverage by region plots showing violation rates across FPR regions
