@@ -117,16 +117,16 @@ class BandResult:
     # Pointwise coverage (boolean array: True where band contains true ROC)
     pointwise_covered: np.ndarray
 
-    # Violation indicators by FPR region
-    # Keys: '0-10', '10-30', '30-50', '50-70', '70-90', '90-100'
-    violation_by_region: dict = field(default_factory=dict)
-
     # Violation grid point statistics
     proportion_grid_points_violated: float  # Proportion of non-boundary points violated
     violation_fpr_mean: float | None  # Mean FPR of violations in this band
     violation_fpr_median: float | None  # Median FPR of violations in this band
     violation_fpr_min: float | None  # Min FPR of violations in this band
     violation_fpr_max: float | None  # Max FPR of violations in this band
+
+    # Violation indicators by FPR region
+    # Keys: '0-10', '10-30', '30-50', '50-70', '70-90', '90-100'
+    violation_by_region: dict = field(default_factory=dict)
 
 
 @dataclass
