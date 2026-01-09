@@ -185,6 +185,7 @@ def plot_pareto_frontier(
     figsize: tuple[float, float] = (8, 6),
     title: str | None = None,
     ax: Axes | None = None,
+    show_legend: bool = True,
 ) -> Axes:
     """Plot Pareto frontier of mean_band_area vs coverage_rate.
 
@@ -289,9 +290,10 @@ def plot_pareto_frontier(
     ax.set_title(title)
 
     # Create legend with smaller markers
-    ax.legend(
-        bbox_to_anchor=(1.02, 1), loc="upper left", frameon=False, markerscale=0.8
-    )
+    if show_legend:
+        ax.legend(
+            bbox_to_anchor=(1.02, 1), loc="upper left", frameon=False, markerscale=0.8
+        )
 
     ax.set_ylim(0, 1.05)
     ax.grid(True, alpha=0.3, linestyle="-", linewidth=0.5)
@@ -310,6 +312,7 @@ def plot_violation_proximity(
     figsize: tuple[float, float] = (8, 6),
     title: str | None = None,
     ax: Axes | None = None,
+    show_legend: bool = True,
 ) -> Axes:
     """Plot violation proximity: mean_band_width vs mean_max_violation.
 
@@ -363,9 +366,10 @@ def plot_violation_proximity(
         title = "Violation Proximity: Band Width vs Max Violation"
     ax.set_title(title)
 
-    ax.legend(
-        bbox_to_anchor=(1.02, 1), loc="upper left", frameon=False, markerscale=0.8
-    )
+    if show_legend:
+        ax.legend(
+            bbox_to_anchor=(1.02, 1), loc="upper left", frameon=False, markerscale=0.8
+        )
 
     ax.grid(True, alpha=0.3, linestyle="-", linewidth=0.5)
 
@@ -384,6 +388,7 @@ def plot_coverage_by_n_total(
     figsize: tuple[float, float] = (10, 6),
     title: str | None = None,
     ax: Axes | None = None,
+    show_legend: bool = True,
 ) -> Axes:
     """Plot coverage rate by sample size (n_total) on log10 scale.
 
@@ -459,9 +464,10 @@ def plot_coverage_by_n_total(
         title = "Coverage Rate by Sample Size"
     ax.set_title(title)
 
-    ax.legend(
-        bbox_to_anchor=(1.02, 1), loc="upper left", frameon=False, markerscale=0.8
-    )
+    if show_legend:
+        ax.legend(
+            bbox_to_anchor=(1.02, 1), loc="upper left", frameon=False, markerscale=0.8
+        )
 
     ax.set_ylim(0, 1.05)
     ax.grid(True, alpha=0.3, linestyle="-", linewidth=0.5)
@@ -481,6 +487,7 @@ def plot_coverage_by_prevalence(
     figsize: tuple[float, float] = (10, 6),
     title: str | None = None,
     ax: Axes | None = None,
+    show_legend: bool = True,
 ) -> Axes:
     """Plot coverage rate by prevalence (categorical x-axis).
 
@@ -577,9 +584,10 @@ def plot_coverage_by_prevalence(
         title = "Coverage Rate by Prevalence"
     ax.set_title(title)
 
-    ax.legend(
-        bbox_to_anchor=(1.02, 1), loc="upper left", frameon=False, markerscale=0.8
-    )
+    if show_legend:
+        ax.legend(
+            bbox_to_anchor=(1.02, 1), loc="upper left", frameon=False, markerscale=0.8
+        )
 
     ax.set_ylim(0, 1.05)
     ax.grid(True, alpha=0.3, linestyle="-", linewidth=0.5, axis="y")
@@ -598,6 +606,7 @@ def plot_violation_direction(
     figsize: tuple[float, float] = (10, 6),
     title: str | None = None,
     ax: Axes | None = None,
+    show_legend: bool = True,
 ) -> Axes:
     """Plot violation direction as colored vertical barplot.
 

@@ -144,7 +144,7 @@ def _get_region_order(regions: list[str]) -> list[str]:
     return sorted(regions, key=lambda r: _parse_fpr_region(r)[0])
 
 
-def _get_fpr_region_markers() -> dict[str, str]:
+def get_fpr_region_markers() -> dict[str, str]:
     """Get marker shapes for different FPR regions.
 
     Returns:
@@ -152,7 +152,7 @@ def _get_fpr_region_markers() -> dict[str, str]:
         Provides distinct shapes for visual differentiation in plots.
 
     Examples:
-        >>> markers = _get_fpr_region_markers()
+        >>> markers = get_fpr_region_markers()
         >>> markers["0-10"]
         'o'
         >>> markers["50-70"]
@@ -185,6 +185,7 @@ def plot_coverage_by_region(
     legend_ncol: int = 1,
     marker_size: float = 7,
     line_alpha: float = 0.8,
+    show_legend: bool = True,
 ) -> Axes:
     """Plot coverage (violation rate) by FPR region for each method.
 
@@ -294,7 +295,8 @@ def plot_coverage_by_region(
         ax.set_title(title)
 
     # Legend
-    ax.legend(loc=legend_loc, ncol=legend_ncol)
+    if show_legend:
+        ax.legend(loc=legend_loc, ncol=legend_ncol)
 
     # Ensure y-axis starts at 0
     ax.set_ylim(bottom=0)
@@ -320,6 +322,7 @@ def plot_regionwise_pareto_frontier(
     marker_size: float = 8,
     line_alpha: float = 0.6,
     show_region_legend: bool = True,
+    show_legend: bool = True,
 ) -> Axes:
     """Plot regionwise Pareto frontier: region_width vs region_violation_rate.
 
@@ -379,7 +382,7 @@ def plot_regionwise_pareto_frontier(
 
     # Get colors and markers
     color_dict = get_method_colors_dict(methods)
-    marker_dict = _get_fpr_region_markers()
+    marker_dict = get_fpr_region_markers()
 
     # Plot each method
     for method in methods:
@@ -452,28 +455,29 @@ def plot_regionwise_pareto_frontier(
     ]
 
     # Add legends
-    if show_region_legend:
-        # Create combined legend with both methods and regions
-        all_handles = (
-            method_handles + [Line2D([], [], linestyle="None")] + region_handles
-        )
-        all_labels = (
-            [m for m in methods]
-            + [""]  # Spacer
-            + [f"FPR {r}%" for r in regions]
-        )
-        ax.legend(
-            handles=all_handles,
-            labels=all_labels,
-            loc=legend_loc,
-            ncol=legend_ncol,
-            columnspacing=1.0,
-            handletextpad=0.5,
-        )
-    else:
-        ax.legend(
-            handles=method_handles, loc=legend_loc, ncol=legend_ncol, title="Method"
-        )
+    if show_legend:
+        if show_region_legend:
+            # Create combined legend with both methods and regions
+            all_handles = (
+                method_handles + [Line2D([], [], linestyle="None")] + region_handles
+            )
+            all_labels = (
+                [m for m in methods]
+                + [""]  # Spacer
+                + [f"FPR {r}%" for r in regions]
+            )
+            ax.legend(
+                handles=all_handles,
+                labels=all_labels,
+                loc=legend_loc,
+                ncol=legend_ncol,
+                columnspacing=1.0,
+                handletextpad=0.5,
+            )
+        else:
+            ax.legend(
+                handles=method_handles, loc=legend_loc, ncol=legend_ncol, title="Method"
+            )
 
     # Labels and title
     ax.set_xlabel(xlabel)
