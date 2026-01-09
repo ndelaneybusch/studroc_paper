@@ -477,7 +477,7 @@ def plot_data_property_lines(
 def plot_violation_location_gradient(
     df: pd.DataFrame,
     bin_col: str = "lhs_auc",
-    n_bins: int = 8,
+    n_bins: int | None = 8,
     method: str | None = None,
     cmap: str = "viridis",
     ax: Axes | None = None,
@@ -493,7 +493,8 @@ def plot_violation_location_gradient(
     Args:
         df: DataFrame containing simulation results with violation_* columns.
         bin_col: Column name to bin for color gradient. Defaults to "lhs_auc".
-        n_bins: Number of bins for color gradient. Defaults to 8.
+        n_bins: Number of bins for color gradient. If None, uses unique values
+            sorted alphanumerically. Defaults to 8.
         method: If provided, filter to this method only. Defaults to None.
         cmap: Colormap name for gradient. Defaults to "viridis".
         ax: Matplotlib Axes object to plot on. Defaults to None (creates new figure).
@@ -545,36 +546,55 @@ def plot_violation_location_gradient(
         col.replace("violation_", "").replace("-", "–") + "%" for col in violation_cols
     ]
 
-    # Create bins for color variable
-    plot_df["_bin"] = pd.cut(plot_df[bin_col], bins=n_bins, labels=False)
-    bin_edges = pd.cut(plot_df[bin_col], bins=n_bins).cat.categories
+    # Create bins or use unique values for color variable
+    if n_bins is None:
+        # Use unique values sorted alphanumerically
+        unique_values = sorted(
+            plot_df[bin_col].unique(),
+            key=lambda x: (
+                [int(c) if c.isdigit() else c.lower() for c in str(x).split()]
+                if isinstance(x, str)
+                else x
+            ),
+        )
+        n_groups = len(unique_values)
+        value_to_idx = {val: idx for idx, val in enumerate(unique_values)}
+        plot_df["_bin"] = plot_df[bin_col].map(value_to_idx)
+        group_labels = [str(val) for val in unique_values]
+    else:
+        # Create bins using pd.cut
+        plot_df["_bin"] = pd.cut(plot_df[bin_col], bins=n_bins, labels=False)
+        bin_edges = pd.cut(plot_df[bin_col], bins=n_bins).cat.categories
+        n_groups = n_bins
+        group_labels = [
+            f"{interval.left:.2f}–{interval.right:.2f}" for interval in bin_edges
+        ]
 
     # Get colormap
     cmap_obj = plt.get_cmap(cmap)
-    colors = [cmap_obj(i / (n_bins - 1)) for i in range(n_bins)]
+    colors = [
+        cmap_obj(i / (n_groups - 1)) if n_groups > 1 else cmap_obj(0.5)
+        for i in range(n_groups)
+    ]
 
-    # Plot lines for each bin
-    for bin_idx in range(n_bins):
-        bin_df = plot_df[plot_df["_bin"] == bin_idx]
+    # Plot lines for each group
+    for group_idx in range(n_groups):
+        group_df = plot_df[plot_df["_bin"] == group_idx]
 
-        if len(bin_df) == 0:
+        if len(group_df) == 0:
             continue
 
         # Calculate mean violation rate for each region
-        means = [bin_df[col].mean() for col in violation_cols]
-
-        # Get bin range for label
-        interval = bin_edges[bin_idx]
-        label = f"{interval.left:.2f}–{interval.right:.2f}"
+        means = [group_df[col].mean() for col in violation_cols]
 
         ax.plot(
             x_positions,
             means,
-            color=colors[bin_idx],
+            color=colors[group_idx],
             linewidth=1.8,
             marker="o",
             markersize=5,
-            label=label,
+            label=group_labels[group_idx],
         )
 
     # Formatting
@@ -603,7 +623,7 @@ def plot_violation_location_gradient(
             frameon=True,
             fancybox=False,
             edgecolor="#cccccc",
-            ncol=2 if n_bins > 5 else 1,
+            ncol=2 if n_groups > 5 else 1,
         )
 
     ax.grid(True, axis="y", alpha=0.3, linewidth=0.5)
