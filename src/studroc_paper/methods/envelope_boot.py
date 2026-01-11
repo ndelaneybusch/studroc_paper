@@ -31,6 +31,7 @@ from studroc_paper.viz import plot_band_diagnostics
 
 from .method_utils import (
     compute_empirical_roc_from_scores,
+    compute_empirical_roc_from_scores_hd,
     compute_hsieh_turnbull_variance,
     numpy_to_torch,
     torch_to_numpy,
@@ -43,14 +44,22 @@ BoundaryMethod = Literal["none", "wilson", "reflected_kde", "log_concave", "ks"]
 # Type alias for curve retention method selection
 RetentionMethod = Literal["ks", "symmetric"]
 
+# Type alias for TPR estimation method
+TprMethod = Literal["empirical", "harrell_davis"]
 
-def _compute_empirical_roc(y_true: Tensor, y_score: Tensor, fpr_grid: Tensor) -> Tensor:
+
+def _compute_empirical_roc(
+    y_true: Tensor, y_score: Tensor, fpr_grid: Tensor, method: TprMethod = "empirical"
+) -> Tensor:
     """Compute empirical ROC curve and interpolate at fpr_grid points.
 
     Args:
         y_true: Tensor of true binary labels (0 or 1).
         y_score: Tensor of predicted scores.
         fpr_grid: FPR values at which to evaluate TPR.
+        method: TPR estimation method. "empirical" uses standard step-function
+            interpolation; "harrell_davis" uses beta-weighted quantile estimation
+            for reduced finite-sample bias. Defaults to "empirical".
 
     Returns:
         TPR values at fpr_grid points.
@@ -67,6 +76,8 @@ def _compute_empirical_roc(y_true: Tensor, y_score: Tensor, fpr_grid: Tensor) ->
     neg_scores = y_score[y_true == 0]
     pos_scores = y_score[y_true == 1]
 
+    if method == "harrell_davis":
+        return compute_empirical_roc_from_scores_hd(neg_scores, pos_scores, fpr_grid)
     return compute_empirical_roc_from_scores(neg_scores, pos_scores, fpr_grid)
 
 
@@ -210,6 +221,7 @@ def envelope_bootstrap_band(
     boundary_method: BoundaryMethod = "none",
     retention_method: RetentionMethod = "ks",
     use_logit: bool = False,
+    tpr_method: TprMethod = "empirical",
     plot: bool = False,
     plot_title: str | None = None,
 ) -> tuple[NDArray, NDArray, NDArray]:
@@ -251,6 +263,12 @@ def envelope_bootstrap_band(
             Defaults to "ks".
         use_logit: If True, construct the bands in logit space to stabilize
             the variance of the ROC curve. Defaults to False.
+        tpr_method: Method for computing the empirical ROC curve (band center).
+            Options:
+            - "empirical": Standard step-function interpolation (default).
+            - "harrell_davis": Beta-weighted quantile estimation for reduced
+              finite-sample bias.
+            Defaults to "empirical".
         plot: If True, generate diagnostic plots using the viz module. Defaults to False.
         plot_title: Optional custom title for the diagnostic plots. If None, uses
             method description. Defaults to None.
@@ -313,7 +331,7 @@ def envelope_bootstrap_band(
     n_total = n_neg + n_pos
 
     # Step 0: Compute empirical ROC
-    empirical_tpr = _compute_empirical_roc(y_true_t, y_score_t, fpr)
+    empirical_tpr = _compute_empirical_roc(y_true_t, y_score_t, fpr, method=tpr_method)
 
     z_alpha = (2.0**0.5) * torch.erfinv(torch.tensor(1.0 - alpha)).item()
 
@@ -468,6 +486,20 @@ def envelope_bootstrap_band(
         retained_logits = logit_boot_tpr[retained_mask]
         lower_logit = torch.min(retained_logits, dim=0).values
         upper_logit = torch.max(retained_logits, dim=0).values
+
+        if boundary_method not in ("none", "ks"):
+            # Compute Wilson bounds directly in probability space
+            wilson_hw = torch.sqrt(variance_floor_prob) * z_alpha
+            wilson_lower_prob = torch.clamp(empirical_tpr - wilson_hw, 1e-6, 1 - 1e-6)
+            wilson_upper_prob = torch.clamp(empirical_tpr + wilson_hw, 1e-6, 1 - 1e-6)
+
+            # Transform Wilson bounds to logit space
+            wilson_lower_logit = torch.logit(wilson_lower_prob)
+            wilson_upper_logit = torch.logit(wilson_upper_prob)
+
+            # Ensure envelope is at least as wide as Wilson bounds
+            lower_logit = torch.minimum(lower_logit, wilson_lower_logit)
+            upper_logit = torch.maximum(upper_logit, wilson_upper_logit)
 
         # Back-transform to Probability Space
         lower_envelope = torch.sigmoid(lower_logit)

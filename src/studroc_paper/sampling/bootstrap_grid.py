@@ -2,8 +2,61 @@
 Bootstrap sampling for ROC curves with efficient grid evaluation.
 """
 
+from typing import Literal
+
+import numpy as np
 import torch
+from scipy.stats import beta as beta_dist
 from torch import Tensor
+
+
+def _harrell_davis_weights(
+    n: int, p: Tensor, device: torch.device, dtype: torch.dtype
+) -> Tensor:
+    """
+    Compute Harrell-Davis weights for quantile estimation.
+
+    Uses beta-weighted average of order statistics for reduced bias.
+    Weight for order statistic i is:
+        P(i/n < U < (i+1)/n) where U ~ Beta(a, b)
+        a = p * (n + 1), b = (1 - p) * (n + 1)
+
+    Args:
+        n: Sample size.
+        p: Quantile probabilities, shape (K,).
+        device: Target device.
+        dtype: Target dtype.
+
+    Returns:
+        Weight matrix of shape (K, n) where each row sums to 1.
+    """
+    # Convert to numpy for scipy computation
+    p_np = p.cpu().numpy()
+    K = len(p_np)
+    weights_np = np.zeros((K, n), dtype=np.float64)
+
+    # Bin edges: 0, 1/n, 2/n, ..., 1
+    bin_edges = np.arange(0, n + 1) / n
+
+    # Identify boundary cases (p=0 or p=1) where Beta parameters would be invalid
+    eps = 1e-9
+
+    for i, prob in enumerate(p_np):
+        if prob <= eps:
+            # p=0 quantile: minimum order statistic (index 0 in ascending sort)
+            weights_np[i, 0] = 1.0
+        elif prob >= 1 - eps:
+            # p=1 quantile: maximum order statistic (index n-1 in ascending sort)
+            weights_np[i, -1] = 1.0
+        else:
+            # Interior case: use Beta distribution
+            a = prob * (n + 1)
+            b = (1 - prob) * (n + 1)
+            cdf_vals = beta_dist.cdf(bin_edges, a, b)
+            weights_np[i] = cdf_vals[1:] - cdf_vals[:-1]
+
+    # Convert back to torch tensor on target device
+    return torch.from_numpy(weights_np).to(device=device, dtype=dtype)
 
 
 def reconstruct_ranks(
@@ -91,6 +144,7 @@ def generate_bootstrap_grid(
     grid: Tensor = None,
     device: torch.device | None = None,
     batch_size: int = 500,
+    tpr_method: Literal["empirical", "harrell_davis"] = "empirical",
 ) -> Tensor:
     """
     Generate a tensor of bootstrapped ROC samples evaluated across a grid.
@@ -113,6 +167,9 @@ def generate_bootstrap_grid(
         grid: Uniform evaluation grid for FPR (1D tensor).
         device: Target device. If None, uses CUDA if available.
         batch_size: Batch size for memory safety.
+        tpr_method: Method for computing TPR from bootstrap samples. Defaults to
+            "empirical" (standard step-function interpolation). Use "harrell_davis"
+            for bias-reduced quantile estimation using beta-weighted order statistics.
 
     Returns:
         Tensor of shape (B, len(grid)) containing TPR values.
@@ -165,10 +222,22 @@ def generate_bootstrap_grid(
     # Prepare Output
     tpr_boot_list = []
 
-    # Pre-calculate grid indices for efficiency
-    # k is the index in the sorted negatives corresponding to the FPR grid point
-    k_indices = torch.floor(grid * n_negatives).long()
-    k_indices = torch.clamp(k_indices, 0, n_negatives)
+    use_hd = tpr_method == "harrell_davis"
+
+    if use_hd:
+        # Precompute HD weights for threshold estimation
+        # HD quantile at p uses order statistics weighted by Beta(p*(n+1), (1-p)*(n+1))
+        # For FPR=t, we want the (1-t) quantile of negatives (high threshold = low FPR)
+        assert n_negatives is not None  # Guaranteed by path A/B validation
+        quantile_probs = 1.0 - grid
+        hd_weights = _harrell_davis_weights(
+            n_negatives, quantile_probs, device, grid.dtype
+        )  # Shape: (K, n_negatives)
+    else:
+        # Pre-calculate grid indices for efficiency (empirical path)
+        # k is the index in the sorted negatives corresponding to the FPR grid point
+        k_indices = torch.floor(grid * n_negatives).long()
+        k_indices = torch.clamp(k_indices, 0, n_negatives)
 
     # 2. Process in Batches
     # This prevents allocating (B, N) tensors which causes OOM on large datasets
@@ -181,22 +250,32 @@ def generate_bootstrap_grid(
         idx_neg = torch.randint(0, n_negatives, (current_B, n_negatives), device=device)
         Y_star = neg_values[idx_neg]
 
-        # Sort Descending (Highest Rank/Score first)
-        Y_star, _ = torch.sort(Y_star, dim=1, descending=True)
+        if use_hd:
+            # Harrell-Davis path: sort ascending for weighted combination
+            Y_star_sorted, _ = torch.sort(Y_star, dim=1, descending=False)
 
-        # Pad with sentinel for the FPR=1.0 case (accept all)
-        # Use -inf for scores (path B) or -1 for ranks (path A)
-        sentinel_value = float("-inf") if path_b else -1
-        sentinel = torch.full(
-            (current_B, 1), sentinel_value, device=device, dtype=Y_star.dtype
-        )
-        Y_star = torch.cat([Y_star, sentinel], dim=1)
+            # Threshold = weighted sum of order statistics
+            # Shape: (current_B, n_negatives) @ (n_negatives, K) -> (current_B, K)
+            thresholds = Y_star_sorted @ hd_weights.T
 
-        # Extract Thresholds
-        thresholds = Y_star[:, k_indices]
+            del Y_star_sorted, Y_star, idx_neg
+        else:
+            # Empirical path: sort descending and index directly
+            Y_star, _ = torch.sort(Y_star, dim=1, descending=True)
 
-        # Free memory immediately
-        del Y_star, idx_neg
+            # Pad with sentinel for the FPR=1.0 case (accept all)
+            # Use -inf for scores (path B) or -1 for ranks (path A)
+            sentinel_value = float("-inf") if path_b else -1
+            sentinel = torch.full(
+                (current_B, 1), sentinel_value, device=device, dtype=Y_star.dtype
+            )
+            Y_star = torch.cat([Y_star, sentinel], dim=1)
+
+            # Extract Thresholds
+            thresholds = Y_star[:, k_indices]
+
+            # Free memory immediately
+            del Y_star, idx_neg
 
         # --- Bootstrap Positives (X_star) ---
         # Sample

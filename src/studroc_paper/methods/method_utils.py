@@ -19,6 +19,7 @@ import torch
 from KDEpy import FFTKDE
 from numpy.typing import NDArray
 from scipy import interpolate
+from scipy.stats import beta as beta_dist
 from torch import Tensor
 
 
@@ -223,6 +224,109 @@ def compute_empirical_roc_from_scores(
 
     # Interpolate at fpr_grid points using step interpolation
     return torch_step_interp(fpr_grid, fpr_emp, tpr_emp)
+
+
+def harrell_davis_quantile(x_sorted: NDArray, p: float) -> float:
+    """
+    Harrell-Davis quantile estimator from pre-sorted array.
+
+    Uses beta-weighted average of order statistics for reduced bias.
+
+    Args:
+        x_sorted: Pre-sorted (ascending) array of values.
+        p: Quantile probability in [0, 1].
+
+    Returns:
+        Estimated quantile value.
+    """
+    n = len(x_sorted)
+    if p <= 0:
+        return float(x_sorted[0])
+    if p >= 1:
+        return float(x_sorted[-1])
+
+    a = p * (n + 1)
+    b = (1 - p) * (n + 1)
+
+    bin_edges = np.arange(0, n + 1) / n
+    weights = beta_dist.cdf(bin_edges[1:], a, b) - beta_dist.cdf(bin_edges[:-1], a, b)
+
+    return float(np.dot(weights, x_sorted))
+
+
+def compute_empirical_roc_hd(
+    neg_scores: NDArray, pos_scores: NDArray, fpr_grid: NDArray
+) -> NDArray:
+    """Compute empirical ROC using Harrell-Davis threshold estimation (NumPy).
+
+    Uses beta-weighted quantile estimation for determining thresholds, which
+    reduces finite-sample bias compared to standard empirical quantiles.
+
+    Args:
+        neg_scores: Negative class scores.
+        pos_scores: Positive class scores.
+        fpr_grid: FPR values at which to evaluate TPR.
+
+    Returns:
+        TPR values at fpr_grid points.
+    """
+    neg_sorted = np.sort(neg_scores)
+    tpr = np.zeros_like(fpr_grid)
+
+    for i, target_fpr in enumerate(fpr_grid):
+        if target_fpr <= 0:
+            tpr[i] = 0.0
+        elif target_fpr >= 1:
+            tpr[i] = 1.0
+        else:
+            threshold = harrell_davis_quantile(neg_sorted, 1 - target_fpr)
+            tpr[i] = np.mean(pos_scores > threshold)
+
+    return tpr
+
+
+def compute_empirical_roc_from_scores_hd(
+    neg_scores: Tensor, pos_scores: Tensor, fpr_grid: Tensor
+) -> Tensor:
+    """Compute empirical ROC using Harrell-Davis threshold estimation (PyTorch).
+
+    Uses beta-weighted quantile estimation for determining thresholds, which
+    reduces finite-sample bias compared to standard empirical quantiles.
+
+    The Harrell-Davis estimator computes quantiles as weighted averages of
+    order statistics, with weights from a Beta distribution. For quantile p,
+    the weight for order statistic i is:
+        P((i-1)/n < U < i/n) where U ~ Beta(p*(n+1), (1-p)*(n+1))
+
+    Args:
+        neg_scores: Tensor of negative class scores.
+        pos_scores: Tensor of positive class scores.
+        fpr_grid: FPR values at which to evaluate TPR.
+
+    Returns:
+        TPR values at fpr_grid points.
+
+    Examples:
+        >>> neg = torch.tensor([0.2, 0.4, 0.5, 0.6])
+        >>> pos = torch.tensor([0.6, 0.7, 0.8, 0.9])
+        >>> fpr = torch.tensor([0.0, 0.25, 0.5, 1.0])
+        >>> tpr = compute_empirical_roc_from_scores_hd(neg, pos, fpr)
+        >>> tpr.shape
+        torch.Size([4])
+    """
+    device = neg_scores.device
+    dtype = neg_scores.dtype
+
+    # Convert to numpy for HD quantile computation (scipy-based)
+    neg_np = neg_scores.cpu().numpy()
+    pos_np = pos_scores.cpu().numpy()
+    fpr_np = fpr_grid.cpu().numpy()
+
+    # Compute HD-based ROC in NumPy
+    tpr_np = compute_empirical_roc_hd(neg_np, pos_np, fpr_np)
+
+    # Convert back to torch
+    return torch.from_numpy(tpr_np).to(device=device, dtype=dtype)
 
 
 # =============================================================================

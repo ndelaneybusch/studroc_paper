@@ -5,6 +5,8 @@ with logit-space studentization. The approach addresses boundary collapse issues
 in standard bootstrap ROC bands by applying Haldane-Anscombe correction.
 """
 
+from typing import Literal
+
 import numpy as np
 import torch
 from numpy.typing import NDArray
@@ -12,18 +14,27 @@ from torch import Tensor
 
 from .method_utils import (
     compute_empirical_roc_from_scores,
+    compute_empirical_roc_from_scores_hd,
     numpy_to_torch,
     torch_to_numpy,
 )
 
+# Type alias for TPR estimation method
+TprMethod = Literal["empirical", "harrell_davis"]
 
-def _compute_empirical_roc(y_true: Tensor, y_score: Tensor, fpr_grid: Tensor) -> Tensor:
+
+def _compute_empirical_roc(
+    y_true: Tensor, y_score: Tensor, fpr_grid: Tensor, method: TprMethod = "empirical"
+) -> Tensor:
     """Compute empirical ROC curve (TPR) at specified FPR grid points.
 
     Args:
         y_true: Tensor of true binary labels (0 or 1).
         y_score: Tensor of predicted scores.
         fpr_grid: FPR values at which to evaluate TPR.
+        method: TPR estimation method. "empirical" uses standard step-function
+            interpolation; "harrell_davis" uses beta-weighted quantile estimation
+            for reduced finite-sample bias. Defaults to "empirical".
 
     Returns:
         TPR values at fpr_grid points.
@@ -37,6 +48,9 @@ def _compute_empirical_roc(y_true: Tensor, y_score: Tensor, fpr_grid: Tensor) ->
     """
     neg_scores = y_score[y_true == 0]
     pos_scores = y_score[y_true == 1]
+
+    if method == "harrell_davis":
+        return compute_empirical_roc_from_scores_hd(neg_scores, pos_scores, fpr_grid)
     return compute_empirical_roc_from_scores(neg_scores, pos_scores, fpr_grid)
 
 
@@ -100,6 +114,7 @@ def logit_bootstrap_band(
     y_true: NDArray | Tensor,
     y_score: NDArray | Tensor,
     alpha: float = 0.05,
+    tpr_method: TprMethod = "empirical",
 ) -> tuple[NDArray, NDArray, NDArray]:
     """Compute simultaneous confidence bands using logit-space studentization.
 
@@ -119,6 +134,12 @@ def logit_bootstrap_band(
         y_true: Array of true binary labels (0 or 1).
         y_score: Array of predicted scores.
         alpha: Significance level. Defaults to 0.05.
+        tpr_method: Method for computing the empirical ROC curve (band center).
+            Options:
+            - "empirical": Standard step-function interpolation (default).
+            - "harrell_davis": Beta-weighted quantile estimation for reduced
+              finite-sample bias.
+            Defaults to "empirical".
 
     Returns:
         Tuple of (fpr_grid, lower_envelope, upper_envelope) as numpy arrays.
@@ -156,9 +177,7 @@ def logit_bootstrap_band(
     n_pos = int((y_true_t == 1).sum().item())
 
     # Compute empirical ROC curve (center of the band)
-    neg_scores = y_score_t[y_true_t == 0]
-    pos_scores = y_score_t[y_true_t == 1]
-    tpr_hat = compute_empirical_roc_from_scores(neg_scores, pos_scores, fpr)
+    tpr_hat = _compute_empirical_roc(y_true_t, y_score_t, fpr, method=tpr_method)
 
     # Transform to logit space with Haldane correction
     logit_tpr_hat = _haldane_logit(tpr_hat, n_pos)
