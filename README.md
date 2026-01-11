@@ -568,6 +568,122 @@ uv run mypy src/studroc_paper
 
 ---
 
+## Visualizations
+
+The `src/studroc_paper/viz` module provides comprehensive visualization tools for analyzing confidence band performance:
+
+### Diagnostic Plots (`band_diagnostics.py`)
+
+For visualizing a single band in a single dataset.
+
+- **`plot_band_diagnostics`**: Comprehensive diagnostic panel for a single method/dataset
+- **`plot_roc_with_band`**: Visualize individual ROC curves with confidence bands
+- **`plot_variance_comparison`**: Compare variance estimates across methods
+- **`plot_bootstrap_vs_empirical`**: Assess bootstrap distribution quality
+- **`plot_bias_profile`**: Examine systematic bias patterns across FPR range
+
+### Aggregate Analysis (`plot_aggregate.py`)
+
+For visualizing aggregate performance across methods and datasets.
+
+- **`plot_pareto_frontier`**: Coverage-width tradeoff visualization
+- **`plot_violation_direction`**: Directional bias analysis (above vs. below true ROC)
+- **`plot_violation_proximity`**: Spatial clustering of violations
+- **`plot_coverage_by_n_total`**: Coverage rates vs. sample size across methods
+- **`plot_coverage_by_prevalence`**: Impact of class imbalance on coverage
+
+### Region-Specific Analysis (`plot_aggregate_curve.py`)
+
+For visualizing aggregate performance across methods and datasets, but broken down by FPR region.
+
+- **`plot_regionwise_pareto_frontier`**: Efficiency analysis by FPR region
+- **`plot_coverage_by_region`**: Pointwise coverage across FPR ranges
+
+### Individual Simulation Analysis (`plot_indiv.py`)
+
+For visualizing individual simulation results across ranges of data generating process parameters (see `Six Data Generating Processes` above).
+
+- **`plot_violation_heatmap`**: 2D violation patterns across parameter space
+- **`plot_violation_location_gradient`**: Where violations occur as function of sample size
+- **`plot_data_property_lines`**: Overlay distributional properties on violation maps
+
+---
+
+## Preliminary Results
+
+Simulation results reveal several differences in method performance across distributional conditions. Key findings include:
+
+### 1. Binormal Methods Fail Catastrophically on Heavy-Tailed Data
+
+**Working-Hotelling and Ellipse-Envelope** methods show severe undercoverage for Student's t distributions, with coverage dropping to **near 0%** at large sample sizes (n=10,000). Violation gradient maps reveal:
+- **Student's t (α=0.05)**: Systematic violations across entire FPR range (yellow bands below)
+- **Convergence to wrong curve**: As n increases, bands tighten around the *binormal approximation* rather than the true ROC, making violations worse with more data
+- **Beta distributions**: Moderate undercoverage (70-85%) for opposing-skewness configurations
+
+![Working-Hotelling Violation Locations](figures/violation_locations_WorkingHotelling_n_gradient.png)
+*Violation location gradients for Working-Hotelling bands across distributions and sample sizes. Yellow indicates high violation rates.*
+
+![Ellipse-Envelope Violation Locations](figures/violation_locations_EllipseEnvelopeSweep_n_gradient.png)
+*Ellipse-Envelope shows similar failure patterns on heavy-tailed data.*
+
+This confirms the theoretical prediction that parametric methods converge to incorrect limits when distributional assumptions are violated.
+
+### 2. Bootstrap Methods Achieve Robust Coverage Across Distributions
+
+**Envelope-Wilson, BP-Smoothed, and Logit Bootstrap** methods maintain valid coverage (~95% for α=0.05) across:
+- Heavy-tailed: Student's t (df as low as 1.1)
+- Skewed: Log-normal (σ up to 3.0), Beta (opposing skewness)
+- Heteroskedastic: Gaussian variance ratios 0.2–5.0
+- Multimodal: Bimodal negative class distributions
+
+**Bootstrap-calibration of Hsieh-Turnbull Bands catastrophic at low n, asymptotically ideal at high-n (n > 300), for all distributions**
+
+![Envelope-Wilson Violation Locations](figures/violation_locations_EnvelopeWilson_n_gradient.png)
+*Envelope-Wilson bootstrap shows minimal violations (blue) across most distributions, with coverage improving as sample size increases for most of the curve. However, pathologies exist at the tails where bootstrap variance drops to 0, despite the Wilson variance floor.*
+
+![Coverage by Sample Size](figures/coverage_by_n_panel_fourdist_twoalpha.png)
+*Coverage rates vs. sample size across four distributions and two confidence levels. Bootstrap methods converge to nominal levels by n=100–300 per class, with smaller dropoffs at n=10k (due to tail violations) than parametric methods.*
+
+### 3. Coverage-Width Tradeoffs Reveal Method Efficiency
+
+![Pareto Frontier Analysis](figures/pareto_frontier_panel_fourdist_twoalpha.png)
+*Coverage vs. mean band area (width) across four distributions and two confidence levels. Upper-left quadrant (high coverage, low width) is optimal.*
+
+Pareto frontier analysis shows:
+
+**For binormal-compatible data (heteroskedastic Gaussian, α=0.05):**
+- **Ellipse-Envelope**: Optimal efficiency (high coverage ~0.98, narrow bands ~0.05)
+- **Working-Hotelling**: Slightly wider but valid (~0.06 mean width)
+- **Bootstrap methods**: Valid but 20-40% wider (acceptable cost for robustness)
+
+**For heavy-tailed data (Student's t, α=0.05):**
+- **Binormal methods**: Cluster in lower-left (invalid coverage <0.2, misleadingly narrow)
+- **KS Band**: Upper-left corner (100% coverage, wide bands) — conservative but reliable
+- **Bootstrap methods**: Near-optimal with Wilson variance floor (95-98% coverage)
+
+### 4. Sample Size Requirements Vary by Method and Distribution
+
+**Small-sample performance (n=30 per class):**
+- **KS Band**: Maintains valid coverage but very wide (~0.15-0.20)
+- **Bootstrap methods**: Begin to undercover.
+- **Binormal methods**: Valid only when assumptions hold, but tend to work well for skewed data at low n (before assumption violations become severe)
+
+**Large-sample convergence (n≥1000):**
+- **Bootstrap methods**: Often the best balance of coverage and width with the Wilson variance floor.
+- **Binormal methods on misspecified data**: Pathologically narrow bands with 0% coverage
+
+### 5. Comprehensive Student's t Analysis
+
+![Student's t Diagnostic Panel](figures/student_t_at_a_glance.png)
+*Comprehensive diagnostic panel for Student's t distribution showing parameter distributions, coverage by sample size, Pareto frontiers, violation patterns, and method rankings.*
+
+The diagnostic panel reveals:
+- **Coverage spectrum**: KS (100%) > Logit Bootstrap (97%) > Envelope-Wilson (95%) > Working-Hotelling (8%)
+- **Violation asymmetry**: Binormal methods fail predominantly *below* true ROC (underestimate TPR)
+- **Width distribution**: Bootstrap methods show consistent ~0.06-0.08 width, while binormal methods collapse to ~0.02 (invalid)
+
+---
+
 ## Citation
 
 If you use this code in your research, please cite:
