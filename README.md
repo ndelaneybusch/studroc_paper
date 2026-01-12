@@ -641,9 +641,8 @@ Simulation results reveal several differences in method performance across distr
 
 ### 1. Binormal Methods Fail Catastrophically on Heavy-Tailed Data
 
-**Working-Hotelling and Ellipse-Envelope** methods show severe undercoverage for Student's t distributions, with coverage dropping to **near 0%** at large sample sizes (n=10,000). Violation gradient maps reveal:
-- **Student's t (α=0.05)**: Systematic violations across entire FPR range (yellow bands below)
-- **Convergence to wrong curve**: As n increases, bands tighten around the *binormal approximation* rather than the true ROC, making violations worse with more data
+**Working-Hotelling and Ellipse-Envelope** methods show severe undercoverage for Student's t and lognormal distributions, with coverage dropping to **near 0%** at large sample sizes (n=10,000). Violation gradient maps reveal:
+- **Student's t (α=0.05)**: Systematic violations across entire FPR range for n=10k (yellow bands below)
 - **Beta distributions**: Moderate undercoverage (70-85%) for opposing-skewness configurations
 
 ![Working-Hotelling Violation Locations](figures/violation_locations_WorkingHotelling_n_gradient.png)
@@ -656,11 +655,9 @@ This confirms the theoretical prediction that parametric methods converge to inc
 
 ### 2. Bootstrap Methods Achieve Robust Coverage Across Distributions
 
-**Envelope-Wilson, BP-Smoothed, and Logit Bootstrap** methods maintain valid coverage (~95% for α=0.05) across:
-- Heavy-tailed: Student's t (df as low as 1.1)
-- Skewed: Log-normal (σ up to 3.0), Beta (opposing skewness)
-- Heteroskedastic: Gaussian variance ratios 0.2–5.0
-- Multimodal: Bimodal negative class distributions
+**Envelope-Wilson, BP-Smoothed, and Logit Bootstrap** 
+- methods maintain generally good coverage except for tails. 
+- The Wilson variance floor dramatically improves coverage at upper tail, but not lower tail (assuming AUC > 0.5).
 
 **Bootstrap-calibration of Hsieh-Turnbull Bands catastrophic at low n, asymptotically ideal at high-n (n > 300), for all distributions**
 
@@ -678,35 +675,28 @@ This confirms the theoretical prediction that parametric methods converge to inc
 Pareto frontier analysis shows:
 
 **For binormal-compatible data (heteroskedastic Gaussian, α=0.05):**
-- **Ellipse-Envelope**: Optimal efficiency (high coverage ~0.98, narrow bands ~0.05)
-- **Working-Hotelling**: Slightly wider but valid (~0.06 mean width)
-- **Bootstrap methods**: Valid but 20-40% wider (acceptable cost for robustness)
-
+- **Working-Hotelling**: Optimal efficiency. Hits target coverage with smallest width.
+- **Ellipse-Envelope**: Slightly wider but still great coverage.
+- **Bootstrap methods**: 20-40% wider but Wilson-floor paths provide desired coverage. 
+ 
 **For heavy-tailed data (Student's t, α=0.05):**
-- **Binormal methods**: Cluster in lower-left (invalid coverage <0.2, misleadingly narrow)
-- **KS Band**: Upper-left corner (100% coverage, wide bands) — conservative but reliable
-- **Bootstrap methods**: Near-optimal with Wilson variance floor (95-98% coverage)
+- **Binormal methods**: More narrow, but dramatically undercover.
+- **KS Band**: Upper-right (100% coverage, wide bands) — conservative but reliable
+- **Bootstrap methods**: With wilson floor, maintains valid coverage while reducing the width of KS by almost half.
 
-### 4. Sample Size Requirements Vary by Method and Distribution
+**For lognormal data (α=0.05):**
+- **Binormal methods**: Catastrophic failure, worse coverage than pointwise interval despite also being wider. 
+- **KS Band**: Remains at ~100% coverage.
+- **Bootstrap methods**: Again, close to ideal with Wilson floor.
 
-**Small-sample performance (n=30 per class):**
-- **KS Band**: Maintains valid coverage but very wide (~0.15-0.20)
-- **Bootstrap methods**: Begin to undercover.
-- **Binormal methods**: Valid only when assumptions hold, but tend to work well for skewed data at low n (before assumption violations become severe)
-
-**Large-sample convergence (n≥1000):**
-- **Bootstrap methods**: Often the best balance of coverage and width with the Wilson variance floor.
-- **Binormal methods on misspecified data**: Pathologically narrow bands with 0% coverage
-
-### 5. Comprehensive Student's t Analysis
+### 4. Comprehensive Student's t Analysis
 
 ![Student's t Diagnostic Panel](figures/student_t_at_a_glance.png)
 *Comprehensive diagnostic panel for Student's t distribution showing parameter distributions, coverage by sample size, Pareto frontiers, violation patterns, and method rankings.*
 
 The diagnostic panel reveals:
-- **Coverage spectrum**: KS (100%) > Logit Bootstrap (97%) > Envelope-Wilson (95%) > Working-Hotelling (8%)
-- **Violation asymmetry**: Binormal methods fail predominantly *below* true ROC (underestimate TPR)
-- **Width distribution**: Bootstrap methods show consistent ~0.06-0.08 width, while binormal methods collapse to ~0.02 (invalid)
+- **Coverage spectrum**: KS (100%) > Bootstrap methods with Wilson floor (90%) > Parametric methods (60%)
+- **Violation patterns**: Wilson floor helps upper tail but nearly all remaining violations are undercoverage in the lower tail (where the true ROC is below the lower band). Parametric methods tend to have more symmetric violation patterns.
 
 ---
 
