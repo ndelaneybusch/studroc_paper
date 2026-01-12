@@ -37,17 +37,30 @@ uv sync
 | **Working-Hotelling** | Binormal scores, equal variance | Catastrophic undercoverage on heavy-tailed data |
 | **Ellipse-Envelope** | Binormal scores | Same as W-H, slightly more conservative |
 | **Fixed-Width KS** | None (distribution-free) | Overconservative (>95% coverage even at nominal 50%) |
-| **Pointwise Bootstrap** | Independence across FPR grid | Ignores multiplicity; ~60-70% coverage at nominal 95% |
+| **Pointwise Bootstrap** | Independence across FPR grid | Ignores multiplicity, very poor coverage, sets lower bound for width |
 
 ### Novel Bootstrap Methods
 
 | Method | Key Innovation | Strengths |
 |--------|----------------|-----------|
-| **Studentized Bootstrap Envelope** | Modular boundary corrections (Wilson, KDE, log-concave) | Wilson floor prevents band collapse at boundaries |
-| **Max-Modulus (Logit)** | Pure logit-space construction with Haldane correction | Aggressive variance stabilization, tight bands |
-| **Hsieh-Turnbull** | Asymptotic variance with density estimation | Near-optimal when log-concave assumption holds |
+| **Studentized Bootstrap Envelope** | Modular boundary corrections (Wilson, KDE, log-concave) | Wilson floor prevents band collapse at upper bound |
+| **Max-Modulus (Logit)** | Pure logit-space construction with Haldane correction | Aggressive variance stabilization, very conservative, wider even than KS |
+| **Hsieh-Turnbull** | Asymptotic variance with density estimation | Near-optimal when log-concave assumption holds, but difficult to estimate |
+
+### PyTorch Acceleration and Resource Optimization
 
 All bootstrap methods use PyTorch for automatic GPU acceleration (10-50× speedup for B > 500).
+
+**Transparent GPU acceleration:** Methods automatically detect and use CUDA devices. Inputs remain NumPy arrays (scikit-learn compatible), while computationally intensive operations run on GPU.
+
+**Batched grid evaluation:** The `generate_bootstrap_grid` function processes bootstrap samples in memory-efficient batches, computing TPR values at grid points without materializing full score arrays. For each grid FPR value, it computes the threshold directly from bootstrap negative scores (via quantile), then counts positive scores exceeding that threshold—avoiding storage of complete empirical ROC curves for each replicate.
+
+**Optimal B/K allocation:** Under compute constraints, the `optim_k_b.py` module balances bootstrap replicates (B) against grid resolution (K). Given memory budget C:
+- **Full grid** (K = n₀+1 jump points): Zero discretization error, optimal when n₀ is small
+- **Uniform grid** (K optimized): Balances bootstrap error β/√B with discretization error D/K
+
+The allocation formula determines when full grid is optimal: (n₀+1)³ < 27D²C/(4β²). See `stats/optim_K_B.md` for derivation.
+
 
 ---
 
@@ -96,6 +109,11 @@ The Wilson floor prevents band collapse at upper tail, maintaining ~90% coverage
 
 ![Envelope-Wilson violations](figures/violation_locations_EnvelopeWilson_n_gradient.png)
 
+![Coverage by sample size](figures/coverage_by_n_panel_fourdist_twoalpha.png)
+
+- Bootstrap methods approach nominal coverage, still accrue violations in the lower tail as n increases, but more slowly than binormal methods. 
+- Bootstrap-calibrated Hsieh-Turnbull is catastrophic at low n but asymptotically ideal at high n (n > 300) across all distributions.
+
 ### 3. Coverage-width tradeoffs
 
 ![Pareto frontier](figures/pareto_frontier_panel_fourdist_twoalpha.png)
@@ -103,7 +121,6 @@ The Wilson floor prevents band collapse at upper tail, maintaining ~90% coverage
 - **Binormal-compatible data:** Working-Hotelling is optimal
 - **Heavy-tailed data:** Bootstrap+Wilson achieves valid coverage at ~half KS width
 - **Lognormal:** Binormal methods perform worse than pointwise intervals
-- **high n:** bootstrap calibration of Hsieh-Turnbull is near-optimal
 
 ---
 
