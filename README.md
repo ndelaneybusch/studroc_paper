@@ -324,6 +324,32 @@ tpr = [(scores_pos >= t).mean() for t in thresholds]
 - ⚠️ **Bootstrap calibration critical:** Without it, uses conservative √k heuristic
 - ⚠️ **Kurtosis check:** Built-in warning if excess kurtosis > 2.0
 
+### PyTorch Acceleration and Resource Optimization
+
+Bootstrap methods leverage **PyTorch** (not TensorFlow) for efficient computation with automatic GPU acceleration when available.
+
+#### Implementation Philosophy
+
+**Transparent GPU acceleration:** Methods automatically detect and use CUDA devices. Inputs remain NumPy arrays (scikit-learn compatible), while computationally intensive operations are performed on GPU.
+
+**Batched grid evaluation:** Since we're moving bootstrap operations to the GPU when possible, we also use some memory management tricks. The `generate_bootstrap_grid` function (`bootstrap_grid.py`) processes bootstrap samples in memory-efficient batches, computing TPR values at grid points without materializing full score arrays. The key trick: for each grid FPR value, directly compute the threshold from bootstrap negative scores (via quantile or sorting), then count positive scores exceeding that threshold—avoiding the intermediate step of storing complete empirical ROC curves for each bootstrap replicate.
+
+**Performance:** GPU acceleration provides 10-50× speedup for large bootstrap samples (B > 500).
+
+#### Optimal Resource Allocation
+
+Under compute constraints, possible sources of bootstrap error include a) the number of bootstrap replicates `B` (where fewer replicates yield larger error) and b) the grid resolution `K` (where coarser grids yield discretization error). The `optim_k_b.py` module implements principled allocation of computational budget between bootstrap replicates `B` and grid resolution `K`.
+
+**Decision rule:** Given memory budget C (elements in B×K matrix):
+- **Full grid** (K = n₀+1 jump points): Zero discretization error, optimal when n₀ is small relative to optimal K
+- **Uniform grid** (K optimized): Balances bootstrap error β/√B with discretization error D/K
+
+**Allocation formula:** Full grid is optimal when (n₀+1)³ < 27D²C/(4β²), where:
+- β = √(α(1-α))/φ(Φ⁻¹(1-α)): Bootstrap quantile estimation coefficient
+- D: Discretization sensitivity (estimated from ROC curve or computed theoretically)
+
+The `allocate_budget()` function returns optimal (B, K) values and constructs appropriate grids. See `stats/optim_K_B.md` for mathematical derivation and error model.
+
 ---
 
 ## Evaluation Framework
