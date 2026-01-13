@@ -23,6 +23,16 @@ def lognormal_params(auc: np.ndarray, sigma: np.ndarray) -> np.ndarray:
     return sigma * np.sqrt(2) * stats.norm.ppf(auc)
 
 
+def logitnormal_params(auc: np.ndarray, sigma: np.ndarray) -> np.ndarray:
+    """
+    Closed-form: pos_mu = sigma * sqrt(2) * Φ⁻¹(AUC)
+
+    Identical to lognormal because both have binormal ROC structure.
+    The logit transform maps (0,1)-bounded scores to normal space.
+    """
+    return sigma * np.sqrt(2) * stats.norm.ppf(auc)
+
+
 def hetero_gaussian_params(auc: np.ndarray, sigma_ratio: np.ndarray) -> np.ndarray:
     """
     Closed-form: delta_mu = sqrt(sigma_ratio² + 1) * Φ⁻¹(AUC)
@@ -35,6 +45,18 @@ def exponential_params(auc: np.ndarray, neg_rate: float = 1.0) -> np.ndarray:
     Closed-form: pos_rate = neg_rate * (1/AUC - 1)
     """
     return neg_rate * (1.0 / auc - 1.0)
+
+
+def weibull_params(auc: np.ndarray, shape: np.ndarray) -> np.ndarray:
+    """
+    Closed-form: pos_scale = (AUC / (1 - AUC))^(1/shape)
+
+    For Weibull(shape, neg_scale=1) vs Weibull(shape, pos_scale).
+    Generalizes exponential (shape=1 case).
+
+    Derivation: ROC is TPR = FPR^(1/λ^k), giving AUC = λ^k / (λ^k + 1).
+    """
+    return (auc / (1 - auc)) ** (1 / shape)
 
 
 # =============================================================================
@@ -137,7 +159,7 @@ class BimodalNegativeSolver:
         neg_means: list,
         neg_weights: list,
         pos_mean: float,
-        neg_stds: list = None,
+        neg_stds: list | None = None,
         pos_std: float = 1.0,
     ) -> float:
         """Compute AUC for mixture negative vs Gaussian positive."""
@@ -185,6 +207,51 @@ class BimodalNegativeSolver:
         return brentq(objective, pos_mean_bounds[0], pos_mean_bounds[1], xtol=1e-6)
 
 
+class GammaSolver:
+    """Efficient solver for Gamma DGP parameters."""
+
+    def __init__(self, n_fpr: int = 201):
+        self.fpr = np.linspace(1e-10, 1 - 1e-10, n_fpr)
+
+    def _compute_auc(self, shape: float, scale_ratio: float) -> float:
+        """
+        Compute AUC for Gamma(shape, scale=1) vs Gamma(shape, scale=scale_ratio).
+
+        scale_ratio > 1 means positive class has larger mean (higher scores).
+        """
+        neg_dist = stats.gamma(a=shape, scale=1.0)
+        pos_dist = stats.gamma(a=shape, scale=scale_ratio)
+        thresholds = neg_dist.ppf(1 - self.fpr)
+        tpr = pos_dist.sf(thresholds)
+        return np.trapezoid(tpr, self.fpr)
+
+    def solve(
+        self, shape: float, target_auc: float, ratio_bounds: tuple = (1.001, 100.0)
+    ) -> float:
+        """Solve for scale_ratio given shape and target AUC."""
+
+        def objective(ratio):
+            return self._compute_auc(shape, ratio) - target_auc
+
+        auc_low = self._compute_auc(shape, ratio_bounds[0])
+        auc_high = self._compute_auc(shape, ratio_bounds[1])
+
+        if target_auc < auc_low or target_auc > auc_high:
+            warnings.warn(
+                f"Target AUC {target_auc} outside achievable range "
+                f"[{auc_low:.3f}, {auc_high:.3f}] for shape={shape}"
+            )
+            return np.nan
+
+        return brentq(objective, ratio_bounds[0], ratio_bounds[1], xtol=1e-6)
+
+    def solve_batch(self, shape_array: np.ndarray, auc_array: np.ndarray) -> np.ndarray:
+        """Solve for multiple (shape, AUC) pairs."""
+        return np.array(
+            [self.solve(shape, auc) for shape, auc in zip(shape_array, auc_array)]
+        )
+
+
 # =============================================================================
 # Unified Interface
 # =============================================================================
@@ -199,7 +266,7 @@ class LHSSample:
     lhs_params: dict  # The sampled LHS parameters
     dgp_params: dict  # The solved DGP parameters
     target_auc: np.ndarray  # For verification
-    achieved_auc: np.ndarray = None  # Optional verification
+    achieved_auc: np.ndarray | None = None  # Optional verification
 
 
 def map_lhs_to_dgp(dgp_type: str, lhs_params: dict) -> dict:
@@ -209,8 +276,8 @@ def map_lhs_to_dgp(dgp_type: str, lhs_params: dict) -> dict:
     Parameters
     ----------
     dgp_type : str
-        One of: 'lognormal', 'hetero_gaussian', 'beta_opposing',
-                'student_t', 'bimodal_negative', 'exponential'
+        One of: 'lognormal', 'logitnormal', 'hetero_gaussian', 'beta_opposing',
+                'student_t', 'bimodal_negative', 'exponential', 'gamma', 'weibull'
     lhs_params : dict
         Must contain 'auc' and DGP-specific shape parameters.
 
@@ -225,6 +292,11 @@ def map_lhs_to_dgp(dgp_type: str, lhs_params: dict) -> dict:
         pos_mu = lognormal_params(auc, sigma)
         return {"neg_mu": 0.0, "pos_mu": pos_mu, "sigma": sigma}
 
+    elif dgp_type == "logitnormal":
+        sigma = np.asarray(lhs_params["sigma"])
+        pos_mu = logitnormal_params(auc, sigma)
+        return {"neg_mu": 0.0, "pos_mu": pos_mu, "sigma": sigma}
+
     elif dgp_type == "hetero_gaussian":
         sigma_ratio = np.asarray(lhs_params["sigma_ratio"])
         delta_mu = hetero_gaussian_params(auc, sigma_ratio)
@@ -234,6 +306,11 @@ def map_lhs_to_dgp(dgp_type: str, lhs_params: dict) -> dict:
         neg_rate = lhs_params.get("neg_rate", 1.0)
         pos_rate = exponential_params(auc, neg_rate)
         return {"neg_rate": neg_rate, "pos_rate": pos_rate}
+
+    elif dgp_type == "weibull":
+        shape = np.asarray(lhs_params["shape"])
+        pos_scale = weibull_params(auc, shape)
+        return {"neg_shape": shape, "pos_shape": shape, "neg_scale": 1.0, "pos_scale": pos_scale}
 
     elif dgp_type == "student_t":
         df = np.asarray(lhs_params["df"])
@@ -246,6 +323,12 @@ def map_lhs_to_dgp(dgp_type: str, lhs_params: dict) -> dict:
         solver = BetaOpposingSolver()
         beta = solver.solve_batch(alpha, auc)
         return {"alpha": alpha, "beta": beta}
+
+    elif dgp_type == "gamma":
+        shape = np.asarray(lhs_params["shape"])
+        solver = GammaSolver()
+        scale_ratio = solver.solve_batch(shape, auc)
+        return {"neg_shape": shape, "pos_shape": shape, "neg_scale": 1.0, "pos_scale": scale_ratio}
 
     elif dgp_type == "bimodal_negative":
         mixture_weight = np.asarray(lhs_params["mixture_weight"])
@@ -284,9 +367,12 @@ def generate_simulation_design(n_samples: int = 1000, seed: int = 42):
 
     specs = [
         ("lognormal", ["auc", "sigma"], [(0.55, 0.99), (0.1, 3.0)]),
+        ("logitnormal", ["auc", "sigma"], [(0.55, 0.99), (0.1, 3.0)]),
         ("hetero_gaussian", ["auc", "sigma_ratio"], [(0.55, 0.99), (0.2, 5.0)]),
+        ("weibull", ["auc", "shape"], [(0.55, 0.99), (0.5, 5.0)]),
         ("student_t", ["auc", "df"], [(0.55, 0.99), (1.1, 30.0)]),
         ("beta_opposing", ["auc", "alpha"], [(0.55, 0.99), (0.5, 10.0)]),
+        ("gamma", ["auc", "shape"], [(0.55, 0.99), (0.5, 10.0)]),
         (
             "bimodal_negative",
             ["auc", "mixture_weight", "mode_separation"],
@@ -301,7 +387,11 @@ def generate_simulation_design(n_samples: int = 1000, seed: int = 42):
 
         # Step 1: Generate initial maximin LHS
         lhs_unit = maximin_lhs(
-            n=n_samples, k=n_dims, method="build", dup=5, seed=rng.integers(0, 2**31)
+            n=n_samples,
+            k=n_dims,
+            method="build",
+            dup=5,
+            seed=int(rng.integers(0, 2**31)),
         )
 
         # Step 2: Apply Iman-Conover to remove correlations

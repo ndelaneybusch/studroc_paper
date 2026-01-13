@@ -30,9 +30,12 @@ from studroc_paper.datagen.true_rocs import (
     make_beta_opposing_skew_dgp,
     make_bimodal_negative_dgp,
     make_exponential_dgp,
+    make_gamma_dgp,
     make_heteroskedastic_gaussian_dgp,
+    make_logitnormal_dgp,
     make_lognormal_dgp,
     make_student_t_dgp,
+    make_weibull_dgp,
 )
 from studroc_paper.eval.eval import aggregate_band_results, evaluate_single_band
 from studroc_paper.methods.ellipse_envelope import ellipse_envelope_band
@@ -41,16 +44,17 @@ from studroc_paper.methods.hsieh_turnbull_band import hsieh_turnbull_band
 from studroc_paper.methods.ks_band import fixed_width_ks_band
 from studroc_paper.methods.max_modulus_boot import logit_bootstrap_band
 from studroc_paper.methods.pointwise_boot import pointwise_bootstrap_band
+from studroc_paper.methods.wilson_band import wilson_band, wilson_rectangle_band
 from studroc_paper.methods.working_hotelling import working_hotelling_band
 from studroc_paper.sampling.bootstrap_grid import generate_bootstrap_grid
-from studroc_paper.sampling.lhs import maximin_lhs
+from studroc_paper.sampling.lhs import iman_conover_transform, maximin_lhs
 
 # =============================================================================
 # Configuration
 # =============================================================================
 
 
-def get_dgp_specs() -> dict[str, dict[str, NDArray]]:
+def get_dgp_specs() -> dict:
     """Define DGP specifications for LHS sampling."""
     return {
         "lognormal": {
@@ -59,6 +63,13 @@ def get_dgp_specs() -> dict[str, dict[str, NDArray]]:
             "lhs_bounds": [(0.55, 0.99), (0.1, 3.0)],
             "data_floor": 0.0,
             "data_ceil": None,
+        },
+        "logitnormal": {
+            "make_dgp": make_logitnormal_dgp,
+            "lhs_params": ["auc", "sigma"],
+            "lhs_bounds": [(0.55, 0.99), (0.1, 3.0)],
+            "data_floor": 0.0,
+            "data_ceil": 1.0,
         },
         "hetero_gaussian": {
             "make_dgp": make_heteroskedastic_gaussian_dgp,
@@ -92,6 +103,20 @@ def get_dgp_specs() -> dict[str, dict[str, NDArray]]:
             "make_dgp": make_exponential_dgp,
             "lhs_params": ["auc", "neg_rate"],
             "lhs_bounds": [(0.55, 0.99), (0.1, 10.0)],
+            "data_floor": 0.0,
+            "data_ceil": None,
+        },
+        "weibull": {
+            "make_dgp": make_weibull_dgp,
+            "lhs_params": ["auc", "shape"],
+            "lhs_bounds": [(0.55, 0.99), (0.5, 5.0)],
+            "data_floor": 0.0,
+            "data_ceil": None,
+        },
+        "gamma": {
+            "make_dgp": make_gamma_dgp,
+            "lhs_params": ["auc", "shape"],
+            "lhs_bounds": [(0.55, 0.99), (0.5, 10.0)],
             "data_floor": 0.0,
             "data_ceil": None,
         },
@@ -722,6 +747,8 @@ def run_dgp(
         n=n_lhs, k=n_dims, method="build", dup=5, seed=rng.integers(0, 2**31)
     )
 
+    lhs_unit = iman_conover_transform(lhs_unit, target_corr=np.eye(n_dims), rng=rng)
+
     # Scale to parameter bounds
     lower = np.array([b[0] for b in dgp_spec["lhs_bounds"]])
     upper = np.array([b[1] for b in dgp_spec["lhs_bounds"]])
@@ -1091,10 +1118,13 @@ def main():
     for dgp_type in [
         "hetero_gaussian",
         "lognormal",
+        "logitnormal",
         "beta_opposing",
         "student_t",
         "bimodal_negative",
         "exponential",
+        "weibull",
+        "gamma",
     ]:
         dgp_spec = dgp_specs[dgp_type]
         run_dgp(

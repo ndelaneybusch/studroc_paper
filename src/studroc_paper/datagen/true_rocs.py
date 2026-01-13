@@ -340,6 +340,68 @@ def make_lognormal_dgp(
     )
 
 
+# =============================================================================
+# 3b. BOUNDED SCORES: Logit-Normal
+# =============================================================================
+
+
+def make_logitnormal_dgp(
+    neg_mu: float = 0.0, pos_mu: float = 1.0, sigma: float = 1.0
+) -> DGP:
+    """
+    Logit-normal distributions for bounded scores on (0, 1).
+
+    Neg ~ LogitNormal(μ_neg, σ²)
+    Pos ~ LogitNormal(μ_pos, σ²)
+
+    If X ~ LogitNormal(μ, σ²), then logit(X) ~ N(μ, σ²).
+    Equivalently, X = expit(Y) where Y ~ N(μ, σ²).
+
+    This is useful for modeling probability-like scores bounded to (0, 1).
+
+    ROC Derivation:
+    ---------------
+    Let expit(x) = 1 / (1 + exp(-x)) and logit(x) = log(x / (1-x)).
+
+    If X ~ LogitNormal(μ, σ²), then logit(X) ~ N(μ, σ²).
+    CDF: F(x) = Φ((logit(x) - μ) / σ)
+
+    FPR(t) = 1 - Φ((logit(t) - μ_neg) / σ)
+    TPR(t) = 1 - Φ((logit(t) - μ_pos) / σ)
+
+    From FPR: (logit(t) - μ_neg) / σ = -Φ⁻¹(FPR)
+              logit(t) = μ_neg - σ·Φ⁻¹(FPR)
+
+    TPR = 1 - Φ((μ_neg - σ·Φ⁻¹(FPR) - μ_pos) / σ)
+        = 1 - Φ(-Φ⁻¹(FPR) - (μ_pos - μ_neg)/σ)
+        = Φ(Φ⁻¹(FPR) + Δμ/σ)
+
+    Like log-normal, this gives the SAME ROC as Gaussian with d' = Δμ/σ!
+    The logit transform linearizes the problem.
+    """
+    d_prime = (pos_mu - neg_mu) / sigma
+
+    def generator(n_pos, n_neg, rng):
+        # Sample in logit space (normal), then transform via expit
+        logit_neg = rng.normal(neg_mu, sigma, n_neg)
+        logit_pos = rng.normal(pos_mu, sigma, n_pos)
+        # expit = 1 / (1 + exp(-x))
+        scores_neg = 1.0 / (1.0 + np.exp(-logit_neg))
+        scores_pos = 1.0 / (1.0 + np.exp(-logit_pos))
+        return scores_pos, scores_neg
+
+    def true_roc(fpr):
+        fpr = np.asarray(fpr)
+        return stats.norm.cdf(stats.norm.ppf(fpr) + d_prime)
+
+    return DGP(
+        generator=generator,
+        true_roc=true_roc,
+        name=f"LogitNormal(Δμ={pos_mu - neg_mu}, σ={sigma})",
+        description="Both classes bounded to (0,1). ROC equivalent to Gaussian (logit-transform).",
+    )
+
+
 def make_gamma_dgp(
     neg_shape: float = 2.0,
     pos_shape: float = 2.0,
@@ -947,6 +1009,8 @@ def get_standard_test_dgps() -> dict:
         # Skewed same direction
         "lognormal": make_lognormal_dgp(neg_mu=0, pos_mu=0.5, sigma=0.5),
         "gamma": make_gamma_dgp(neg_shape=2, pos_shape=2, neg_scale=1, pos_scale=2),
+        # Bounded scores
+        "logitnormal": make_logitnormal_dgp(neg_mu=0, pos_mu=1.0, sigma=1.0),
         # Heteroskedastic
         "hetero_pos_wider": make_heteroskedastic_gaussian_dgp(1.0, 1.0, 2.0),
         "hetero_neg_wider": make_heteroskedastic_gaussian_dgp(1.0, 2.0, 1.0),
