@@ -12,6 +12,8 @@ from numpy.typing import NDArray
 from scipy.stats import chi2, norm
 from torch import Tensor
 
+from .method_utils import torch_to_numpy
+
 
 def working_hotelling_band(
     y_true: NDArray | Tensor,
@@ -72,18 +74,9 @@ def working_hotelling_band(
         >>> np.all(lower <= upper)
         True
     """
-    # Convert to numpy arrays, handling torch tensors (including CUDA)
-    if isinstance(y_score, Tensor):
-        y_score = y_score.detach().cpu().numpy()
-        dtype = y_score.dtype
-    else:
-        y_score = np.asarray(y_score)
-        dtype = y_score.dtype
-
-    if isinstance(y_true, Tensor):
-        y_true = y_true.detach().cpu().numpy()
-    else:
-        y_true = np.asarray(y_true)
+    y_score = torch_to_numpy(y_score)
+    y_true = torch_to_numpy(y_true)
+    dtype = y_score.dtype
 
     # Separate scores by class
     neg = y_score[y_true == 0]
