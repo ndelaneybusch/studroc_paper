@@ -140,7 +140,7 @@ def generate_bootstrap_grid(
     n_positives: int | None = None,
     y_true: Tensor | None = None,
     y_score: Tensor | None = None,
-    B: int = None,
+    B: int | None = None,
     grid: Tensor = None,
     device: torch.device | None = None,
     batch_size: int = 500,
