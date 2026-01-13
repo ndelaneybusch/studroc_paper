@@ -123,7 +123,8 @@ def wilson_band(
         # from the width, though Wilson doesn't assume constant variance.
         # This is strictly for the diagnostic plot function.
         approx_width = (upper_envelope - lower_envelope) / 2.0
-        # Recover 'variance' by reversing Wald: width = z * sqrt(var) -> var = (width/z)^2
+        # Recover 'variance' by reversing Wald:
+        # width = z * sqrt(var) -> var = (width/z)^2
         wilson_var_proxy = (approx_width / z_alpha) ** 2
         wilson_var_np = torch_to_numpy(wilson_var_proxy)
 

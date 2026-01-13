@@ -461,9 +461,12 @@ def _kde_density_derivative(
         data: Input data array.
         eval_points: Points at which to evaluate density and derivative.
         bw_method: Bandwidth selection method ('ISJ' or 'silverman'). Defaults to 'ISJ'.
-        reflected: If True, use boundary reflection to reduce edge bias. Defaults to False.
-        lower_bound: Lower boundary for reflection. Defaults to None (uses np.min(data)).
-        upper_bound: Upper boundary for reflection. Defaults to None (uses np.max(data)).
+        reflected: If True, use boundary reflection to reduce edge bias.
+            Defaults to False.
+        lower_bound: Lower boundary for reflection.
+            Defaults to None (uses np.min(data)).
+        upper_bound: Upper boundary for reflection.
+            Defaults to None (uses np.max(data)).
 
     Returns:
         Tuple of (density, derivative) arrays at eval_points.
@@ -665,8 +668,10 @@ def compute_hsieh_turnbull_variance(
         fpr_grid: FPR values at which to evaluate variance.
         method: Density estimation method. Defaults to 'reflected_kde'.
             Options: 'reflected_kde', 'log_concave', 'kde'.
-        data_floor: Optional lower boundary for reflected KDE. Defaults to None (uses data minimum).
-        data_ceil: Optional upper boundary for reflected KDE. Defaults to None (uses data maximum).
+        data_floor: Optional lower boundary for reflected KDE.
+            Defaults to None (uses data minimum).
+        data_ceil: Optional upper boundary for reflected KDE.
+            Defaults to None (uses data maximum).
 
     Returns:
         Variance array matching fpr_grid shape.
