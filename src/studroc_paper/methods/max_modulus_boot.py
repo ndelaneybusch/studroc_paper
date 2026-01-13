@@ -183,8 +183,9 @@ def logit_bootstrap_band(
     logit_tpr_hat = _haldane_logit(tpr_hat, n_pos)
     logit_boot_tpr = _haldane_logit(boot_tpr, n_pos)
 
-    # Compute asymptotic standard error in logit space
-    logit_se = _logit_std_error(tpr_hat, n_pos)
+    # Compute bootstrap standard error in logit space
+    logit_se = torch.std(logit_boot_tpr, dim=0)  # Bootstrap SE
+    logit_se = torch.clamp(logit_se, min=0.1)  # Floor to prevent /0
 
     # Compute studentized deviations (max-modulus statistic)
     # Z_b = (theta*_b - theta_hat) / sigma_hat
