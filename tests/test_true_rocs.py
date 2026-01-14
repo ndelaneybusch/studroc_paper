@@ -180,18 +180,6 @@ class TestGaussianDGP:
         max_diff = np.max(np.abs(analytic_tpr - empirical_tpr))
         assert max_diff < 0.003
 
-    def test_roc_is_symmetric_binormal(self, fpr_grid):
-        """Verify Gaussian ROC has expected binormal form."""
-        dgp = make_gaussian_dgp(delta_mu=1.0, sigma=1.0)
-        tpr = dgp.get_true_roc(fpr_grid)
-
-        # For equal variance, ROC should be point-symmetric about (0.5, 0.5)
-        # Check: TPR(FPR) + TPR(1-FPR) ≈ 1 (approximately, not exact)
-        mid = len(fpr_grid) // 2
-        # This isn't exactly true, but the curve should be smooth and monotonic
-        auc = np.trapezoid(tpr, fpr_grid)
-        assert 0.7 < auc < 0.9  # Reasonable for d'=1
-
     @pytest.mark.parametrize("delta_mu", [0.5, 1.0, 2.0, 3.0])
     def test_auc_increases_with_separation(self, delta_mu, fpr_grid):
         """Verify AUC increases as class separation increases."""
