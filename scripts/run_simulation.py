@@ -156,26 +156,18 @@ def get_sample_size_configs():
 # =============================================================================
 
 
-def compute_all_bands(
+def compute_bands_with_empirical_bootstrap(
     y_true: NDArray,
     y_score: NDArray,
     boot_tpr_matrix: NDArray,
     fpr_grid: NDArray,
     true_tpr: NDArray,
     alpha: float,
-    data_floor: float | None = None,
-    data_ceil: float | None = None,
-) -> dict[str, tuple[NDArray, NDArray]]:
-    """Compute all confidence bands."""
+) -> dict[str, dict]:
+    """Compute confidence bands requiring empirical bootstrap samples."""
+    results = {}
 
-    dtype = y_score.dtype
-    fpr, tpr, _ = roc_curve(y_true, y_score)
-    fpr = fpr.astype(dtype)
-    tpr = tpr.astype(dtype)
-
-    results = {"fpr_grid": fpr_grid, "tpr": tpr}
-
-    # Compute envelope band
+    # envelope_standard: boundary_method="none", retention_method="ks", use_logit=False, tpr_method="empirical"
     fpr_out, lower, upper = envelope_bootstrap_band(
         boot_tpr_matrix=boot_tpr_matrix,
         fpr_grid=fpr_grid,
@@ -184,37 +176,16 @@ def compute_all_bands(
         alpha=alpha,
         boundary_method="none",
         retention_method="ks",
+        use_logit=False,
+        tpr_method="empirical",
+        plot=False,
+        plot_title=None,
     )
     results["envelope_standard"] = evaluate_single_band(
         lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
     )
 
-    fpr_out, lower, upper = envelope_bootstrap_band(
-        boot_tpr_matrix=boot_tpr_matrix,
-        fpr_grid=fpr_grid,
-        y_true=y_true,
-        y_score=y_score,
-        alpha=alpha,
-        boundary_method="none",
-        retention_method="symmetric",
-    )
-    results["envelope_symmetric"] = evaluate_single_band(
-        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-    )
-
-    fpr_out, lower, upper = envelope_bootstrap_band(
-        boot_tpr_matrix=boot_tpr_matrix,
-        fpr_grid=fpr_grid,
-        y_true=y_true,
-        y_score=y_score,
-        alpha=alpha,
-        boundary_method="kde",
-        retention_method="ks",
-    )
-    results["envelope_kde"] = evaluate_single_band(
-        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-    )
-
+    # envelope_wilson: boundary_method="wilson", retention_method="ks", use_logit=False, tpr_method="empirical"
     fpr_out, lower, upper = envelope_bootstrap_band(
         boot_tpr_matrix=boot_tpr_matrix,
         fpr_grid=fpr_grid,
@@ -223,11 +194,16 @@ def compute_all_bands(
         alpha=alpha,
         boundary_method="wilson",
         retention_method="ks",
+        use_logit=False,
+        tpr_method="empirical",
+        plot=False,
+        plot_title=None,
     )
     results["envelope_wilson"] = evaluate_single_band(
         lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
     )
 
+    # envelope_wilson_symmetric: boundary_method="wilson", retention_method="symmetric", use_logit=False, tpr_method="empirical"
     fpr_out, lower, upper = envelope_bootstrap_band(
         boot_tpr_matrix=boot_tpr_matrix,
         fpr_grid=fpr_grid,
@@ -236,11 +212,16 @@ def compute_all_bands(
         alpha=alpha,
         boundary_method="wilson",
         retention_method="symmetric",
+        use_logit=False,
+        tpr_method="empirical",
+        plot=False,
+        plot_title=None,
     )
     results["envelope_wilson_symmetric"] = evaluate_single_band(
         lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
     )
 
+    # envelope_logit: boundary_method="none", retention_method="ks", use_logit=True, tpr_method="empirical"
     fpr_out, lower, upper = envelope_bootstrap_band(
         boot_tpr_matrix=boot_tpr_matrix,
         fpr_grid=fpr_grid,
@@ -250,25 +231,15 @@ def compute_all_bands(
         boundary_method="none",
         retention_method="ks",
         use_logit=True,
+        tpr_method="empirical",
+        plot=False,
+        plot_title=None,
     )
     results["envelope_logit"] = evaluate_single_band(
         lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
     )
 
-    fpr_out, lower, upper = envelope_bootstrap_band(
-        boot_tpr_matrix=boot_tpr_matrix,
-        fpr_grid=fpr_grid,
-        y_true=y_true,
-        y_score=y_score,
-        alpha=alpha,
-        boundary_method="none",
-        retention_method="symmetric",
-        use_logit=True,
-    )
-    results["envelope_symmetric_logit"] = evaluate_single_band(
-        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-    )
-
+    # envelope_wilson_logit: boundary_method="wilson", retention_method="ks", use_logit=True, tpr_method="empirical"
     fpr_out, lower, upper = envelope_bootstrap_band(
         boot_tpr_matrix=boot_tpr_matrix,
         fpr_grid=fpr_grid,
@@ -278,11 +249,15 @@ def compute_all_bands(
         boundary_method="wilson",
         retention_method="ks",
         use_logit=True,
+        tpr_method="empirical",
+        plot=False,
+        plot_title=None,
     )
     results["envelope_wilson_logit"] = evaluate_single_band(
         lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
     )
 
+    # envelope_wilson_symmetric_logit: boundary_method="wilson", retention_method="symmetric", use_logit=True, tpr_method="empirical"
     fpr_out, lower, upper = envelope_bootstrap_band(
         boot_tpr_matrix=boot_tpr_matrix,
         fpr_grid=fpr_grid,
@@ -292,212 +267,446 @@ def compute_all_bands(
         boundary_method="wilson",
         retention_method="symmetric",
         use_logit=True,
+        tpr_method="empirical",
+        plot=False,
+        plot_title=None,
     )
     results["envelope_wilson_symmetric_logit"] = evaluate_single_band(
         lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
     )
 
-    fpr_out, lower, upper = envelope_bootstrap_band(
-        boot_tpr_matrix=boot_tpr_matrix,
-        fpr_grid=fpr_grid,
-        y_true=y_true,
-        y_score=y_score,
-        alpha=alpha,
-        boundary_method="kde",
-        retention_method="ks",
-        use_logit=True,
-    )
-    results["envelope_kde_logit"] = evaluate_single_band(
-        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-    )
-
-    fpr_out, lower, upper = envelope_bootstrap_band(
-        boot_tpr_matrix=boot_tpr_matrix,
-        fpr_grid=fpr_grid,
-        y_true=y_true,
-        y_score=y_score,
-        alpha=alpha,
-        boundary_method="kde",
-        retention_method="symmetric",
-        use_logit=True,
-    )
-    results["envelope_kde_symmetric_logit"] = evaluate_single_band(
-        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-    )
-
-    # Compute H-T
-    fpr_out, lower, upper = hsieh_turnbull_band(
-        y_true=y_true,
-        y_score=y_score,
-        alpha=alpha,
-        k=len(fpr_grid),
-        use_logit_transform=False,
-        density_method="log_concave",
-        n_bootstraps=0,
-        check_assumptions=False,
-        data_floor=data_floor,
-        data_ceil=data_ceil,
-    )
-    results["HT_log_concave"] = evaluate_single_band(
-        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-    )
-
-    fpr_out, lower, upper = hsieh_turnbull_band(
-        y_true=y_true,
-        y_score=y_score,
-        alpha=alpha,
-        k=len(fpr_grid),
-        use_logit_transform=False,
-        density_method="log_concave",
-        n_bootstraps=4000,
-        check_assumptions=False,
-        data_floor=data_floor,
-        data_ceil=data_ceil,
-    )
-    results["HT_log_concave_calib"] = evaluate_single_band(
-        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-    )
-
-    fpr_out, lower, upper = hsieh_turnbull_band(
-        y_true=y_true,
-        y_score=y_score,
-        alpha=alpha,
-        k=len(fpr_grid),
-        use_logit_transform=False,
-        density_method="reflected_kde",
-        n_bootstraps=0,
-        check_assumptions=False,
-        data_floor=data_floor,
-        data_ceil=data_ceil,
-    )
-    results["HT_reflected_kde"] = evaluate_single_band(
-        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-    )
-
-    fpr_out, lower, upper = hsieh_turnbull_band(
-        y_true=y_true,
-        y_score=y_score,
-        alpha=alpha,
-        k=len(fpr_grid),
-        use_logit_transform=False,
-        density_method="kde",
-        n_bootstraps=0,
-        check_assumptions=False,
-        data_floor=data_floor,
-        data_ceil=data_ceil,
-    )
-    results["HT_kde"] = evaluate_single_band(
-        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-    )
-
-    fpr_out, lower, upper = hsieh_turnbull_band(
-        y_true=y_true,
-        y_score=y_score,
-        alpha=alpha,
-        k=len(fpr_grid),
-        use_logit_transform=False,
-        density_method="kde",
-        n_bootstraps=4000,
-        check_assumptions=False,
-        data_floor=data_floor,
-        data_ceil=data_ceil,
-    )
-    results["HT_kde_calib"] = evaluate_single_band(
-        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-    )
-
-    fpr_out, lower, upper = hsieh_turnbull_band(
-        y_true=y_true,
-        y_score=y_score,
-        alpha=alpha,
-        k=len(fpr_grid),
-        use_logit_transform=False,
-        density_method="kde",
-        n_bootstraps=0,
-        check_assumptions=False,
-        use_wilson_variance_floor=True,
-        data_floor=data_floor,
-        data_ceil=data_ceil,
-    )
-    results["HT_kde_wilson"] = evaluate_single_band(
-        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-    )
-
-    fpr_out, lower, upper = hsieh_turnbull_band(
-        y_true=y_true,
-        y_score=y_score,
-        alpha=alpha,
-        k=len(fpr_grid),
-        use_logit_transform=False,
-        density_method="kde",
-        n_bootstraps=4000,
-        check_assumptions=False,
-        use_wilson_variance_floor=True,
-        data_floor=data_floor,
-        data_ceil=data_ceil,
-    )
-    results["HT_kde_calib_wilson"] = evaluate_single_band(
-        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-    )
-
-    # Compute ellipse-envelope band
-    fpr_out, lower, upper = ellipse_envelope_band(
-        y_true=y_true,
-        y_score=y_score,
-        num_grid_points=len(fpr_grid),
-        alpha=alpha,
-        envelope_method="sweep",
-        num_cutoffs=1000,
-    )
-    results["ellipse_envelope_sweep"] = evaluate_single_band(
-        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-    )
-
-    fpr_out, lower, upper = ellipse_envelope_band(
-        y_true=y_true,
-        y_score=y_score,
-        num_grid_points=len(fpr_grid),
-        alpha=alpha,
-        envelope_method="quartic",
-        num_cutoffs=1000,
-    )
-    results["ellipse_envelope_quartic"] = evaluate_single_band(
-        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-    )
-
-    # Compute logit band
+    # logit_max_modulus: tpr_method="empirical"
     fpr_out, lower, upper = logit_bootstrap_band(
         boot_tpr_matrix=boot_tpr_matrix,
         fpr_grid=fpr_grid,
         y_true=y_true,
         y_score=y_score,
         alpha=alpha,
+        tpr_method="empirical",
     )
     results["logit_max_modulus"] = evaluate_single_band(
         lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
     )
 
-    # Compute pointwise band
+    # pointwise
     fpr_out, lower, upper = pointwise_bootstrap_band(
-        boot_tpr_matrix=boot_tpr_matrix, fpr_grid=fpr_grid, alpha=alpha
+        boot_tpr_matrix=boot_tpr_matrix,
+        fpr_grid=fpr_grid,
+        alpha=alpha,
     )
     results["pointwise"] = evaluate_single_band(
         lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
     )
 
-    # Compute ks band
+    return results
+
+
+def compute_bands_with_harrell_davis_bootstrap(
+    y_true: NDArray,
+    y_score: NDArray,
+    boot_tpr_matrix_hd: NDArray,
+    fpr_grid: NDArray,
+    true_tpr: NDArray,
+    alpha: float,
+) -> dict[str, dict]:
+    """Compute confidence bands requiring Harrell-Davis bootstrap samples."""
+    results = {}
+
+    # envelope_hd: boundary_method="none", retention_method="ks", use_logit=False, tpr_method="harrell_davis"
+    fpr_out, lower, upper = envelope_bootstrap_band(
+        boot_tpr_matrix=boot_tpr_matrix_hd,
+        fpr_grid=fpr_grid,
+        y_true=y_true,
+        y_score=y_score,
+        alpha=alpha,
+        boundary_method="none",
+        retention_method="ks",
+        use_logit=False,
+        tpr_method="harrell_davis",
+        plot=False,
+        plot_title=None,
+    )
+    results["envelope_hd"] = evaluate_single_band(
+        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
+    )
+
+    # envelope_wilson_hd: boundary_method="wilson", retention_method="ks", use_logit=False, tpr_method="harrell_davis"
+    fpr_out, lower, upper = envelope_bootstrap_band(
+        boot_tpr_matrix=boot_tpr_matrix_hd,
+        fpr_grid=fpr_grid,
+        y_true=y_true,
+        y_score=y_score,
+        alpha=alpha,
+        boundary_method="wilson",
+        retention_method="ks",
+        use_logit=False,
+        tpr_method="harrell_davis",
+        plot=False,
+        plot_title=None,
+    )
+    results["envelope_wilson_hd"] = evaluate_single_band(
+        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
+    )
+
+    # envelope_logit_hd: boundary_method="none", retention_method="ks", use_logit=True, tpr_method="harrell_davis"
+    fpr_out, lower, upper = envelope_bootstrap_band(
+        boot_tpr_matrix=boot_tpr_matrix_hd,
+        fpr_grid=fpr_grid,
+        y_true=y_true,
+        y_score=y_score,
+        alpha=alpha,
+        boundary_method="none",
+        retention_method="ks",
+        use_logit=True,
+        tpr_method="harrell_davis",
+        plot=False,
+        plot_title=None,
+    )
+    results["envelope_logit_hd"] = evaluate_single_band(
+        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
+    )
+
+    # envelope_wilson_logit_hd: boundary_method="wilson", retention_method="ks", use_logit=True, tpr_method="harrell_davis"
+    fpr_out, lower, upper = envelope_bootstrap_band(
+        boot_tpr_matrix=boot_tpr_matrix_hd,
+        fpr_grid=fpr_grid,
+        y_true=y_true,
+        y_score=y_score,
+        alpha=alpha,
+        boundary_method="wilson",
+        retention_method="ks",
+        use_logit=True,
+        tpr_method="harrell_davis",
+        plot=False,
+        plot_title=None,
+    )
+    results["envelope_wilson_logit_hd"] = evaluate_single_band(
+        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
+    )
+
+    # logit_max_modulus_hd: tpr_method="harrell_davis"
+    fpr_out, lower, upper = logit_bootstrap_band(
+        boot_tpr_matrix=boot_tpr_matrix_hd,
+        fpr_grid=fpr_grid,
+        y_true=y_true,
+        y_score=y_score,
+        alpha=alpha,
+        tpr_method="harrell_davis",
+    )
+    results["logit_max_modulus_hd"] = evaluate_single_band(
+        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
+    )
+
+    return results
+
+
+def compute_bands_without_bootstrap(
+    y_true: NDArray,
+    y_score: NDArray,
+    fpr_grid: NDArray,
+    true_tpr: NDArray,
+    alpha: float,
+    data_floor: float | None = None,
+    data_ceil: float | None = None,
+) -> dict[str, dict]:
+    """Compute confidence bands that do not require bootstrap samples."""
+    results = {}
+
+    # ellipse_envelope_sweep: envelope_method="sweep"
+    fpr_out, lower, upper = ellipse_envelope_band(
+        y_true=y_true,
+        y_score=y_score,
+        num_grid_points=len(fpr_grid),
+        alpha=alpha,
+        minimum_std=1e-8,
+        probit_clip=1e-9,
+        envelope_method="sweep",
+        num_cutoffs=1000,
+        plot=False,
+        plot_title=None,
+    )
+    results["ellipse_envelope_sweep"] = evaluate_single_band(
+        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
+    )
+
+    # ellipse_envelope_quartic: envelope_method="quartic"
+    fpr_out, lower, upper = ellipse_envelope_band(
+        y_true=y_true,
+        y_score=y_score,
+        num_grid_points=len(fpr_grid),
+        alpha=alpha,
+        minimum_std=1e-8,
+        probit_clip=1e-9,
+        envelope_method="quartic",
+        num_cutoffs=1000,
+        plot=False,
+        plot_title=None,
+    )
+    results["ellipse_envelope_quartic"] = evaluate_single_band(
+        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
+    )
+
+    # HT_log_concave: density_method="log_concave", use_logit_transform=False, n_bootstraps=0
+    fpr_out, lower, upper = hsieh_turnbull_band(
+        y_true=y_true,
+        y_score=y_score,
+        k=len(fpr_grid),
+        alpha=alpha,
+        use_logit_transform=False,
+        density_method="log_concave",
+        n_bootstraps=0,
+        check_assumptions=False,
+        use_wilson_variance_floor=False,
+        data_floor=data_floor,
+        data_ceil=data_ceil,
+        plot=False,
+        plot_title=None,
+    )
+    results["HT_log_concave"] = evaluate_single_band(
+        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
+    )
+
+    # HT_log_concave_logit: density_method="log_concave", use_logit_transform=True, n_bootstraps=0
+    fpr_out, lower, upper = hsieh_turnbull_band(
+        y_true=y_true,
+        y_score=y_score,
+        k=len(fpr_grid),
+        alpha=alpha,
+        use_logit_transform=True,
+        density_method="log_concave",
+        n_bootstraps=0,
+        check_assumptions=False,
+        use_wilson_variance_floor=False,
+        data_floor=data_floor,
+        data_ceil=data_ceil,
+        plot=False,
+        plot_title=None,
+    )
+    results["HT_log_concave_logit"] = evaluate_single_band(
+        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
+    )
+
+    # HT_log_concave_logit_calib: density_method="log_concave", use_logit_transform=True, n_bootstraps=4000
+    fpr_out, lower, upper = hsieh_turnbull_band(
+        y_true=y_true,
+        y_score=y_score,
+        k=len(fpr_grid),
+        alpha=alpha,
+        use_logit_transform=True,
+        density_method="log_concave",
+        n_bootstraps=4000,
+        check_assumptions=False,
+        use_wilson_variance_floor=False,
+        data_floor=data_floor,
+        data_ceil=data_ceil,
+        plot=False,
+        plot_title=None,
+    )
+    results["HT_log_concave_logit_calib"] = evaluate_single_band(
+        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
+    )
+
+    # HT_reflected_kde_logit: density_method="reflected_kde", use_logit_transform=True, n_bootstraps=0
+    fpr_out, lower, upper = hsieh_turnbull_band(
+        y_true=y_true,
+        y_score=y_score,
+        k=len(fpr_grid),
+        alpha=alpha,
+        use_logit_transform=True,
+        density_method="reflected_kde",
+        n_bootstraps=0,
+        check_assumptions=False,
+        use_wilson_variance_floor=False,
+        data_floor=data_floor,
+        data_ceil=data_ceil,
+        plot=False,
+        plot_title=None,
+    )
+    results["HT_reflected_kde_logit"] = evaluate_single_band(
+        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
+    )
+
+    # HT_reflected_kde_logit_calib: density_method="reflected_kde", use_logit_transform=True, n_bootstraps=4000
+    fpr_out, lower, upper = hsieh_turnbull_band(
+        y_true=y_true,
+        y_score=y_score,
+        k=len(fpr_grid),
+        alpha=alpha,
+        use_logit_transform=True,
+        density_method="reflected_kde",
+        n_bootstraps=4000,
+        check_assumptions=False,
+        use_wilson_variance_floor=False,
+        data_floor=data_floor,
+        data_ceil=data_ceil,
+        plot=False,
+        plot_title=None,
+    )
+    results["HT_reflected_kde_logit_calib"] = evaluate_single_band(
+        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
+    )
+
+    # HT_log_concave_logit_wilson: density_method="log_concave", use_logit_transform=True, use_wilson_variance_floor=True, n_bootstraps=0
+    fpr_out, lower, upper = hsieh_turnbull_band(
+        y_true=y_true,
+        y_score=y_score,
+        k=len(fpr_grid),
+        alpha=alpha,
+        use_logit_transform=True,
+        density_method="log_concave",
+        n_bootstraps=0,
+        check_assumptions=False,
+        use_wilson_variance_floor=True,
+        data_floor=data_floor,
+        data_ceil=data_ceil,
+        plot=False,
+        plot_title=None,
+    )
+    results["HT_log_concave_logit_wilson"] = evaluate_single_band(
+        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
+    )
+
+    # HT_log_concave_logit_calib_wilson: density_method="log_concave", use_logit_transform=True, n_bootstraps=4000, use_wilson_variance_floor=True
+    fpr_out, lower, upper = hsieh_turnbull_band(
+        y_true=y_true,
+        y_score=y_score,
+        k=len(fpr_grid),
+        alpha=alpha,
+        use_logit_transform=True,
+        density_method="log_concave",
+        n_bootstraps=4000,
+        check_assumptions=False,
+        use_wilson_variance_floor=True,
+        data_floor=data_floor,
+        data_ceil=data_ceil,
+        plot=False,
+        plot_title=None,
+    )
+    results["HT_log_concave_logit_calib_wilson"] = evaluate_single_band(
+        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
+    )
+
+    # ks
     fpr_out, lower, upper = fixed_width_ks_band(
-        y_true=y_true, y_score=y_score, k=len(fpr_grid), alpha=alpha
+        y_true=y_true,
+        y_score=y_score,
+        k=len(fpr_grid),
+        alpha=alpha,
     )
     results["ks"] = evaluate_single_band(
         lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
     )
 
-    # Compute Working-Hotelling band
+    # working_hotelling
     fpr_out, lower, upper = working_hotelling_band(
-        y_true=y_true, y_score=y_score, k=len(fpr_grid), alpha=alpha
+        y_true=y_true,
+        y_score=y_score,
+        k=len(fpr_grid),
+        alpha=alpha,
     )
     results["working_hotelling"] = evaluate_single_band(
+        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
+    )
+
+    # wilson: harrell_davis=False
+    fpr_out, lower, upper = wilson_band(
+        y_true=y_true,
+        y_score=y_score,
+        k=len(fpr_grid),
+        alpha=alpha,
+        harrell_davis=False,
+    )
+    results["wilson"] = evaluate_single_band(
+        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
+    )
+
+    # wilson_hd: harrell_davis=True
+    fpr_out, lower, upper = wilson_band(
+        y_true=y_true,
+        y_score=y_score,
+        k=len(fpr_grid),
+        alpha=alpha,
+        harrell_davis=True,
+    )
+    results["wilson_hd"] = evaluate_single_band(
+        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
+    )
+
+    # wilson_rectangle: tpr_method="empirical", correction="none"
+    fpr_out, lower, upper = wilson_rectangle_band(
+        y_true=y_true,
+        y_score=y_score,
+        k=len(fpr_grid),
+        alpha=alpha,
+        correction="none",
+        tpr_method="empirical",
+    )
+    results["wilson_rectangle"] = evaluate_single_band(
+        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
+    )
+
+    # wilson_rectangle_sidak: tpr_method="empirical", correction="sidak"
+    fpr_out, lower, upper = wilson_rectangle_band(
+        y_true=y_true,
+        y_score=y_score,
+        k=len(fpr_grid),
+        alpha=alpha,
+        correction="sidak",
+        tpr_method="empirical",
+    )
+    results["wilson_rectangle_sidak"] = evaluate_single_band(
+        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
+    )
+
+    # wilson_rectangle_bonferroni: tpr_method="empirical", correction="bonferroni"
+    fpr_out, lower, upper = wilson_rectangle_band(
+        y_true=y_true,
+        y_score=y_score,
+        k=len(fpr_grid),
+        alpha=alpha,
+        correction="bonferroni",
+        tpr_method="empirical",
+    )
+    results["wilson_rectangle_bonferroni"] = evaluate_single_band(
+        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
+    )
+
+    # wilson_rectangle_hd: tpr_method="harrell_davis", correction="none"
+    fpr_out, lower, upper = wilson_rectangle_band(
+        y_true=y_true,
+        y_score=y_score,
+        k=len(fpr_grid),
+        alpha=alpha,
+        correction="none",
+        tpr_method="harrell_davis",
+    )
+    results["wilson_rectangle_hd"] = evaluate_single_band(
+        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
+    )
+
+    # wilson_rectangle_sidak_hd: tpr_method="harrell_davis", correction="sidak"
+    fpr_out, lower, upper = wilson_rectangle_band(
+        y_true=y_true,
+        y_score=y_score,
+        k=len(fpr_grid),
+        alpha=alpha,
+        correction="sidak",
+        tpr_method="harrell_davis",
+    )
+    results["wilson_rectangle_sidak_hd"] = evaluate_single_band(
+        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
+    )
+
+    # wilson_rectangle_bonferroni_hd: tpr_method="harrell_davis", correction="bonferroni"
+    fpr_out, lower, upper = wilson_rectangle_band(
+        y_true=y_true,
+        y_score=y_score,
+        k=len(fpr_grid),
+        alpha=alpha,
+        correction="bonferroni",
+        tpr_method="harrell_davis",
+    )
+    results["wilson_rectangle_bonferroni_hd"] = evaluate_single_band(
         lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
     )
 
@@ -536,21 +745,6 @@ def run_single_simulation(
     y_score = np.concatenate([scores_pos, scores_neg])
     y_score = y_score.astype(dtype)
 
-    # Convert to torch for bootstrap generation
-    y_true_torch = torch.from_numpy(y_true)
-    y_score_torch = torch.from_numpy(y_score)
-    fpr_grid_torch = torch.from_numpy(fpr_grid)
-
-    # Generate bootstraps using direct y_true/y_score path
-    boot_tpr_matrix = generate_bootstrap_grid(
-        y_true=y_true_torch,
-        y_score=y_score_torch,
-        B=B,
-        grid=fpr_grid_torch,
-        device=None,
-        batch_size=500,
-    )
-
     # Compute ROC curve for band methods that need it
     fpr, tpr, _ = roc_curve(y_true, y_score)
     tpr = tpr.astype(dtype)
@@ -563,18 +757,73 @@ def run_single_simulation(
         "auc": roc_auc_score(y_true, y_score),
     }
 
-    for alpha in confidence_levels:
-        # Compute band
-        results[alpha] = compute_all_bands(
-            y_true=y_true,
-            y_score=y_score,
-            boot_tpr_matrix=boot_tpr_matrix,
-            fpr_grid=fpr_grid,
-            true_tpr=true_tpr,
-            alpha=alpha,
-            data_floor=data_floor,
-            data_ceil=data_ceil,
+    # Convert to torch for bootstrap generation
+    y_true_torch = torch.from_numpy(y_true)
+    y_score_torch = torch.from_numpy(y_score)
+    fpr_grid_torch = torch.from_numpy(fpr_grid)
+
+    boot_tpr_matrix_empirical = generate_bootstrap_grid(
+            y_true=y_true_torch,
+            y_score=y_score_torch,
+            B=B,
+            grid=fpr_grid_torch,
+            device=None,
+            batch_size=500,
+            tpr_method="empirical",
         )
+
+    for alpha in confidence_levels:
+        results[alpha] = {}
+
+        # First: Compute bands that don't require bootstrap samples
+        results[alpha].update(
+            compute_bands_without_bootstrap(
+                y_true=y_true,
+                y_score=y_score,
+                fpr_grid=fpr_grid,
+                true_tpr=true_tpr,
+                alpha=alpha,
+                data_floor=data_floor,
+                data_ceil=data_ceil,
+            )
+        )
+
+        # Second: empirical bootstrap bands
+        results[alpha].update(
+            compute_bands_with_empirical_bootstrap(
+                y_true=y_true,
+                y_score=y_score,
+                boot_tpr_matrix=boot_tpr_matrix_empirical,
+                fpr_grid=fpr_grid,
+                true_tpr=true_tpr,
+                alpha=alpha,
+            )
+        )
+        
+    # Generate Harrell-Davis bootstrap matrix
+    del boot_tpr_matrix_empirical
+    boot_tpr_matrix_hd = generate_bootstrap_grid(
+        y_true=y_true_torch,
+        y_score=y_score_torch,
+        B=B,
+        grid=fpr_grid_torch,
+        device=None,
+        batch_size=500,
+        tpr_method="harrell_davis",
+    )
+
+    for alpha in confidence_levels:
+        results[alpha].update(
+            compute_bands_with_harrell_davis_bootstrap(
+                y_true=y_true,
+                y_score=y_score,
+                boot_tpr_matrix_hd=boot_tpr_matrix_hd,
+                fpr_grid=fpr_grid,
+                true_tpr=true_tpr,
+                alpha=alpha,
+            )
+        )
+    del boot_tpr_matrix_hd
 
     return results
 
@@ -803,30 +1052,44 @@ def save_results(
 
     # Hardcoded method names
     method_names = [
+        "ellipse_envelope_sweep", # envelope_method="sweep"
+        "ellipse_envelope_quartic", # envelope_method="quartic"
+        # envelope_bootstrap default values:
+        # boundary_method="none", retention_method="ks",
+        # use_logit=False, tpr_method="empirical"
         "envelope_standard",
-        "envelope_symmetric",
-        "envelope_kde",
-        "envelope_wilson",
-        "envelope_wilson_symmetric",
-        "envelope_logit",
-        "envelope_symmetric_logit",
-        "envelope_wilson_logit",
-        "envelope_wilson_symmetric_logit",
-        "envelope_kde_logit",
-        "envelope_kde_symmetric_logit",
-        "HT_log_concave",
-        "HT_log_concave_calib",
-        "HT_reflected_kde",
-        "HT_kde",
-        "HT_kde_calib",
-        "HT_kde_wilson",
-        "HT_kde_calib_wilson",
-        "ellipse_envelope_sweep",
-        "ellipse_envelope_quartic",
-        "logit_max_modulus",
+        "envelope_hd", # tpr_method="harrell_davis"
+        "envelope_wilson", # boundary_method="wilson"
+        "envelope_wilson_hd", # boundary_method="wilson", tpr_method="harrell_davis"
+        "envelope_wilson_symmetric", # boundary_method="wilson", retention_method="symmetric"
+        "envelope_logit", # use_logit=True
+        "envelope_logit_hd", # use_logit=True, tpr_method="harrell_davis"
+        "envelope_wilson_logit", # boundary_method="wilson", use_logit=True
+        "envelope_wilson_logit_hd", # boundary_method="wilson", use_logit=True, tpr_method="harrell_davis"
+        "envelope_wilson_symmetric_logit", # boundary_method="wilson", retention_method="symmetric", use_logit=True
+        # hsieh_turnbull default values:
+        # use_logit_transform=False, density_method="log_concave", n_bootstraps=0,
+        # check_assumptions=False, use_wilson_variance_floor=False, data_floor=None, data_ceil=None
+        "HT_log_concave", # density_method="log_concave"
+        "HT_log_concave_logit", # density_method="log_concave", use_logit_transform=True
+        "HT_log_concave_logit_calib", # density_method="log_concave", use_logit_transform=True, n_bootstraps=2000
+        "HT_reflected_kde_logit", # density_method="reflected_kde", use_logit_transform=True
+        "HT_reflected_kde_logit_calib", # density_method="reflected_kde", use_logit_transform=True, n_bootstraps=2000
+        "HT_log_concave_logit_wilson", # density_method="log_concave", use_logit_transform=True, use_wilson_variance_floor=True
+        "HT_log_concave_logit_calib_wilson", # density_method="log_concave", use_logit_transform=True, n_bootstraps=2000, use_wilson_variance_floor=True
+        "logit_max_modulus", # tpr_method="empirical"
+        "logit_max_modulus_hd", # tpr_method="harrell_davis"
         "pointwise",
         "ks",
         "working_hotelling",
+        "wilson", # harrell_davis = False
+        "wilson_hd", # harrell_davis = True 
+        "wilson_rectangle", # tpr_method = "empirical", correction="none"
+        "wilson_rectangle_sidak", # tpr_method = "empirical", correction="sidak"
+        "wilson_rectangle_bonferroni", # tpr_method = "empirical", correction="bonferroni"
+        "wilson_rectangle_hd", # tpr_method = "harrell_davis", correction="none"
+        "wilson_rectangle_sidak_hd", # tpr_method = "harrell_davis", correction="sidak"
+        "wilson_rectangle_bonferroni_hd", # tpr_method = "harrell_davis", correction="bonferroni"
     ]
 
     # Prepare individual results (long format)
@@ -1116,13 +1379,11 @@ def main():
     rng = np.random.default_rng(args.seed)
 
     for dgp_type in [
-        "hetero_gaussian",
-        "lognormal",
         "logitnormal",
-        "beta_opposing",
         "student_t",
+        "beta_opposing",
+        "hetero_gaussian",
         "bimodal_negative",
-        "exponential",
         "weibull",
         "gamma",
     ]:
