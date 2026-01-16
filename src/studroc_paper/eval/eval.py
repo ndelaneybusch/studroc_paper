@@ -91,7 +91,6 @@ class BandResult:
         violation_by_region: Dict mapping FPR region names to violation status.
         proportion_grid_points_violated: Fraction of non-boundary points violated.
         violation_fpr_mean: Mean FPR of all violations in this band.
-        violation_fpr_median: Median FPR of all violations in this band.
         violation_fpr_min: Minimum FPR of all violations in this band.
         violation_fpr_max: Maximum FPR of all violations in this band.
     """
@@ -120,7 +119,6 @@ class BandResult:
     # Violation grid point statistics
     proportion_grid_points_violated: float  # Proportion of non-boundary points violated
     violation_fpr_mean: float | None  # Mean FPR of violations in this band
-    violation_fpr_median: float | None  # Median FPR of violations in this band
     violation_fpr_min: float | None  # Min FPR of violations in this band
     violation_fpr_max: float | None  # Max FPR of violations in this band
 
@@ -161,7 +159,6 @@ class BandEvaluation:
         percentile_95_max_violation: 95th percentile of maximum violations.
         mean_proportion_grid_points_violated: Average fraction of points violated.
         violation_fpr_mean: Average of band-level mean violation FPRs.
-        violation_fpr_median: Average of band-level median violation FPRs.
         violation_fpr_min: Average of band-level minimum violation FPRs.
         violation_fpr_max: Average of band-level maximum violation FPRs.
     """
@@ -204,7 +201,6 @@ class BandEvaluation:
     # Violation grid point statistics
     mean_proportion_grid_points_violated: float
     violation_fpr_mean: float | None  # Mean of band-level mean FPRs of violations
-    violation_fpr_median: float | None  # Mean of band-level median FPRs of violations
     violation_fpr_min: float | None  # Mean of band-level min FPRs of violations
     violation_fpr_max: float | None  # Mean of band-level max FPRs of violations
 
@@ -355,12 +351,10 @@ def evaluate_single_band(
     )
     if len(all_violation_fprs_this_band) > 0:
         violation_fpr_mean_band = float(np.mean(all_violation_fprs_this_band))
-        violation_fpr_median_band = float(np.median(all_violation_fprs_this_band))
         violation_fpr_min_band = float(np.min(all_violation_fprs_this_band))
         violation_fpr_max_band = float(np.max(all_violation_fprs_this_band))
     else:
         violation_fpr_mean_band = None
-        violation_fpr_median_band = None
         violation_fpr_min_band = None
         violation_fpr_max_band = None
 
@@ -379,7 +373,6 @@ def evaluate_single_band(
         violation_by_region=violation_by_region,
         proportion_grid_points_violated=proportion_grid_points_violated,
         violation_fpr_mean=violation_fpr_mean_band,
-        violation_fpr_median=violation_fpr_median_band,
         violation_fpr_min=violation_fpr_min_band,
         violation_fpr_max=violation_fpr_max_band,
     )
@@ -650,11 +643,6 @@ def aggregate_band_results(
     band_means = [
         r.violation_fpr_mean for r in results_list if r.violation_fpr_mean is not None
     ]
-    band_medians = [
-        r.violation_fpr_median
-        for r in results_list
-        if r.violation_fpr_median is not None
-    ]
     band_mins = [
         r.violation_fpr_min for r in results_list if r.violation_fpr_min is not None
     ]
@@ -663,7 +651,6 @@ def aggregate_band_results(
     ]
 
     violation_fpr_mean = float(np.mean(band_means)) if band_means else None
-    violation_fpr_median = float(np.mean(band_medians)) if band_medians else None
     violation_fpr_min = float(np.mean(band_mins)) if band_mins else None
     violation_fpr_max = float(np.mean(band_maxs)) if band_maxs else None
 
@@ -692,7 +679,6 @@ def aggregate_band_results(
         percentile_95_max_violation=percentile_95_max_violation,
         mean_proportion_grid_points_violated=mean_proportion_grid_points_violated,
         violation_fpr_mean=violation_fpr_mean,
-        violation_fpr_median=violation_fpr_median,
         violation_fpr_min=violation_fpr_min,
         violation_fpr_max=violation_fpr_max,
     )
@@ -1085,7 +1071,6 @@ def summarize_evaluation(evaluation: BandEvaluation) -> str:
         lines.extend(
             [
                 f"  Mean of band-level mean violation FPR: {evaluation.violation_fpr_mean:.4f}",
-                f"  Mean of band-level median violation FPR: {evaluation.violation_fpr_median:.4f}",
                 f"  Mean of band-level min violation FPR: {evaluation.violation_fpr_min:.4f}",
                 f"  Mean of band-level max violation FPR: {evaluation.violation_fpr_max:.4f}",
             ]
