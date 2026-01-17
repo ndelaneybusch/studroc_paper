@@ -142,7 +142,7 @@ def get_sample_size_configs():
     # Special prevalence scenarios for n=1000
     configs.extend(
         [
-            {"n_total": 1000, "n_pos": 10, "n_neg": 990, "prevalence": 0.01},
+            # {"n_total": 1000, "n_pos": 10, "n_neg": 990, "prevalence": 0.01},
             {"n_total": 1000, "n_pos": 100, "n_neg": 900, "prevalence": 0.10},
             {"n_total": 1000, "n_pos": 500, "n_neg": 500, "prevalence": 0.50},
         ]
@@ -741,12 +741,13 @@ def run_single_simulation(
     true_tpr = dgp.get_true_roc(fpr_grid)
 
     # Create labels and scores for sklearn-style interface
-    y_true = np.concatenate([np.ones(n_pos), np.zeros(n_neg)])
-    y_score = np.concatenate([scores_pos, scores_neg])
-    y_score = y_score.astype(dtype)
+    y_true = np.concatenate([np.ones(n_pos), np.zeros(n_neg)]).astype(dtype)
+    y_score = np.concatenate([scores_pos, scores_neg]).astype(dtype)
+    fpr_grid = fpr_grid.astype(dtype)
 
     # Compute ROC curve for band methods that need it
     fpr, tpr, _ = roc_curve(y_true, y_score)
+    fpr = fpr.astype(dtype)
     tpr = tpr.astype(dtype)
 
     # Evaluate each method at each confidence level
@@ -1324,12 +1325,12 @@ def main():
                 # Add all prevalence scenarios
                 sample_configs.extend(
                     [
-                        {
-                            "n_total": 1000,
-                            "n_pos": 10,
-                            "n_neg": 990,
-                            "prevalence": 0.01,
-                        },
+                        # {
+                        #     "n_total": 1000,
+                        #     "n_pos": 10,
+                        #     "n_neg": 990,
+                        #     "prevalence": 0.01,
+                        # },
                         {
                             "n_total": 1000,
                             "n_pos": 100,
