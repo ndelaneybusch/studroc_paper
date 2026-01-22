@@ -11,6 +11,7 @@ import numpy as np
 import torch
 from numpy.typing import NDArray
 from scipy import stats
+from scipy.special import expit
 from torch import Tensor
 
 from ..sampling.bootstrap_grid import generate_bootstrap_grid
@@ -490,9 +491,9 @@ def hsieh_turnbull_band(
         logit_lower = logit_tpr - z_simultaneous * logit_se
         logit_upper = logit_tpr + z_simultaneous * logit_se
 
-        # Back-transform to probability scale
-        lower_envelope = 1 / (1 + np.exp(-logit_lower))
-        upper_envelope = 1 / (1 + np.exp(-logit_upper))
+        # Back-transform to probability scale using numerically stable sigmoid
+        lower_envelope = expit(logit_lower)
+        upper_envelope = expit(logit_upper)
 
     else:
         # Direct Gaussian intervals on probability scale
