@@ -167,9 +167,10 @@ class BimodalNegativeSolver:
             neg_stds = [1.0] * len(neg_means)
 
         # Find thresholds for each FPR
+        # Need ±7 std devs to handle FPR extremes (1e-10 requires ~6.4 std devs)
         all_means = neg_means + [pos_mean]
-        t_min = min(all_means) - 5
-        t_max = max(all_means) + 5
+        t_min = min(all_means) - 7
+        t_max = max(all_means) + 7
 
         tpr = np.zeros_like(self.fpr)
         for i, f in enumerate(self.fpr):
