@@ -97,39 +97,47 @@ SUBSETS = {
     "core": [
         "envelope_wilson",
         "envelope_wilson_symmetric",
-        "envelope_logit_wilson",
-        "HT_log_concave",
-        "HT_kde_wilson",
-        "HT_kde_calib_wilson",
+        "HT_log_concave_logit_wilson",
+        "HT_log_concave_logit_calib_wilson",
         "ellipse_envelope_sweep",
         "ks",
         "working_hotelling",
+        "wilson",
+        "wilson_rectangle_sidak",
     ],
     "envelope": [
         "envelope_standard",
-        "envelope_symmetric",
-        "envelope_kde",
         "envelope_wilson",
         "envelope_wilson_symmetric",
         "envelope_logit",
         "envelope_wilson_logit",
-        "envelope_kde_logit",
+        "envelope_wilson_symmetric_logit",
     ],
     "HT": [
         "HT_log_concave",
-        "HT_log_concave_calib",
-        "HT_reflected_kde",
-        "HT_kde",
-        "HT_kde_calib",
-        "HT_kde_wilson",
-        "HT_kde_calib_wilson",
+        "HT_log_concave_logit",
+        "HT_log_concave_logit_calib",
+        "HT_reflected_kde_logit",
+        "HT_reflected_kde_logit_calib",
+        "HT_log_concave_logit_wilson",
+        "HT_log_concave_logit_calib_wilson",
+    ],
+    "wilson": [
+        "envelope_wilson",
+        "envelope_wilson_symmetric",
+        "HT_log_concave_logit_wilson",
+        "HT_log_concave_logit_calib_wilson",
+        "wilson",
+        "wilson_rectangle",
+        "wilson_rectangle_sidak",
+        "wilson_rectangle_bonferroni",
     ],
     "reference": [
         "ellipse_envelope_sweep",
         "ellipse_envelope_quartic",
-        "working_hotelling",
         "logit_max_modulus",
         "ks",
+        "working_hotelling",
         "pointwise",
     ],
 }
@@ -254,10 +262,10 @@ if all_dfs:
 # %% [markdown]
 # #### Pareto Frontier (n_path) by Subset
 #
-# One panel for each method subset ("core", "envelope", "HT", "reference").
+# One panel for each method subset ("core", "envelope", "HT", "wilson", "reference").
 
 # %%
-for subset_name in ["core", "envelope", "HT", "reference"]:
+for subset_name in ["core", "envelope", "HT", "wilson", "reference"]:
     print(f"Generating n_path Pareto frontier for subset: {subset_name}")
 
     # Re-using the structure above but filtering by subset
@@ -315,7 +323,7 @@ for subset_name in ["core", "envelope", "HT", "reference"]:
 # One panel for each method subset. Faceted by DGP and Alpha.
 
 # %%
-for subset_name in ["core", "envelope", "HT", "reference"]:
+for subset_name in ["core", "envelope", "HT", "wilson", "reference"]:
     print(f"Generating Coverage by N_total for subset: {subset_name}")
 
     if not prev_df.empty:
@@ -357,7 +365,7 @@ for subset_name in ["core", "envelope", "HT", "reference"]:
                 handles,
                 labels,
                 loc="lower center",
-                bbox_to_anchor=(0.5, 0),
+                bbox_to_anchor=(0.5, -0.03),
                 ncol=min(len(handles), 6),
                 bbox_transform=fig.transFigure,
             )
@@ -663,6 +671,11 @@ for dist in dgps:
 # HT
 for dist in dgps:
     create_distribution_panel(dist, "HT", full_standard_df, full_curve_df)
+
+# %%
+# WILSON
+for dist in dgps:
+    create_distribution_panel(dist, "wilson", full_standard_df, full_curve_df)
 
 # %%
 # REFERENCE
