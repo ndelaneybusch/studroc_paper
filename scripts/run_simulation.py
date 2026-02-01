@@ -116,7 +116,7 @@ def get_dgp_specs() -> dict:
         "gamma": {
             "make_dgp": make_gamma_dgp,
             "lhs_params": ["auc", "shape"],
-            "lhs_bounds": [(0.55, 0.99), (0.5, 10.0)],
+            "lhs_bounds": [(0.55, 0.95), (0.5, 10.0)],
             "data_floor": 0.0,
             "data_ceil": None,
         },
@@ -620,17 +620,17 @@ def compute_bands_without_bootstrap(
         lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
     )
 
-    # wilson_hd: harrell_davis=True
-    fpr_out, lower, upper = wilson_band(
-        y_true=y_true,
-        y_score=y_score,
-        k=len(fpr_grid),
-        alpha=alpha,
-        harrell_davis=True,
-    )
-    results["wilson_hd"] = evaluate_single_band(
-        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-    )
+    # # wilson_hd: harrell_davis=True
+    # fpr_out, lower, upper = wilson_band(
+    #     y_true=y_true,
+    #     y_score=y_score,
+    #     k=len(fpr_grid),
+    #     alpha=alpha,
+    #     harrell_davis=True,
+    # )
+    # results["wilson_hd"] = evaluate_single_band(
+    #     lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
+    # )
 
     # wilson_rectangle: tpr_method="empirical", correction="none"
     fpr_out, lower, upper = wilson_rectangle_band(
@@ -671,44 +671,44 @@ def compute_bands_without_bootstrap(
         lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
     )
 
-    # wilson_rectangle_hd: tpr_method="harrell_davis", correction="none"
-    fpr_out, lower, upper = wilson_rectangle_band(
-        y_true=y_true,
-        y_score=y_score,
-        k=len(fpr_grid),
-        alpha=alpha,
-        correction="none",
-        tpr_method="harrell_davis",
-    )
-    results["wilson_rectangle_hd"] = evaluate_single_band(
-        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-    )
+    # # wilson_rectangle_hd: tpr_method="harrell_davis", correction="none"
+    # fpr_out, lower, upper = wilson_rectangle_band(
+    #     y_true=y_true,
+    #     y_score=y_score,
+    #     k=len(fpr_grid),
+    #     alpha=alpha,
+    #     correction="none",
+    #     tpr_method="harrell_davis",
+    # )
+    # results["wilson_rectangle_hd"] = evaluate_single_band(
+    #     lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
+    # )
 
-    # wilson_rectangle_sidak_hd: tpr_method="harrell_davis", correction="sidak"
-    fpr_out, lower, upper = wilson_rectangle_band(
-        y_true=y_true,
-        y_score=y_score,
-        k=len(fpr_grid),
-        alpha=alpha,
-        correction="sidak",
-        tpr_method="harrell_davis",
-    )
-    results["wilson_rectangle_sidak_hd"] = evaluate_single_band(
-        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-    )
+    # # wilson_rectangle_sidak_hd: tpr_method="harrell_davis", correction="sidak"
+    # fpr_out, lower, upper = wilson_rectangle_band(
+    #     y_true=y_true,
+    #     y_score=y_score,
+    #     k=len(fpr_grid),
+    #     alpha=alpha,
+    #     correction="sidak",
+    #     tpr_method="harrell_davis",
+    # )
+    # results["wilson_rectangle_sidak_hd"] = evaluate_single_band(
+    #     lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
+    # )
 
-    # wilson_rectangle_bonferroni_hd: tpr_method="harrell_davis", correction="bonferroni"
-    fpr_out, lower, upper = wilson_rectangle_band(
-        y_true=y_true,
-        y_score=y_score,
-        k=len(fpr_grid),
-        alpha=alpha,
-        correction="bonferroni",
-        tpr_method="harrell_davis",
-    )
-    results["wilson_rectangle_bonferroni_hd"] = evaluate_single_band(
-        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-    )
+    # # wilson_rectangle_bonferroni_hd: tpr_method="harrell_davis", correction="bonferroni"
+    # fpr_out, lower, upper = wilson_rectangle_band(
+    #     y_true=y_true,
+    #     y_score=y_score,
+    #     k=len(fpr_grid),
+    #     alpha=alpha,
+    #     correction="bonferroni",
+    #     tpr_method="harrell_davis",
+    # )
+    # results["wilson_rectangle_bonferroni_hd"] = evaluate_single_band(
+    #     lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
+    # )
 
     return results
 
@@ -801,30 +801,30 @@ def run_single_simulation(
             )
         )
         
-    # Generate Harrell-Davis bootstrap matrix
-    del boot_tpr_matrix_empirical
-    boot_tpr_matrix_hd = generate_bootstrap_grid(
-        y_true=y_true_torch,
-        y_score=y_score_torch,
-        B=B,
-        grid=fpr_grid_torch,
-        device=None,
-        batch_size=500,
-        tpr_method="harrell_davis",
-    )
+    # # Generate Harrell-Davis bootstrap matrix
+    # del boot_tpr_matrix_empirical
+    # boot_tpr_matrix_hd = generate_bootstrap_grid(
+    #     y_true=y_true_torch,
+    #     y_score=y_score_torch,
+    #     B=B,
+    #     grid=fpr_grid_torch,
+    #     device=None,
+    #     batch_size=500,
+    #     tpr_method="harrell_davis",
+    # )
 
-    for alpha in confidence_levels:
-        results[alpha].update(
-            compute_bands_with_harrell_davis_bootstrap(
-                y_true=y_true,
-                y_score=y_score,
-                boot_tpr_matrix_hd=boot_tpr_matrix_hd,
-                fpr_grid=fpr_grid,
-                true_tpr=true_tpr,
-                alpha=alpha,
-            )
-        )
-    del boot_tpr_matrix_hd
+    # for alpha in confidence_levels:
+    #     results[alpha].update(
+    #         compute_bands_with_harrell_davis_bootstrap(
+    #             y_true=y_true,
+    #             y_score=y_score,
+    #             boot_tpr_matrix_hd=boot_tpr_matrix_hd,
+    #             fpr_grid=fpr_grid,
+    #             true_tpr=true_tpr,
+    #             alpha=alpha,
+    #         )
+    #     )
+    # del boot_tpr_matrix_hd
 
     return results
 
@@ -1011,6 +1011,33 @@ def run_dgp(
 
     # Map to DGP parameters
     dgp_params = map_lhs_to_dgp(dgp_type, lhs_params_dict)
+
+    # Filter out LHS samples where DGP parameters contain NaN (unachievable AUC)
+    valid_mask = np.ones(n_lhs, dtype=bool)
+    for key, value in dgp_params.items():
+        if isinstance(value, np.ndarray) and value.ndim > 0:
+            valid_mask &= ~np.isnan(value)
+
+    n_valid = int(np.sum(valid_mask))
+    if n_valid < n_lhs:
+        n_invalid = n_lhs - n_valid
+        print(f"  Filtered {n_invalid} samples with unachievable AUC ({n_valid} remaining)")
+
+        # Filter lhs_params_dict
+        lhs_params_dict = {
+            name: arr[valid_mask] for name, arr in lhs_params_dict.items()
+        }
+        # Filter dgp_params
+        for key, value in dgp_params.items():
+            if isinstance(value, np.ndarray) and value.ndim > 0:
+                dgp_params[key] = value[valid_mask]
+            elif isinstance(value, list) and len(value) == n_lhs:
+                dgp_params[key] = [v for v, m in zip(value, valid_mask) if m]
+        n_lhs = n_valid
+
+    if n_lhs == 0:
+        print(f"  WARNING: No valid LHS samples for {dgp_type}, skipping...")
+        return
 
     # Run each sample size configuration
     for sample_config in tqdm(sample_configs, desc="Sample sizes"):
@@ -1380,13 +1407,13 @@ def main():
     rng = np.random.default_rng(args.seed)
 
     for dgp_type in [
-        "logitnormal",
+        "gamma",
         "student_t",
+        "logitnormal",
         "beta_opposing",
         "hetero_gaussian",
         "bimodal_negative",
         "weibull",
-        "gamma",
     ]:
         dgp_spec = dgp_specs[dgp_type]
         run_dgp(
