@@ -13,7 +13,8 @@ The main function, envelope_bootstrap_band, computes confidence bands by:
 
 Key features:
 - Studentized bootstrap for improved finite-sample coverage
-- Multiple boundary correction methods (Wilson, KS-style, density-based)
+- Adaptive tail floor using Wilson Rectangle bounds with Šidák correction
+- KS-style boundary extension option
 - Logit-space construction option for variance stabilization
 - GPU acceleration for large bootstrap samples
 - Diagnostic visualization integration
@@ -32,14 +33,14 @@ from studroc_paper.viz import plot_band_diagnostics
 from .method_utils import (
     compute_empirical_roc_from_scores,
     compute_empirical_roc_from_scores_hd,
-    compute_hsieh_turnbull_variance,
     numpy_to_torch,
     torch_to_numpy,
     wilson_halfwidth_squared_torch,
 )
+from .wilson_band import wilson_rectangle_band
 
 # Type alias for boundary extension method selection
-BoundaryMethod = Literal["none", "wilson", "reflected_kde", "log_concave", "ks"]
+BoundaryMethod = Literal["none", "wilson", "ks"]
 
 # Type alias for curve retention method selection
 RetentionMethod = Literal["ks", "symmetric"]
@@ -212,6 +213,122 @@ def _extend_boundary_ks_style(
     return lower_ext, upper_ext
 
 
+def _compute_tail_mask_and_alpha(
+    fpr: Tensor,
+    empirical_tpr: Tensor,
+    n_neg: int,
+    n_pos: int,
+    alpha: float,
+    k_min_lower: int,
+    k_min_upper: int,
+    m_min: int,
+) -> tuple[Tensor, float, int]:
+    """Identify tail regions and compute Šidák-corrected alpha for Wilson floor.
+
+    Tail regions are where effective counts are too small for reliable bootstrap
+    variance estimation:
+    - Lower tail: k < k_min_lower OR m < m_min (at low FPR)
+    - Upper tail: (n_neg - k) < k_min_upper OR (n_pos - m) < m_min (at high FPR)
+
+    Args:
+        fpr: FPR grid values.
+        empirical_tpr: Empirical TPR values at each FPR grid point.
+        n_neg: Number of negative samples.
+        n_pos: Number of positive samples.
+        alpha: Significance level.
+        k_min_lower: Minimum count of negatives above threshold for lower tail.
+        k_min_upper: Minimum count of negatives below threshold for upper tail.
+        m_min: Minimum count of positives at threshold.
+
+    Returns:
+        Tuple of (tail_mask, alpha_tail, K_tail) where:
+        - tail_mask: Boolean tensor marking tail points
+        - alpha_tail: Šidák-corrected alpha for K_tail points
+        - K_tail: Number of tail points
+    """
+    # Effective counts
+    k = (fpr * n_neg).round().int()  # negatives above threshold
+    m = (empirical_tpr * n_pos).round().int()  # positives above threshold
+
+    # Lower tail: near (0,0) corner
+    lower_tail = ((k < k_min_lower) | (m < m_min)) & (fpr <= 0.5)
+
+    # Upper tail: near (1,1) corner
+    upper_tail = (((n_neg - k) < k_min_upper) | ((n_pos - m) < m_min)) & (fpr >= 0.5)
+
+    tail_mask = lower_tail | upper_tail
+    K_tail = int(tail_mask.sum().item())
+
+    # Šidák correction for joint coverage across tail points
+    if K_tail > 0:
+        alpha_tail = 1.0 - (1.0 - alpha) ** (1.0 / K_tail)
+    else:
+        alpha_tail = alpha
+
+    return tail_mask, alpha_tail, K_tail
+
+
+def _apply_wilson_rectangle_tail_floor(
+    fpr_grid: Tensor,
+    lower_envelope: Tensor,
+    upper_envelope: Tensor,
+    y_true: Tensor,
+    y_score: Tensor,
+    tail_mask: Tensor,
+    alpha_tail: float,
+) -> tuple[Tensor, Tensor]:
+    """Apply Wilson Rectangle bounds as floor in tail regions only.
+
+    Uses Wilson Rectangle bands with Šidák correction to extend the envelope
+    only where the tail_mask indicates insufficient bootstrap variance.
+
+    Args:
+        fpr_grid: FPR grid values.
+        lower_envelope: Current lower envelope bound.
+        upper_envelope: Current upper envelope bound.
+        y_true: True binary labels.
+        y_score: Predicted scores.
+        tail_mask: Boolean mask indicating tail regions.
+        alpha_tail: Šidák-corrected alpha level for tail points.
+
+    Returns:
+        Tuple of (lower_envelope, upper_envelope) with tail floor applied.
+    """
+    if not tail_mask.any():
+        return lower_envelope, upper_envelope
+
+    # Compute Wilson Rectangle bounds at the corrected alpha
+    y_true_np = torch_to_numpy(y_true)
+    y_score_np = torch_to_numpy(y_score)
+    fpr_np = torch_to_numpy(fpr_grid)
+
+    _, wilson_lower_np, wilson_upper_np = wilson_rectangle_band(
+        y_true=y_true_np,
+        y_score=y_score_np,
+        k=len(fpr_np),
+        alpha=alpha_tail,
+        correction="sidak",
+        tpr_method="empirical",
+    )
+
+    device = fpr_grid.device
+    wilson_lower = numpy_to_torch(wilson_lower_np, device).float()
+    wilson_upper = numpy_to_torch(wilson_upper_np, device).float()
+
+    # Apply floor only in tail regions
+    lower_envelope = lower_envelope.clone()
+    upper_envelope = upper_envelope.clone()
+
+    lower_envelope[tail_mask] = torch.minimum(
+        lower_envelope[tail_mask], wilson_lower[tail_mask]
+    )
+    upper_envelope[tail_mask] = torch.maximum(
+        upper_envelope[tail_mask], wilson_upper[tail_mask]
+    )
+
+    return lower_envelope, upper_envelope
+
+
 def envelope_bootstrap_band(
     boot_tpr_matrix: NDArray | Tensor,
     fpr_grid: NDArray | Tensor,
@@ -222,6 +339,8 @@ def envelope_bootstrap_band(
     retention_method: RetentionMethod = "ks",
     use_logit: bool = False,
     tpr_method: TprMethod = "empirical",
+    tail_k_min: tuple[int, int] = (15, 10),
+    tail_m_min: int = 10,
     plot: bool = False,
     plot_title: str | None = None,
 ) -> tuple[NDArray, NDArray, NDArray]:
@@ -238,15 +357,12 @@ def envelope_bootstrap_band(
         alpha: Significance level. Defaults to 0.05.
         boundary_method: Method for handling zero-variance boundaries where
             bootstrap collapses. Options:
-            - "wilson": Use Wilson-score-based variance floor.
-              Provides a principled minimum variance based on binomial
-              confidence intervals, ensuring non-degenerate bands at TPR=0/1.
-            - "reflected_kde": Use Hsieh-Turnbull asymptotic variance with
-              reflected KDE density estimation. Provides variance floor based
-              on asymptotic ROC variance theory with ISJ bandwidth selection.
-            - "log_concave": Use Hsieh-Turnbull asymptotic variance with
-              log-concave MLE density estimation. Enforces shape constraints
-              via convex optimization for robust density estimates.
+            - "wilson": Adaptive tail floor using Wilson Rectangle bounds.
+              Applies Šidák-corrected Wilson Rectangle intervals only in tail
+              regions where effective counts are small (controlled by tail_k_min
+              and tail_m_min). Interior points use pure bootstrap variance.
+              Also uses simple Wilson variance floor during studentization to
+              prevent division by zero.
             - "ks": Use KS-style margin extension (Campbell 1994).
               Extends the band from interior points to corners using
               horizontal/vertical margins based on sample sizes.
@@ -269,6 +385,13 @@ def envelope_bootstrap_band(
             - "harrell_davis": Beta-weighted quantile estimation for reduced
               finite-sample bias.
             Defaults to "empirical".
+        tail_k_min: Tuple of (k_min_lower, k_min_upper) specifying minimum
+            effective counts for negatives. Lower tail requires k >= k_min_lower
+            negatives above threshold; upper tail requires (n_neg - k) >= k_min_upper
+            negatives below threshold. Defaults to (15, 10).
+        tail_m_min: Minimum effective count for positives. Both lower and upper
+            tails require m >= m_min positives above threshold (lower) or
+            (n_pos - m) >= m_min below threshold (upper). Defaults to 10.
         plot: If True, generate diagnostic plots using the viz module. Defaults to False.
         plot_title: Optional custom title for the diagnostic plots. If None, uses
             method description. Defaults to None.
@@ -345,23 +468,16 @@ def envelope_bootstrap_band(
         bootstrap_var_logit = torch.var(logit_boot_tpr, dim=0, correction=1)
 
         # 3. Apply Variance Floors (transform from probability to logit space)
+        # Simple Wilson floor prevents division by zero during studentization
         if boundary_method == "wilson":
             variance_floor_prob = (
                 wilson_halfwidth_squared_torch(empirical_tpr, n_pos, z_alpha)
                 / z_alpha**2
             )
-        elif boundary_method in ("reflected_kde", "kde", "log_concave"):
-            neg_np = torch_to_numpy(y_score_t[y_true_t == 0])
-            pos_np = torch_to_numpy(y_score_t[y_true_t == 1])
-            fpr_np = torch_to_numpy(fpr)
-            ht_var = compute_hsieh_turnbull_variance(
-                neg_np, pos_np, fpr_np, method=boundary_method
-            )
-            variance_floor_prob = numpy_to_torch(ht_var, device).float()
         else:
             variance_floor_prob = torch.zeros_like(empirical_tpr)
 
-        if boundary_method not in ("none", "ks"):
+        if boundary_method == "wilson":
             # Transform variance floor to logit space using Jacobian
             # Jacobian of logit: d(logit(p))/dp = 1/(p(1-p))
             # Variance transforms as: var_logit = var_prob * jacobian^2
@@ -410,23 +526,16 @@ def envelope_bootstrap_band(
         bootstrap_var = bootstrap_std.pow(2)
 
         # 2. Apply Variance Floors (Boundary Methods)
+        # Simple Wilson floor prevents division by zero during studentization
         if boundary_method == "wilson":
             variance_floor = (
                 wilson_halfwidth_squared_torch(empirical_tpr, n_pos, z_alpha)
                 / z_alpha**2
             )
-        elif boundary_method in ("reflected_kde", "kde", "log_concave"):
-            neg_np = torch_to_numpy(y_score_t[y_true_t == 0])
-            pos_np = torch_to_numpy(y_score_t[y_true_t == 1])
-            fpr_np = torch_to_numpy(fpr)
-            ht_var = compute_hsieh_turnbull_variance(
-                neg_np, pos_np, fpr_np, method=boundary_method
-            )
-            variance_floor = numpy_to_torch(ht_var, device).float()
         else:
             variance_floor = torch.zeros_like(empirical_tpr)
 
-        if boundary_method not in ("none", "ks"):
+        if boundary_method == "wilson":
             bootstrap_var = torch.maximum(bootstrap_var, variance_floor)
             bootstrap_std = torch.sqrt(bootstrap_var)
 
@@ -487,20 +596,6 @@ def envelope_bootstrap_band(
         lower_logit = torch.min(retained_logits, dim=0).values
         upper_logit = torch.max(retained_logits, dim=0).values
 
-        if boundary_method not in ("none", "ks"):
-            # Compute Wilson bounds directly in probability space
-            wilson_hw = torch.sqrt(variance_floor_prob) * z_alpha
-            wilson_lower_prob = torch.clamp(empirical_tpr - wilson_hw, 1e-6, 1 - 1e-6)
-            wilson_upper_prob = torch.clamp(empirical_tpr + wilson_hw, 1e-6, 1 - 1e-6)
-
-            # Transform Wilson bounds to logit space
-            wilson_lower_logit = torch.logit(wilson_lower_prob)
-            wilson_upper_logit = torch.logit(wilson_upper_prob)
-
-            # Ensure envelope is at least as wide as Wilson bounds
-            lower_logit = torch.minimum(lower_logit, wilson_lower_logit)
-            upper_logit = torch.maximum(upper_logit, wilson_upper_logit)
-
         # Back-transform to Probability Space
         lower_envelope = torch.sigmoid(lower_logit)
         upper_envelope = torch.sigmoid(upper_logit)
@@ -511,24 +606,25 @@ def envelope_bootstrap_band(
         lower_envelope = torch.min(retained_curves, dim=0).values
         upper_envelope = torch.max(retained_curves, dim=0).values
 
-        # Apply variance floor to envelope widths (only for standard path)
-        if boundary_method not in ("none", "ks"):
-            sigma_floor = torch.sqrt(variance_floor)
-            upper_envelope = torch.maximum(
-                upper_envelope, empirical_tpr + sigma_floor * z_alpha
-            )
-            lower_envelope = torch.minimum(
-                lower_envelope, empirical_tpr - sigma_floor * z_alpha
-            )
-
     # Step 6: Clip to [0, 1]
     lower_envelope = torch.clamp(lower_envelope, 0.0, 1.0)
     upper_envelope = torch.clamp(upper_envelope, 0.0, 1.0)
 
-    # Step 6b: Apply KS-style boundary extension if requested
+    # Step 6b: Apply boundary corrections
     if boundary_method == "ks":
         lower_envelope, upper_envelope = _extend_boundary_ks_style(
             fpr, lower_envelope, upper_envelope, empirical_tpr, n_neg, n_pos, alpha
+        )
+    elif boundary_method == "wilson":
+        # Apply Wilson Rectangle floor only in tail regions
+        k_min_lower, k_min_upper = tail_k_min
+        tail_mask, alpha_tail, _ = _compute_tail_mask_and_alpha(
+            fpr, empirical_tpr, n_neg, n_pos, alpha,
+            k_min_lower, k_min_upper, tail_m_min,
+        )
+        lower_envelope, upper_envelope = _apply_wilson_rectangle_tail_floor(
+            fpr, lower_envelope, upper_envelope,
+            y_true_t, y_score_t, tail_mask, alpha_tail,
         )
 
     # Enforce boundary conditions
