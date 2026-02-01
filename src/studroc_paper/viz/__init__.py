@@ -28,6 +28,7 @@ from .plot_indiv import (
     plot_violation_heatmap,
     plot_violation_location_gradient,
 )
+from .view_roc_parameterizations import plot_roc_parameterizations
 
 __all__ = [
     # Band diagnostics
@@ -49,6 +50,8 @@ __all__ = [
     "plot_violation_heatmap",
     "plot_violation_location_gradient",
     "plot_data_property_lines",
+    # ROC parameterization visualization
+    "plot_roc_parameterizations",
     # Utilities
     "get_method_color",
     "get_method_colors_dict",

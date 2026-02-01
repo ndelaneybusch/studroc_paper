@@ -67,12 +67,13 @@ def get_method_color(method: str) -> str:
     """Map a method name to a consistent color.
 
     Color scheme:
-    - Envelope methods: shades of red, orange, and pink
-    - HT methods: shades of blue and purple
+    - Envelope methods: shades of red, orange, and pink (wilson variants are lighter)
+    - HT methods: shades of blue (calib variants are purple, wilson variants are lighter)
+    - Wilson standalone methods: teals and cyans
+    - Reference methods (ellipse, logit_max_modulus): greens and yellows
     - pointwise: black
     - ks: dark brown
     - working_hotelling: light brown
-    - All other methods: shades of yellow and green
 
     Args:
         method: The method name to map to a color.
@@ -84,7 +85,7 @@ def get_method_color(method: str) -> str:
         >>> get_method_color("pointwise")
         '#000000'
         >>> get_method_color("envelope_standard")
-        '#E53935'
+        '#C62828'
         >>> get_method_color("ht_log_concave")
         '#1565C0'
     """
@@ -98,37 +99,40 @@ def get_method_color(method: str) -> str:
     if method_lower == "working_hotelling":
         return "#A1887F"  # Light brown
 
-    # Envelope methods - reds, oranges, pinks
+    # Envelope methods - reds, oranges, pinks (wilson variants lighter)
     envelope_colors = {
-        "envelope_standard": "#E53935",  # Red
-        "envelope_symmetric": "#FF7043",  # Deep orange
-        "envelope_kde": "#EC407A",  # Pink
-        "envelope_wilson": "#C62828",  # Dark red
-        "envelope_wilson_symmetric": "#FF5722",  # Orange
-        "envelope_logit": "#F48FB1",  # Light pink
-        "envelope_symmetric_logit": "#FFAB91",  # Light orange
-        "envelope_wilson_logit": "#D32F2F",  # Medium red
-        "envelope_wilson_symmetric_logit": "#FF8A65",  # Coral
-        "envelope_kde_logit": "#F06292",  # Medium pink
-        "envelope_kde_symmetric_logit": "#FFCCBC",  # Pale orange
+        "envelope_standard": "#C62828",  # Dark red
+        "envelope_wilson": "#E53935",  # Red (lighter - wilson)
+        "envelope_wilson_symmetric": "#EF5350",  # Light red (lighter - wilson symmetric)
+        "envelope_logit": "#AD1457",  # Dark pink
+        "envelope_wilson_logit": "#E91E63",  # Pink (lighter - wilson)
+        "envelope_wilson_symmetric_logit": "#F06292",  # Light pink (lighter - wilson sym)
     }
 
-    # HT methods - blues and purples
+    # HT methods - blues and purples (calib = purple, wilson = lighter)
     ht_colors = {
-        "ht_log_concave": "#1565C0",  # Blue
-        "ht_log_concave_calib": "#7B1FA2",  # Purple
-        "ht_reflected_kde": "#0288D1",  # Light blue
-        "ht_kde": "#303F9F",  # Indigo
-        "ht_kde_calib": "#9C27B0",  # Purple
-        "ht_kde_wilson": "#1976D2",  # Medium blue
-        "ht_kde_calib_wilson": "#8E24AA",  # Medium purple
+        "ht_log_concave": "#0D47A1",  # Dark blue
+        "ht_log_concave_logit": "#1565C0",  # Blue
+        "ht_log_concave_logit_calib": "#6A1B9A",  # Dark purple (calib)
+        "ht_reflected_kde_logit": "#0277BD",  # Light blue
+        "ht_reflected_kde_logit_calib": "#7B1FA2",  # Purple (calib)
+        "ht_log_concave_logit_wilson": "#42A5F5",  # Lighter blue (wilson)
+        "ht_log_concave_logit_calib_wilson": "#AB47BC",  # Light purple (calib + wilson)
     }
 
-    # Other methods - yellows and greens
+    # Wilson standalone methods - teals and cyans
+    wilson_colors = {
+        "wilson": "#00695C",  # Dark teal
+        "wilson_rectangle": "#00897B",  # Teal
+        "wilson_rectangle_sidak": "#26A69A",  # Light teal
+        "wilson_rectangle_bonferroni": "#4DB6AC",  # Lighter teal
+    }
+
+    # Reference/other methods - greens and yellows
     other_colors = {
-        "ellipse_envelope_sweep": "#388E3C",  # Green
-        "ellipse_envelope_quartic": "#689F38",  # Light green
-        "logit_max_modulus": "#FBC02D",  # Yellow
+        "ellipse_envelope_sweep": "#2E7D32",  # Dark green
+        "ellipse_envelope_quartic": "#43A047",  # Green
+        "logit_max_modulus": "#F9A825",  # Yellow/amber
         "bootstrap_percentile": "#AFB42B",  # Lime
         "bootstrap_bca": "#8BC34A",  # Light lime
     }
@@ -146,6 +150,13 @@ def get_method_color(method: str) -> str:
             return ht_colors[method_lower]
         # Fallback for unknown HT methods
         return "#5C6BC0"  # Generic blue
+
+    # Check wilson standalone methods
+    if method_lower.startswith("wilson"):
+        if method_lower in wilson_colors:
+            return wilson_colors[method_lower]
+        # Fallback for unknown wilson methods
+        return "#009688"  # Generic teal
 
     # Check other known methods
     if method_lower in other_colors:
