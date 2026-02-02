@@ -444,11 +444,13 @@ def ellipse_envelope_band(
         probit_cutoff_range = np.linspace(-5, 5, num_cutoffs)
         cutoff_values = mean_neg - std_neg * probit_cutoff_range
 
-        # Collect all envelope points
-        envelope_fpr_lower: list[float] = []
-        envelope_tpr_lower: list[float] = []
-        envelope_fpr_upper: list[float] = []
-        envelope_tpr_upper: list[float] = []
+        # Collect all envelope points using pre-allocated arrays
+        # Max points per cutoff is 4 (quartic has at most 4 real roots)
+        max_points = len(cutoff_values) * 4
+        all_fpr = np.empty(max_points, dtype=dtype)
+        all_tpr = np.empty(max_points, dtype=dtype)
+        all_centers = np.empty(max_points, dtype=dtype)
+        point_count = 0
 
         for cutoff in cutoff_values:
             gamma_neg, gamma_pos, a_neg, a_pos, b_neg, b_pos, d_neg, d_pos = (
@@ -470,7 +472,6 @@ def ellipse_envelope_band(
 
             if len(v_vals) > 0:
                 # Compute actual envelope point coordinates in probit space
-                # x = γ̂₀(c) + u, y = γ̂₁(c) + v
                 probit_fpr_points = gamma_neg + u_vals
                 probit_tpr_points = gamma_pos + v_vals
 
@@ -488,67 +489,68 @@ def ellipse_envelope_band(
                     & (tpr_points <= 1)
                 )
 
-                if np.any(valid_mask):
-                    valid_fpr = fpr_points[valid_mask]
-                    valid_tpr = tpr_points[valid_mask]
-
-                    # Separate into lower and upper envelope points
-                    # Points below the ROC curve center go to lower envelope
-                    # Points above go to upper envelope
+                n_valid = np.sum(valid_mask)
+                if n_valid > 0:
                     tpr_center = norm.cdf(gamma_pos)
+                    end_idx = point_count + n_valid
+                    all_fpr[point_count:end_idx] = fpr_points[valid_mask]
+                    all_tpr[point_count:end_idx] = tpr_points[valid_mask]
+                    all_centers[point_count:end_idx] = tpr_center
+                    point_count = end_idx
 
-                    for f, t in zip(valid_fpr, valid_tpr):
-                        if t <= tpr_center:
-                            envelope_fpr_lower.append(f)
-                            envelope_tpr_lower.append(t)
-                        else:
-                            envelope_fpr_upper.append(f)
-                            envelope_tpr_upper.append(t)
+        # Trim arrays and separate into lower/upper using vectorized masking
+        all_fpr = all_fpr[:point_count]
+        all_tpr = all_tpr[:point_count]
+        all_centers = all_centers[:point_count]
 
-        # Convert to arrays and sort by FPR
-        if envelope_fpr_lower:
-            lower_points = np.array(list(zip(envelope_fpr_lower, envelope_tpr_lower)))
-            lower_points = lower_points[lower_points[:, 0].argsort()]
+        lower_mask = all_tpr <= all_centers
+        envelope_fpr_lower = all_fpr[lower_mask]
+        envelope_tpr_lower = all_tpr[lower_mask]
+        envelope_fpr_upper = all_fpr[~lower_mask]
+        envelope_tpr_upper = all_tpr[~lower_mask]
 
-            # Interpolate onto the FPR grid
-            # Use minimum TPR at each FPR for lower envelope
-            from scipy.interpolate import interp1d
+        # Sort by FPR and interpolate
+        from scipy.interpolate import interp1d
 
-            if len(lower_points) >= 2:
-                interp_lower = interp1d(
-                    lower_points[:, 0],
-                    lower_points[:, 1],
-                    kind="linear",
-                    bounds_error=False,
-                    fill_value=(0.0, 1.0),
-                )
-                lower_envelope = np.clip(interp_lower(fpr_grid), 0.0, 1.0).astype(dtype)
+        if len(envelope_fpr_lower) >= 2:
+            sort_idx = np.argsort(envelope_fpr_lower)
+            lower_fpr_sorted = envelope_fpr_lower[sort_idx]
+            lower_tpr_sorted = envelope_tpr_lower[sort_idx]
 
-        if envelope_fpr_upper:
-            upper_points = np.array(list(zip(envelope_fpr_upper, envelope_tpr_upper)))
-            upper_points = upper_points[upper_points[:, 0].argsort()]
+            interp_lower = interp1d(
+                lower_fpr_sorted,
+                lower_tpr_sorted,
+                kind="linear",
+                bounds_error=False,
+                fill_value=(0.0, 1.0),
+            )
+            lower_envelope = np.clip(interp_lower(fpr_grid), 0.0, 1.0).astype(dtype)
 
-            # Interpolate onto the FPR grid
-            # Use maximum TPR at each FPR for upper envelope
-            if len(upper_points) >= 2:
-                interp_upper = interp1d(
-                    upper_points[:, 0],
-                    upper_points[:, 1],
-                    kind="linear",
-                    bounds_error=False,
-                    fill_value=(0.0, 1.0),
-                )
-                upper_envelope = np.clip(interp_upper(fpr_grid), 0.0, 1.0).astype(dtype)
+        if len(envelope_fpr_upper) >= 2:
+            sort_idx = np.argsort(envelope_fpr_upper)
+            upper_fpr_sorted = envelope_fpr_upper[sort_idx]
+            upper_tpr_sorted = envelope_tpr_upper[sort_idx]
+
+            interp_upper = interp1d(
+                upper_fpr_sorted,
+                upper_tpr_sorted,
+                kind="linear",
+                bounds_error=False,
+                fill_value=(0.0, 1.0),
+            )
+            upper_envelope = np.clip(interp_upper(fpr_grid), 0.0, 1.0).astype(dtype)
 
         # If interpolation failed, fall back to sweep method bounds
         if np.all(lower_envelope == 1.0) or np.all(upper_envelope == 0.0):
-            # Recompute using sweep as fallback
+            # Recompute using vectorized sweep as fallback
             probit_range = np.linspace(-4, 4, num_cutoffs)
             cutoffs_sweep = mean_neg - std_neg * probit_range
-            lower_envelope = np.ones(num_grid_points, dtype=dtype)
-            upper_envelope = np.zeros(num_grid_points, dtype=dtype)
 
-            for cutoff in cutoffs_sweep:
+            # Pre-allocate candidate arrays
+            lower_candidates = np.ones((len(cutoffs_sweep), num_grid_points), dtype=dtype)
+            upper_candidates = np.zeros((len(cutoffs_sweep), num_grid_points), dtype=dtype)
+
+            for i, cutoff in enumerate(cutoffs_sweep):
                 gamma_neg = (mean_neg - cutoff) / std_neg
                 gamma_pos = (mean_pos - cutoff) / std_pos
                 var_gamma_neg = 1.0 / n_neg + gamma_neg**2 / (2 * (n_neg - 1))
@@ -556,15 +558,18 @@ def ellipse_envelope_band(
                 a_neg = 1.0 / var_gamma_neg
                 a_pos = 1.0 / var_gamma_pos
 
-                for i, x in enumerate(probit_fpr):
-                    x_deviation_sq = (x - gamma_neg) ** 2
-                    remaining = chi2_critical - a_neg * x_deviation_sq
-                    if remaining >= 0:
-                        y_offset = np.sqrt(remaining / a_pos)
-                        tpr_lower = norm.cdf(gamma_pos - y_offset)
-                        tpr_upper = norm.cdf(gamma_pos + y_offset)
-                        lower_envelope[i] = min(lower_envelope[i], tpr_lower)
-                        upper_envelope[i] = max(upper_envelope[i], tpr_upper)
+                # Vectorized over all grid points
+                x_cost = a_neg * (probit_fpr - gamma_neg) ** 2
+                remaining = chi2_critical - x_cost
+                valid_mask = remaining >= 0
+
+                if np.any(valid_mask):
+                    y_offset = np.sqrt(remaining[valid_mask] / a_pos)
+                    lower_candidates[i, valid_mask] = norm.cdf(gamma_pos - y_offset)
+                    upper_candidates[i, valid_mask] = norm.cdf(gamma_pos + y_offset)
+
+            lower_envelope = np.min(lower_candidates, axis=0)
+            upper_envelope = np.max(upper_candidates, axis=0)
 
     # Handle any remaining extreme values
     lower_envelope = np.clip(lower_envelope, 0.0, 1.0)
@@ -578,9 +583,8 @@ def ellipse_envelope_band(
     lower_envelope = np.minimum(lower_envelope, upper_envelope)
 
     # Apply monotonicity constraint (ROC bands should be non-decreasing)
-    for i in range(1, num_grid_points):
-        lower_envelope[i] = max(lower_envelope[i], lower_envelope[i - 1])
-        upper_envelope[i] = max(upper_envelope[i], upper_envelope[i - 1])
+    lower_envelope = np.maximum.accumulate(lower_envelope)
+    upper_envelope = np.maximum.accumulate(upper_envelope)
 
     # Convert to final dtype before plotting/returning
     fpr_grid_final = fpr_grid.astype(dtype)
