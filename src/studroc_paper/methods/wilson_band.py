@@ -213,19 +213,13 @@ def _interpolate_envelope_to_grid(
     fpr_sorted = env_fpr[sort_idx]
     tpr_sorted = env_tpr[sort_idx]
 
-    # Handle duplicates by taking appropriate extreme
+    # Handle duplicates by taking appropriate extreme using scatter_reduce
     unique_fpr, inverse_idx = torch.unique(fpr_sorted, return_inverse=True)
+    reduce_op = "amin" if fill_lower else "amax"
     unique_tpr = torch.zeros_like(unique_fpr)
+    unique_tpr.scatter_reduce_(0, inverse_idx, tpr_sorted, reduce=reduce_op, include_self=False)
 
-    for i in range(len(unique_fpr)):
-        mask = inverse_idx == i
-        if fill_lower:
-            unique_tpr[i] = tpr_sorted[mask].min()
-        else:
-            unique_tpr[i] = tpr_sorted[mask].max()
-
-    # Linear interpolation to grid
-    # Use numpy interp (torch doesn't have native 1D interp)
+    # Linear interpolation to grid using numpy (torch lacks native 1D interp)
     fpr_np = unique_fpr.cpu().numpy()
     tpr_np = unique_tpr.cpu().numpy()
     grid_np = fpr_grid.cpu().numpy()
