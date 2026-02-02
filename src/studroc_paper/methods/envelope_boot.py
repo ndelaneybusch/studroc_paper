@@ -222,7 +222,7 @@ def _compute_tail_mask_and_alpha(
     k_min_lower: int,
     k_min_upper: int,
     m_min: int,
-) -> tuple[Tensor, float, int]:
+) -> tuple[Tensor, Tensor, Tensor, float, int]:
     """Identify tail regions and compute Šidák-corrected alpha for Wilson floor.
 
     Tail regions are where effective counts are too small for reliable bootstrap
@@ -241,8 +241,10 @@ def _compute_tail_mask_and_alpha(
         m_min: Minimum count of positives at threshold.
 
     Returns:
-        Tuple of (tail_mask, alpha_tail, K_tail) where:
-        - tail_mask: Boolean tensor marking tail points
+        Tuple of (lower_tail_mask, upper_tail_mask, tail_mask, alpha_tail, K_tail):
+        - lower_tail_mask: Boolean tensor marking lower tail points (near FPR=0)
+        - upper_tail_mask: Boolean tensor marking upper tail points (near FPR=1)
+        - tail_mask: Boolean tensor marking all tail points (union of lower/upper)
         - alpha_tail: Šidák-corrected alpha for K_tail points
         - K_tail: Number of tail points
     """
@@ -265,7 +267,7 @@ def _compute_tail_mask_and_alpha(
     else:
         alpha_tail = alpha
 
-    return tail_mask, alpha_tail, K_tail
+    return lower_tail, upper_tail, tail_mask, alpha_tail, K_tail
 
 
 def _apply_wilson_rectangle_tail_floor(
@@ -274,13 +276,16 @@ def _apply_wilson_rectangle_tail_floor(
     upper_envelope: Tensor,
     y_true: Tensor,
     y_score: Tensor,
-    tail_mask: Tensor,
+    lower_tail_mask: Tensor,
+    upper_tail_mask: Tensor,
     alpha_tail: float,
 ) -> tuple[Tensor, Tensor]:
-    """Apply Wilson Rectangle bounds as floor in tail regions only.
+    """Apply Wilson Rectangle bounds as floor in tail regions with smooth extension.
 
     Uses Wilson Rectangle bands with Šidák correction to extend the envelope
-    only where the tail_mask indicates insufficient bootstrap variance.
+    in tail regions, then applies cumulative min/max operations to smoothly
+    propagate the floor values into the interior, preventing sudden jumps at
+    tail boundaries.
 
     Args:
         fpr_grid: FPR grid values.
@@ -288,12 +293,14 @@ def _apply_wilson_rectangle_tail_floor(
         upper_envelope: Current upper envelope bound.
         y_true: True binary labels.
         y_score: Predicted scores.
-        tail_mask: Boolean mask indicating tail regions.
+        lower_tail_mask: Boolean mask indicating lower tail region (near FPR=0).
+        upper_tail_mask: Boolean mask indicating upper tail region (near FPR=1).
         alpha_tail: Šidák-corrected alpha level for tail points.
 
     Returns:
-        Tuple of (lower_envelope, upper_envelope) with tail floor applied.
+        Tuple of (lower_envelope, upper_envelope) with smoothly extended tail floor.
     """
+    tail_mask = lower_tail_mask | upper_tail_mask
     if not tail_mask.any():
         return lower_envelope, upper_envelope
 
@@ -315,18 +322,29 @@ def _apply_wilson_rectangle_tail_floor(
     wilson_lower = numpy_to_torch(wilson_lower_np, device).float()
     wilson_upper = numpy_to_torch(wilson_upper_np, device).float()
 
-    # Apply floor only in tail regions
-    lower_envelope = lower_envelope.clone()
-    upper_envelope = upper_envelope.clone()
+    lower_result = lower_envelope.clone()
+    upper_result = upper_envelope.clone()
 
-    lower_envelope[tail_mask] = torch.minimum(
-        lower_envelope[tail_mask], wilson_lower[tail_mask]
+    # Apply Wilson floor in appropriate tail regions:
+    # - Lower bound gets Wilson floor in upper tail (near FPR=1)
+    # - Upper bound gets Wilson floor in lower tail (near FPR=0)
+    lower_result[upper_tail_mask] = torch.minimum(
+        lower_result[upper_tail_mask], wilson_lower[upper_tail_mask]
     )
-    upper_envelope[tail_mask] = torch.maximum(
-        upper_envelope[tail_mask], wilson_upper[tail_mask]
+    upper_result[lower_tail_mask] = torch.maximum(
+        upper_result[lower_tail_mask], wilson_upper[lower_tail_mask]
     )
 
-    return lower_envelope, upper_envelope
+    # Smooth extension via cumulative operations to prevent boundary jumps:
+    # - Lower bound: cumulative min from right-to-left (propagates low values leftward)
+    # - Upper bound: cumulative max from left-to-right (propagates high values rightward)
+    lower_flipped = torch.flip(lower_result, dims=[0])
+    lower_cummin, _ = torch.cummin(lower_flipped, dim=0)
+    lower_result = torch.flip(lower_cummin, dims=[0])
+
+    upper_result, _ = torch.cummax(upper_result, dim=0)
+
+    return lower_result, upper_result
 
 
 def envelope_bootstrap_band(
@@ -618,13 +636,13 @@ def envelope_bootstrap_band(
     elif boundary_method == "wilson":
         # Apply Wilson Rectangle floor only in tail regions
         k_min_lower, k_min_upper = tail_k_min
-        tail_mask, alpha_tail, _ = _compute_tail_mask_and_alpha(
+        lower_tail_mask, upper_tail_mask, _, alpha_tail, _ = _compute_tail_mask_and_alpha(
             fpr, empirical_tpr, n_neg, n_pos, alpha,
             k_min_lower, k_min_upper, tail_m_min,
         )
         lower_envelope, upper_envelope = _apply_wilson_rectangle_tail_floor(
             fpr, lower_envelope, upper_envelope,
-            y_true_t, y_score_t, tail_mask, alpha_tail,
+            y_true_t, y_score_t, lower_tail_mask, upper_tail_mask, alpha_tail,
         )
 
     # Enforce boundary conditions
