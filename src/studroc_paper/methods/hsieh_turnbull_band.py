@@ -109,7 +109,7 @@ def hsieh_turnbull_band(
     alpha: float = 0.05,
     use_logit_transform: bool = False,
     density_method: Literal["log_concave", "reflected_kde"] = "log_concave",
-    n_bootstraps: int = 0,
+    n_bootstraps: int | str = 0,
     check_assumptions: bool = False,
     use_wilson_variance_floor: bool = False,
     data_floor: float | None = None,
@@ -189,8 +189,7 @@ def hsieh_turnbull_band(
         n_bootstraps: Number of bootstrap replicates to use for calibrating the
             critical value. If > 0, uses bootstrap calibration
             which provides tighter, more accurate bands than the Bonferroni
-            heuristic. If 0, uses the conservative `sqrt(k)` heuristic.
-            Defaults to 2000.
+            heuristic. If "auto", uses 4000 if the total sample size is > 300.
         check_assumptions: If True, run heuristic checks for gross
             violations of log-concavity assumptions and issue warnings.
             Defaults to True.
@@ -257,6 +256,9 @@ def hsieh_turnbull_band(
         Estimation of the Receiver Operating Characteristic Curve."
         The Annals of Statistics, 24(1), 25-40.
     """
+    if n_bootstraps == "auto":
+        n_bootstraps = 4000 if len(y_score) > 300 else 0
+
     # Keep original tensors if possible for bootstrap efficiency, but need numpy for basic stats
     if isinstance(y_score, Tensor):
         # Store original tensors for bootstrap
