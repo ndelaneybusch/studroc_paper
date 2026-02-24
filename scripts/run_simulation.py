@@ -486,7 +486,7 @@ def compute_bands_without_bootstrap(
         lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
     )
 
-    # HT_log_concave_logit_calib: density_method="log_concave", use_logit_transform=True, n_bootstraps=4000
+    # HT_log_concave_logit_autocalib: density_method="log_concave", use_logit_transform=True, n_bootstraps="auto"
     fpr_out, lower, upper = hsieh_turnbull_band(
         y_true=y_true,
         y_score=y_score,
@@ -494,7 +494,7 @@ def compute_bands_without_bootstrap(
         alpha=alpha,
         use_logit_transform=True,
         density_method="log_concave",
-        n_bootstraps=4000,
+        n_bootstraps="auto",
         check_assumptions=False,
         use_wilson_variance_floor=False,
         data_floor=data_floor,
@@ -502,7 +502,7 @@ def compute_bands_without_bootstrap(
         plot=False,
         plot_title=None,
     )
-    results["HT_log_concave_logit_calib"] = evaluate_single_band(
+    results["HT_log_concave_logit_autocalib"] = evaluate_single_band(
         lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
     )
 
@@ -526,7 +526,7 @@ def compute_bands_without_bootstrap(
         lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
     )
 
-    # HT_reflected_kde_logit_calib: density_method="reflected_kde", use_logit_transform=True, n_bootstraps=4000
+    # HT_reflected_kde_logit_autocalib: density_method="reflected_kde", use_logit_transform=True, n_bootstraps="auto"
     fpr_out, lower, upper = hsieh_turnbull_band(
         y_true=y_true,
         y_score=y_score,
@@ -534,7 +534,7 @@ def compute_bands_without_bootstrap(
         alpha=alpha,
         use_logit_transform=True,
         density_method="reflected_kde",
-        n_bootstraps=4000,
+        n_bootstraps="auto",
         check_assumptions=False,
         use_wilson_variance_floor=False,
         data_floor=data_floor,
@@ -542,7 +542,7 @@ def compute_bands_without_bootstrap(
         plot=False,
         plot_title=None,
     )
-    results["HT_reflected_kde_logit_calib"] = evaluate_single_band(
+    results["HT_reflected_kde_logit_autocalib"] = evaluate_single_band(
         lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
     )
 
@@ -566,7 +566,7 @@ def compute_bands_without_bootstrap(
         lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
     )
 
-    # HT_log_concave_logit_calib_wilson: density_method="log_concave", use_logit_transform=True, n_bootstraps=4000, use_wilson_variance_floor=True
+    # HT_log_concave_logit_autocalib_wilson: density_method="log_concave", use_logit_transform=True, n_bootstraps="auto", use_wilson_variance_floor=True
     fpr_out, lower, upper = hsieh_turnbull_band(
         y_true=y_true,
         y_score=y_score,
@@ -574,7 +574,7 @@ def compute_bands_without_bootstrap(
         alpha=alpha,
         use_logit_transform=True,
         density_method="log_concave",
-        n_bootstraps=4000,
+        n_bootstraps="auto",
         check_assumptions=False,
         use_wilson_variance_floor=True,
         data_floor=data_floor,
@@ -582,7 +582,7 @@ def compute_bands_without_bootstrap(
         plot=False,
         plot_title=None,
     )
-    results["HT_log_concave_logit_calib_wilson"] = evaluate_single_band(
+    results["HT_log_concave_logit_autocalib_wilson"] = evaluate_single_band(
         lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
     )
 
@@ -1100,11 +1100,11 @@ def save_results(
         # check_assumptions=False, use_wilson_variance_floor=False, data_floor=None, data_ceil=None
         "HT_log_concave", # density_method="log_concave"
         "HT_log_concave_logit", # density_method="log_concave", use_logit_transform=True
-        "HT_log_concave_logit_calib", # density_method="log_concave", use_logit_transform=True, n_bootstraps=2000
+        "HT_log_concave_logit_autocalib", # density_method="log_concave", use_logit_transform=True, n_bootstraps="auto"
         "HT_reflected_kde_logit", # density_method="reflected_kde", use_logit_transform=True
-        "HT_reflected_kde_logit_calib", # density_method="reflected_kde", use_logit_transform=True, n_bootstraps=2000
+        "HT_reflected_kde_logit_autocalib", # density_method="reflected_kde", use_logit_transform=True, n_bootstraps="auto"
         "HT_log_concave_logit_wilson", # density_method="log_concave", use_logit_transform=True, use_wilson_variance_floor=True
-        "HT_log_concave_logit_calib_wilson", # density_method="log_concave", use_logit_transform=True, n_bootstraps=2000, use_wilson_variance_floor=True
+        "HT_log_concave_logit_autocalib_wilson", # density_method="log_concave", use_logit_transform=True, n_bootstraps="auto", use_wilson_variance_floor=True
         "logit_max_modulus", # tpr_method="empirical"
         "logit_max_modulus_hd", # tpr_method="harrell_davis"
         "pointwise",
@@ -1328,7 +1328,7 @@ def main():
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path("data/results"),
+        default=Path("data/results/24022026/"),
         help="Output directory for results",
     )
 
