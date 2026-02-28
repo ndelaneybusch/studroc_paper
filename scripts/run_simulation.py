@@ -1407,7 +1407,7 @@ def main():
     rng = np.random.default_rng(args.seed)
 
     for dgp_type in [
-        "gamma",
+        # "gamma",
         "student_t",
         "logitnormal",
         "beta_opposing",
