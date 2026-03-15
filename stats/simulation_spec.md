@@ -17,11 +17,12 @@ For many DGPs, we vary a "Shape" parameter and an "AUC" parameter. Mapping betwe
 
 ### DGP List and Sampling Spaces
 
-1.  **Lognormal (Skewed)**
-    -   **DGP**: `make_lognormal_dgp(neg_mu=0, pos_mu=?, sigma=?)`
+1.  **Logit-Normal**
+    -   **DGP**: `make_logitnormal_dgp`
     -   **Sampling Space**:
         -   `AUC`: $[0.55, 0.99]$
-        -   `sigma`: $[0.1, 3.0]$ (Controls skewness; higher = more skewed)
+        -   `sigma`: $[0.1, 3.0]$
+    -   **Data bounds**: floor = 0.0, ceil = 1.0
 
 2.  **Heteroskedastic Gaussian (Binormal)**
     -   **DGP**: `make_heteroskedastic_gaussian_dgp(delta_mu=?, sigma_neg=1, sigma_pos=?)`
@@ -35,6 +36,7 @@ For many DGPs, we vary a "Shape" parameter and an "AUC" parameter. Mapping betwe
         -   `AUC`: $[0.55, 0.99]$
         -   `alpha`: $[0.5, 10.0]$ (Controls shape/kurtosis)
     -   *Note*: `alpha=beta` implies AUC=0.5. We assume `beta > alpha` for AUC > 0.5.
+    -   **Data bounds**: floor = 0.0, ceil = 1.0
 
 4.  **Student's t (Heavy Tails)**
     -   **DGP**: `make_student_t_dgp(df=?, delta_loc=?, scale=1)`
@@ -51,6 +53,20 @@ For many DGPs, we vary a "Shape" parameter and an "AUC" parameter. Mapping betwe
         -   `mixture_weight` ($w$): $[0.1, 0.9]$
         -   `mode_separation` ($\Delta_{neg}$): $[0.1, 4.0]$
 
+6.  **Weibull**
+    -   **DGP**: `make_weibull_dgp`
+    -   **Sampling Space**:
+        -   `AUC`: $[0.55, 0.99]$
+        -   `shape`: $[0.5, 5.0]$
+    -   **Data bounds**: floor = 0.0
+
+7.  **Gamma**
+    -   **DGP**: `make_gamma_dgp`
+    -   **Sampling Space**:
+        -   `AUC`: $[0.55, 0.95]$
+        -   `shape`: $[0.5, 10.0]$
+    -   **Data bounds**: floor = 0.0
+
 ## 3. Sampling Strategy (LHS)
 
 For each DGP:
@@ -65,10 +81,9 @@ For each parameter combination (DGP instance), we run simulations across a range
 -   **Sample Sizes ($n$)**: $\{10, 30, 100, 300, 1000, 10000\}$
 -   **Prevalence**:
     -   For all $n \neq 1000$: Balanced ($n_{pos} = n_{neg} = n/2$).
-    -   For $n = 1000$: Run three prevalence scenarios:
-        1.  1% ($n_{pos}=10, n_{neg}=990$)
-        2.  10% ($n_{pos}=100, n_{neg}=900$)
-        3.  50% ($n_{pos}=500, n_{neg}=500$)
+    -   For $n = 1000$: Run two prevalence scenarios:
+        1.  10% ($n_{pos}=100, n_{neg}=900$)
+        2.  50% ($n_{pos}=500, n_{neg}=500$)
 -   **Confidence Levels**: $\alpha \in \{0.5, 0.05\}$ (50% and 95% confidence).
 -   **Number of Simulations**: $N_{sim} = 1$ per configuration.
 -   **Bootstrap Replicates**: $B = 4000$ (for Envelope method).
