@@ -51,7 +51,7 @@ def save_figure(name):
 
 # %%
 # Configure results folder
-RESULTS_FOLDER = Path("data/results")
+RESULTS_FOLDER = Path("data/results/24022026/")
 
 # Load dataframes
 print(f"Loading results from {RESULTS_FOLDER}...")
@@ -98,7 +98,7 @@ SUBSETS = {
         "envelope_wilson",
         "envelope_wilson_symmetric",
         "HT_log_concave_logit_wilson",
-        "HT_log_concave_logit_calib_wilson",
+        "HT_log_concave_logit_autocalib_wilson",
         "ellipse_envelope_sweep",
         "ks",
         "working_hotelling",
@@ -116,11 +116,11 @@ SUBSETS = {
     "HT": [
         "HT_log_concave",
         "HT_log_concave_logit",
-        "HT_log_concave_logit_calib",
+        "HT_log_concave_logit_autocalib",
         "HT_reflected_kde_logit",
-        "HT_reflected_kde_logit_calib",
+        "HT_reflected_kde_logit_autocalib",
         "HT_log_concave_logit_wilson",
-        "HT_log_concave_logit_calib_wilson",
+        "HT_log_concave_logit_autocalib_wilson",
     ],
     "wilson": [
         "envelope_wilson",
