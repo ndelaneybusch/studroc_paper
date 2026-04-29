@@ -414,4 +414,234 @@ The "ugly band-aids" feeling is real but misleading. The Wilson floor is not a b
 
 ---
 
-*Report generated 2026-04-28. Based on code review of 5 method implementations, simulation specification, and 2,254,000 evaluations across 7 DGPs, 6 sample sizes, and 23 method variants.*
+## G. Future Directions
+
+### G.1 Variance-model band with bootstrap calibration (Priority 1)
+
+**Idea:** Replace the envelope operator with a variance-model band, keeping
+the bootstrap for both variance estimation and critical value calibration.
+
+**Construction:**
+1. Compute bootstrap variance sigma²_boot(t) at each grid point (nonparametric,
+   captures both binomial and threshold-uncertainty variance components)
+2. Apply the Wilson variance-ratio floor where bootstrap has collapsed
+3. Generate bootstrap replicates of the studentized supremum statistic, as in
+   HT-autocalib: Z_b = sup_t |(R_b(t) - R_hat(t)) / sigma_hat(t)|
+4. Find c_alpha = (1-alpha)-quantile of {Z_b}
+5. Construct band: R_hat(t) ± c_alpha * sigma_hat(t)
+
+This is *not* the envelope of retained curves -- it is a symmetric (in
+studentized space) band scaled by a single critical value. It combines:
+
+- **Bootstrap variance** (nonparametric, adaptive) from the envelope approach
+- **Bootstrap calibration** (respects correlation structure) from HT-autocalib
+- **Wilson floor** (boundary correction) from the current approach
+- **Smooth tunability** across confidence levels (band width proportional to c,
+  which varies continuously with alpha)
+
+**Why this addresses the 50% CI problem:** The band width is c * sigma(t). The
+critical value c changes smoothly from c_{0.50} to c_{0.95} -- there is no
+envelope operator, no extreme-value insensitivity. The 50% band is genuinely
+narrower than the 95% band by a factor determined by the bootstrap's own
+calibration of the supremum statistic.
+
+**Risk:** The band is symmetric around R_hat in studentized space, losing the
+envelope's natural asymmetry. Near TPR boundaries, the band wastes width in
+the bounded direction. A logit-space construction (building the band on the
+logit scale and back-transforming via sigmoid) would handle this, since sigmoid
+automatically respects [0, 1] and produces asymmetric bands in probability
+space.
+
+**Implementation effort:** Low. All components already exist in the codebase:
+bootstrap variance (envelope_boot.py), Wilson floor (just implemented),
+bootstrap supremum calibration (hsieh_turnbull_band.py lines 400-460),
+bootstrap grid generation (bootstrap_grid.py). The new method is essentially
+wiring these together differently.
+
+### G.2 Multiplier bootstrap (Priority 2)
+
+**Idea:** Replace the standard resampling bootstrap with the multiplier (wild)
+bootstrap to reduce the finite-sample calibration bias caused by step-function
+discreteness of bootstrap ROC curves.
+
+**Mechanism:** The standard bootstrap resamples n_0 negatives with replacement,
+producing ROC curves that are step functions with jumps at the same set of
+observed score values. The discrete multiplicities (0, 1, 2, ...) create
+artificial variability in the supremum statistic that isn't present in the
+smooth population process. This inflates the bootstrap critical value,
+producing over-conservative bands (the "bootstrap conservatism" effect
+identified in Section B.4a).
+
+The multiplier bootstrap instead perturbs the empirical process directly:
+for each replicate b, generate weights w_i ~ N(0,1) (or Rademacher: ±1 with
+equal probability) and compute the weighted empirical CDFs:
+
+    F_b(x) = (1/n_0) * sum_{i: y_i=0} w_i * I(s_i <= x)
+    G_b(x) = (1/n_1) * sum_{j: y_j=1} w_j * I(s_j <= x)
+
+The resulting ROC process is smoother than the standard bootstrap because the
+weights are continuous rather than integer-valued. The supremum statistic from
+the multiplier bootstrap should better approximate the true supremum
+distribution.
+
+**Theoretical backing:** Kosorok (2008), *Introduction to Empirical Processes
+and Semiparametric Inference*, Chapter 2.9, provides conditions under which the
+multiplier bootstrap is consistent for the supremum functional of empirical
+processes. The rate of convergence can be faster than the standard bootstrap
+for processes with limited smoothness.
+
+**Expected payoff:** Better calibration at all confidence levels, especially
+at the 50% level where the bootstrap conservatism effect is most pronounced.
+This is orthogonal to the band construction (envelope vs variance-model) and
+the boundary correction (Wilson floor) -- it improves the bootstrap mechanism
+itself.
+
+**Implementation effort:** Moderate. Requires a new bootstrap grid generator
+that operates on weighted empirical CDFs rather than resampled scores. The
+downstream code (studentization, retention, envelope/band construction) is
+unchanged.
+
+### G.3 Functional depth ranking (Priority 3)
+
+**Idea:** Replace the KS statistic (supremum of |z_b(t)|) as the curve ranking
+criterion with **band depth** from functional data analysis.
+
+**Background:** The KS statistic measures "how extreme is this curve's worst
+point?" It is dominated by a single grid point. A curve that deviates
+moderately at every grid point (globally atypical) gets a better KS rank than
+a curve that deviates strongly at one point but is typical everywhere else
+(locally extreme). For the envelope, this means KS retention keeps some
+globally-atypical curves while discarding locally-extreme ones.
+
+Band depth (López-Pintado & Romo 2009) measures global typicality: for a curve
+R_b, its band depth is the proportion of curve pairs (R_i, R_j) such that R_b
+lies entirely within the band [min(R_i, R_j), max(R_i, R_j)]. A curve with
+high band depth is "enclosed" by many pairs -- it is consistently central.
+A curve with low band depth lies outside many pairs -- it is globally unusual.
+
+Sun & Genton (2011), "Functional Boxplots," use band depth to construct central
+regions for functional data. Their "50% central region" is the envelope of the
+deepest 50% of curves -- exactly the construction used in the envelope
+bootstrap, but with band depth instead of KS.
+
+**Expected payoff:** Potentially tighter bands. Band depth retention discards
+curves that are globally atypical (contributing width everywhere) rather than
+curves that are locally extreme (contributing width at one point). The envelope
+of band-depth-retained curves should be tighter because the retained set is
+more compact in function space.
+
+**Risk:** Band depth is O(B²) to compute (all pairs), compared to O(B*K) for
+KS. For B=4000 and K=1000, KS requires 4M operations while band depth
+requires 16M. The difference is modest but noticeable. Modified band depth
+(also from López-Pintado & Romo) reduces this while preserving the ranking
+properties.
+
+**Implementation effort:** Moderate. Requires implementing band depth
+computation (or using an existing implementation) and plugging it into the
+retention step. The envelope construction is unchanged.
+
+### G.4 Conformal prediction bands
+
+**Idea:** Use split conformal inference to construct ROC confidence bands with
+finite-sample coverage guarantees, bypassing the bootstrap entirely.
+
+**Construction:**
+1. Split data into a "fit" set and a "calibration" set
+2. Compute the empirical ROC R_hat from the fit set
+3. Compute the empirical ROC R_cal from the calibration set
+4. Compute the studentized deviation: Z_cal = sup_t |(R_cal(t) - R_hat(t)) / sigma_hat(t)|
+5. Set the band width such that it would cover R_cal
+
+By exchangeability, R_cal and R_true are "equally likely" deviations from
+R_hat (up to finite-sample effects). So the band calibrated to cover R_cal
+also covers R_true with the same probability.
+
+**Advantage:** Finite-sample coverage guarantee without bootstrap consistency
+assumptions. No bootstrap conservatism, no boundary problem (the calibration
+set's ROC has the same boundary structure as the true ROC).
+
+**Disadvantage:** Splitting the data reduces effective sample size. With n=100,
+a 50/50 split gives n_fit=50 and n_cal=50, each with wider ROC uncertainty
+than the full sample. Cross-conformal (Vovk 2015) or jackknife+ (Barber et al.
+2021) can mitigate this.
+
+**Reference:** Lei & Wasserman (2014), "Distribution-Free Prediction Bands for
+Non-parametric Regression," provides the closest existing framework.
+
+**Implementation effort:** Moderate-high. Requires new infrastructure for data
+splitting and calibration, but the ROC computation and evaluation code can be
+reused.
+
+### G.5 Near-boundary improvement via finite-difference slopes
+
+**Idea:** Address the near-boundary zone (where the bootstrap has some variance
+but underestimates the threshold-uncertainty component) without density
+estimation.
+
+The Hsieh-Turnbull variance has two components:
+
+    Var(R(t)) = R(t)(1-R(t))/n_1 + [g(c)/f(c)]² * t(1-t)/n_0
+
+Wilson captures only the first component. The second requires the density
+ratio g(c)/f(c), which equals the ROC slope R'(t). Instead of estimating
+densities, estimate the slope directly from finite differences of the
+empirical ROC:
+
+    slope(t) ≈ (R_hat(t + delta) - R_hat(t - delta)) / (2 * delta)
+
+Then construct an approximate HT variance:
+
+    var_approx(t) = R(t)(1-R(t))/n_1 + slope(t)² * t(1-t)/n_0
+
+This is crude but captures the right scaling: the threshold-uncertainty
+component is large where the ROC is steep (high AUC, low FPR) and small
+where it's flat. The resulting variance could serve as a second floor --
+above Wilson, below the bootstrap in the interior -- specifically targeting
+the near-boundary zone where the variance-ratio approach currently has a gap.
+
+**Advantage:** No density estimation, no log-concavity assumption, no
+hyperparameters. Just finite differences of the empirical ROC.
+
+**Risk:** Finite differences of a step function are noisy. Smoothing (e.g.,
+Harrell-Davis estimation of the ROC, or local polynomial smoothing) would be
+needed to get stable slope estimates, reintroducing a bandwidth parameter.
+Alternatively, the Harrell-Davis ROC estimator already implemented in the
+codebase provides smooth ROC curves whose derivatives are analytically
+available.
+
+### G.6 Priority and independence
+
+These directions are largely independent and can be explored in parallel:
+
+| Direction | Addresses | Effort | Independent of |
+|---|---|---|---|
+| G.1 Variance-model band | 50% CI, tunability | Low | G.2, G.3 |
+| G.2 Multiplier bootstrap | Calibration bias | Moderate | G.1, G.3, G.5 |
+| G.3 Band depth ranking | Band tightness | Moderate | G.1, G.2 |
+| G.4 Conformal bands | Formal guarantees | Moderate-high | All others |
+| G.5 Finite-difference slopes | Near-boundary zone | Low | G.1, G.2, G.3 |
+
+G.1 and G.5 are the lowest-effort, highest-expected-value changes. G.2 is
+the most theoretically motivated improvement to the bootstrap mechanism
+itself. G.3 and G.4 are more exploratory but connect to mature literatures
+with potential for substantial improvements.
+
+### Key references
+
+- Kosorok (2008), *Introduction to Empirical Processes and Semiparametric
+  Inference* -- multiplier bootstrap theory for empirical processes
+- Sun & Genton (2011), "Functional Boxplots" -- band depth applied to
+  functional central regions, closest existing work to the envelope bootstrap
+- López-Pintado & Romo (2009), "On the Concept of Depth for Functional Data"
+  -- band depth theory and computation
+- Hall & Horowitz (2013), "A Simple Bootstrap Method for Constructing
+  Nonparametric Confidence Bands for Functions" -- conditions for bootstrap
+  band coverage, convergence rates
+- Lei & Wasserman (2014), "Distribution-Free Prediction Bands for
+  Non-parametric Regression" -- conformal approach to function-valued bands
+- Barber et al. (2021), "Predictive Inference with the Jackknife+" --
+  improved conformal prediction without data splitting
+
+---
+
+*Report generated 2026-04-28, updated 2026-04-28. Based on code review of 5 method implementations, simulation specification, and 2,254,000 evaluations across 7 DGPs, 6 sample sizes, and 23 method variants.*
