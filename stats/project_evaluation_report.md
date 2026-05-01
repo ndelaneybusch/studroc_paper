@@ -340,7 +340,7 @@ The `HT_log_concave_logit_autocalib_wilson` method has the best overall calibrat
 
 ### E.2 Walls
 
-1. **Sup-norm-based simultaneous bands have weak sensitivity to alpha.** The critical value ratio c_{0.95}/c_{0.50} for a supremum statistic over many correlated grid points is inherently modest (~1.3-1.5x). This means the 50% band is only modestly narrower than the 95% band, regardless of the construction method (envelope, studentized band, etc.). Combined with finite-sample bootstrap conservatism, this makes the 50% band substantially over-conservative in practice. The over-coverage diminishes with n but remains noticeable for the sample sizes where the method is most useful. This is not specific to the envelope operator -- it affects any method that determines simultaneous coverage via a sup-norm critical value.
+1. **Sup-norm-based simultaneous bands have weak sensitivity to alpha.** The critical value ratio c_{0.95}/c_{0.50} for a supremum statistic over many correlated grid points is inherently modest (~1.3-1.5x). This means the 50% band is only modestly narrower than the 95% band, regardless of the construction method (envelope, studentized band, etc.). Combined with finite-sample bootstrap conservatism, this makes the 50% band substantially over-conservative in practice. The over-coverage diminishes with n but remains noticeable for the sample sizes where the method is most useful. This is not specific to the envelope operator -- it affects any method that determines simultaneous coverage via a sup-norm critical value. **Confirmed empirically (G.1):** A variance-model band (R_hat ± c*sigma_hat, no envelope operator) was implemented and tested. It does not improve 50% CI calibration relative to the envelope, and in most scenarios makes it worse, because the same sup-norm mechanism governs c for both methods. The weak sensitivity to alpha is a property of the supremum statistic itself, not of the envelope construction.
 
 2. **The large-n coverage gap has no clean fix within the current framework.** The near-boundary zone (k = 15-50) is where the bootstrap has *some* variance but not enough. Options:
    - **Raise k_min:** Shifts the wall but makes the Wilson floor cover more of the curve, reducing the bootstrap's contribution. At k_min = 50, the Wilson floor covers ~10% of the grid at n=500 -- this starts to defeat the purpose.
@@ -369,9 +369,9 @@ The `HT_log_concave_logit_autocalib_wilson` method has the best overall calibrat
 
 **Wilson's always-positive width (from Wilson Rectangle).** The Wilson score interval guarantees non-zero width at p=0 and p=1. This is the key property that makes the boundary correction work. Any future method should use Wilson (not Wald) intervals whenever binomial proportions appear.
 
-**Bootstrap calibration of the critical value (from HT-autocalib).** Instead of relying on asymptotic theory or Bonferroni correction to determine the simultaneous critical value, generate bootstrap replicates of the test process and find the empirical quantile. This is strictly better than analytical corrections because it respects the actual correlation structure of the ROC curve. The implementation in `hsieh_turnbull_band.py` is clean: generate bootstrap ROCs, compute the sup-statistic, take the (1-alpha)-quantile. This idea is portable to any variance-based method.
+**Bootstrap calibration of the critical value (from HT-autocalib).** Instead of relying on asymptotic theory or Bonferroni correction to determine the simultaneous critical value, generate bootstrap replicates of the test process and find the empirical quantile. This respects the actual correlation structure of the ROC curve. The implementation in `hsieh_turnbull_band.py` is clean: generate bootstrap ROCs, compute the sup-statistic, take the (1-alpha)-quantile. **Important caveat (from G.1 findings):** This idea is *not* straightforwardly portable to any variance-based method. It works well with HT because the HT variance is a smooth analytical function of t -- every bootstrap replicate is studentized against the same stable denominator. When studentizing against pointwise bootstrap variance instead (which is noisy, varying across bootstrap replicates and grid points), the supremum selects grid points with accidentally low variance, inflating c_alpha and producing over-conservative bands. Bootstrap calibration requires a smooth variance estimate to be effective.
 
-**Adaptive variance from the bootstrap (from envelope_boot).** The bootstrap variance at each FPR grid point captures both the binomial and threshold-uncertainty components of ROC variance, adapts to the actual shape of the score distributions, and makes no parametric assumptions. In the interior of the ROC, this is the best variance estimate available.
+**Adaptive variance from the bootstrap (from envelope_boot).** The bootstrap variance at each FPR grid point captures both the binomial and threshold-uncertainty components of ROC variance, adapts to the actual shape of the score distributions, and makes no parametric assumptions. In the interior of the ROC, this is the best variance estimate available. However, it is noisy at each grid point (sampling variance from B replicates), and this noise interacts badly with supremum-based calibration (see caveat under bootstrap calibration above). Its strength is as an input to the *envelope operator*, which tolerates pointwise noise because it takes min/max of retained curves rather than studentizing against variance.
 
 **Sidak correction for tail points (from envelope_boot).** When applying separate corrections at K_tail points, using alpha_tail = 1 - (1-alpha)^{1/K_tail} is exact for independent tests and conservative for dependent ones. This is better than Bonferroni (alpha/K) and appropriate for the tail region where tests are approximately independent (they depend on disjoint sets of observations).
 
@@ -381,7 +381,7 @@ The `HT_log_concave_logit_autocalib_wilson` method has the best overall calibrat
 
 **Hsieh-Turnbull variance as a variance floor in the near-boundary zone.** The current method uses Wilson variance (binomial component only) as a floor. The HT variance captures both components but requires density estimation. In the near-boundary zone (k = 15-50), there are enough observations for rough density estimation. Using HT variance as a floor in this zone -- falling back to Wilson in the true tails -- could close the large-n coverage gap. This is the most promising unexplored direction.
 
-**Bootstrap-calibrated Wilson bands.** The Wilson Rectangle method with Sidak correction achieves 0.911 coverage and is the tightest method with >= 90% coverage. Its main weakness is the lack of true simultaneity control. What if you used bootstrap calibration (as in HT-autocalib) to determine the critical value z, but applied it to Wilson intervals instead of HT intervals? This would combine Wilson's always-positive-width property with bootstrap-calibrated simultaneity. Unlike the envelope approach, this would be smoothly tunable across confidence levels because it uses a single critical value, not an envelope operator.
+**Bootstrap-calibrated Wilson bands.** The Wilson Rectangle method with Sidak correction achieves 0.911 coverage and is the tightest method with >= 90% coverage. Its main weakness is the lack of true simultaneity control. What if you used bootstrap calibration (as in HT-autocalib) to determine the critical value z, but applied it to Wilson intervals instead of HT intervals? This would combine Wilson's always-positive-width property with bootstrap-calibrated simultaneity. **Caveat from G.1:** The Wilson variance is a smooth function of t (it depends only on the empirical TPR and n_pos, not on pointwise bootstrap samples), so it would *not* suffer from the noisy-variance problem that sank the variance-model band. This idea remains viable and may be the most promising path to improved alpha tunability, since it pairs a smooth variance with bootstrap-calibrated simultaneity.
 
 **Smooth variance blending across regions.** Instead of a hard cutoff between Wilson-corrected and uncorrected regions, define a weight function w(k) that transitions smoothly from 1 (Wilson dominates) to 0 (bootstrap dominates) as the effective count k increases past k_min. The blended variance sigma^2_blend(t) = w(k) * sigma^2_Wilson(t) + (1-w(k)) * sigma^2_boot(t) would eliminate the hard boundary between regions and might close the near-boundary gap. The weight function could be data-driven (e.g., based on the ratio of Wilson to bootstrap variance) or parametric (e.g., logistic in k with inflection at k_min).
 
@@ -391,7 +391,9 @@ The `HT_log_concave_logit_autocalib_wilson` method has the best overall calibrat
 
 The most important lesson from this project is that **no single uncertainty quantification strategy works everywhere on the ROC curve**. The bootstrap works in the interior but fails at the boundary. Wilson works at the boundary but is too simple for the interior. HT captures both variance components but requires density estimation that fails in the tails and under model misspecification.
 
-The envelope_wilson method succeeds because it is a hybrid: bootstrap in the interior, Wilson at the boundary. The next generation of improvement should extend this hybrid architecture to three regions (Wilson at the boundary, HT in the near-boundary zone, bootstrap in the interior) and consider whether the envelope operator is the right way to combine retained curves, or whether a pointwise quantile approach with bootstrap-calibrated simultaneity correction would be better.
+The envelope_wilson method succeeds because it is a hybrid: bootstrap in the interior, Wilson at the boundary. The next generation of improvement should extend this hybrid architecture to three regions (Wilson at the boundary, HT in the near-boundary zone, bootstrap in the interior).
+
+The G.1 experiment (variance-model band) tested whether the envelope operator could be replaced with a pointwise variance-model approach using bootstrap-calibrated simultaneity. The answer is no -- not with pointwise bootstrap variance, which is too noisy for supremum-based calibration. The envelope operator has an underappreciated robustness property: it tolerates noisy variance estimates because it operates on retained curves directly rather than studentizing against a variance function. Replacing it requires a *smooth* variance estimate (like HT's analytical variance), not just a different band construction.
 
 The "ugly band-aids" feeling is real but misleading. The Wilson floor is not a band-aid -- it is the correct response to a structural limitation of the nonparametric bootstrap. The method is a hybrid *by necessity*, not by accident. The question is not whether to hybrid, but how to do it more gracefully.
 
@@ -416,7 +418,7 @@ The "ugly band-aids" feeling is real but misleading. The Wilson floor is not a b
 
 ## G. Future Directions
 
-### G.1 Variance-model band with bootstrap calibration (Priority 1)
+### G.1 Variance-model band with bootstrap calibration — implemented and tested
 
 **Idea:** Replace the envelope operator with a variance-model band, keeping
 the bootstrap for both variance estimation and critical value calibration.
@@ -430,33 +432,127 @@ the bootstrap for both variance estimation and critical value calibration.
 4. Find c_alpha = (1-alpha)-quantile of {Z_b}
 5. Construct band: R_hat(t) ± c_alpha * sigma_hat(t)
 
-This is *not* the envelope of retained curves -- it is a symmetric (in
-studentized space) band scaled by a single critical value. It combines:
+Implementation: `variance_model_band.py`, with both probability-space and
+logit-space variants, Wilson floor toggle, and the same signature conventions
+as `envelope_bootstrap_band`.
 
-- **Bootstrap variance** (nonparametric, adaptive) from the envelope approach
-- **Bootstrap calibration** (respects correlation structure) from HT-autocalib
-- **Wilson floor** (boundary correction) from the current approach
-- **Smooth tunability** across confidence levels (band width proportional to c,
-  which varies continuously with alpha)
+**Result: negative.** The variance-model band is consistently more
+over-conservative than `envelope_wilson`, with wider bands and calibration
+further from nominal at both 95% and 50% levels. Selected results from 500
+simulations per scenario (gap = coverage - nominal; closer to 0 is better):
 
-**Why this addresses the 50% CI problem:** The band width is c * sigma(t). The
-critical value c changes smoothly from c_{0.50} to c_{0.95} -- there is no
-envelope operator, no extreme-value insensitivity. The 50% band is genuinely
-narrower than the 95% band by a factor determined by the bootstrap's own
-calibration of the supremum statistic.
+| Scenario            | envelope_wilson gap@95 | varmodel gap@95 | envelope_wilson gap@50 | varmodel gap@50 |
+|---------------------|------------------------|-----------------|------------------------|-----------------|
+| Gaussian, n=10k     | +0.022                 | +0.028          | +0.278                 | +0.238          |
+| High AUC, n=2k      | +0.032                 | +0.048          | +0.446                 | +0.378          |
+| Student-t(3), n=600 | +0.012                 | +0.036          | +0.106                 | +0.186          |
+| Gaussian, n=300     | -0.060                 | +0.030          | +0.182                 | +0.218          |
 
-**Risk:** The band is symmetric around R_hat in studentized space, losing the
-envelope's natural asymmetry. Near TPR boundaries, the band wastes width in
-the bounded direction. A logit-space construction (building the band on the
-logit scale and back-transforming via sigmoid) would handle this, since sigmoid
-automatically respects [0, 1] and produces asymmetric bands in probability
-space.
+The varmodel is further from nominal in 6 of 8 cells. The one scenario where
+the envelope is anti-conservative (n=300, -0.060 gap at 95%), the varmodel
+overcorrects to +0.030 rather than landing near zero. Its bands are 20-50%
+wider (higher mean area) with no compensating calibration benefit.
 
-**Implementation effort:** Low. All components already exist in the codebase:
-bootstrap variance (envelope_boot.py), Wilson floor (just implemented),
-bootstrap supremum calibration (hsieh_turnbull_band.py lines 400-460),
-bootstrap grid generation (bootstrap_grid.py). The new method is essentially
-wiring these together differently.
+The logit-space variant (`use_logit=True`) is far worse: massively
+over-conservative, with band areas 3-20x larger than the probability-space
+version. The Haldane-Anscombe correction inflates logit-space variance at
+boundary points so aggressively that the entire construction is dominated by
+the floor.
+
+**Root cause: noisy variance + supremum interaction.** The bootstrap variance
+sigma²_boot(t) is estimated pointwise from B replicates and is therefore noisy
+across the FPR grid. The studentized supremum Z_b = sup_t |dev_b(t)/sigma(t)|
+is dominated by whichever grid point has the worst ratio. Points with
+accidentally low variance estimates produce spuriously large studentized
+deviations, and the supremum selects these. Over many bootstrap replicates,
+this max-over-noise effect systematically inflates c_alpha.
+
+This explains why HT-autocalib succeeds where the variance-model band fails.
+HT uses a smooth, analytical variance function -- the same sigma(t) for every
+bootstrap replicate, with no pointwise sampling noise. The supremum of the
+studentized process has the correct distribution because the denominator is
+stable. The success of bootstrap calibration depends not on the calibration
+mechanism itself (both methods use sup-norm quantiles) but on the *smoothness*
+of the variance estimate being studentized against.
+
+**Violation geography shifts.** Spatial analysis of violations reveals that
+the two methods fail in different regions:
+
+- `envelope_wilson` violations concentrate in the **low-FPR tail**
+  (FPR < 0.05), where the Wilson floor is *not* active -- the near-boundary
+  gap identified in Section B.8.
+- `varmodel_wilson` violations concentrate in the **mid-to-high FPR
+  interior** (FPR 0.30-0.90), in the transition zone where the Wilson floor
+  fires intermittently (active in 15-50% of simulations at a given point).
+  The intermittent flooring makes the studentized statistic distribution
+  inconsistent across simulations, further degrading calibration.
+
+**Implication for future directions.** The negative result is informative. It
+rules out the simplest version of the "replace envelope with variance model"
+idea and identifies the binding constraint: the variance estimate must be
+smooth for supremum-based calibration to work. This points toward either (a)
+smoothing the bootstrap variance before studentizing (e.g., local polynomial
+smoothing, or using HT variance as a smooth scaffold with bootstrap as a
+correction), or (b) abandoning pointwise bootstrap variance entirely in favor
+of a smooth parametric or semiparametric variance model, accepting the
+distributional assumptions that entails.
+
+The envelope operator, despite its weak alpha sensitivity, has an advantage
+that was not previously appreciated: it is *robust to noisy variance
+estimates* because it operates on retained curves directly (min/max) rather
+than studentizing against a variance function. The noise in pointwise
+bootstrap variance does not propagate into the envelope width in the same way
+-- it affects which curves are retained (via the KS statistic during
+retention), but the envelope itself is determined by the curves, not by
+variance.
+
+### G.1a Bootstrap calibration threshold for HT-autocalib
+
+The current `n_bootstraps="auto"` threshold (`n > 300`) is a magic number.
+A principled alternative emerges from treating calibration as a bias-variance
+tradeoff.
+
+The analytical critical value (Bonferroni-style z_bonf) is deterministic but
+biased (conservative, ignores correlation). The bootstrap c_alpha is
+asymptotically unbiased but has sampling variance from B replicates. Calibration
+helps when the bias of the analytical value exceeds the sampling noise of the
+bootstrap estimate.
+
+Measuring |bias|/SE(c_alpha) across 50 independent datasets per sample size
+(Gaussian DGP, B=4000, K=201):
+
+| n per class | mean c_alpha | SE(c_alpha) | z_bonf | |bias|/SE |
+|-------------|-------------|-------------|--------|----------|
+| 30          | 3.86        | 0.99        | 2.92   | 1.0      |
+| 50          | 4.38        | 1.15        | 2.92   | 1.3      |
+| 100         | 4.62        | 1.19        | 2.92   | 1.4      |
+| 150         | 4.14        | 0.55        | 2.92   | 2.2      |
+| 300         | 3.94        | 0.41        | 2.92   | 2.5      |
+| 1000        | 3.66        | 0.23        | 2.92   | 3.2      |
+| 5000        | 3.41        | 0.10        | 2.92   | 4.7      |
+
+At n=30, |bias|/SE ~ 1: calibration adds as much noise as it corrects, so it
+is approximately a wash. By n=150, |bias|/SE ~ 2: calibration reliably
+improves on Bonferroni. By n=1000+, the signal clearly dominates.
+
+Note: c_alpha is consistently *above* z_bonf (the bias is negative), meaning
+the analytical value is anti-conservative for the HT studentized process. This
+is expected: HT variance has estimation error, so the studentized process is
+heavier-tailed than Gaussian, and the bootstrap correctly captures this while
+Bonferroni assumes Gaussian.
+
+The non-monotonicity at n=50-100 (higher and more variable c_alpha than at
+n=150+) likely reflects log-concave density estimation instability at small n:
+the HT variance estimate itself becomes unreliable, inflating the studentized
+supremum.
+
+**A principled threshold** could be implemented as a split-half stability
+check: divide the B bootstrap replicates into two halves, compute c_alpha on
+each, and compare the half-sample difference to the gap between c_alpha and
+z_bonf. If |c_alpha - z_bonf| >> |c_half1 - c_half2|, calibration is adding
+signal; otherwise, fall back to the analytical value. This is data-adaptive
+and avoids a fixed sample-size cutoff. It has not yet been implemented or
+tested.
 
 ### G.2 Multiplier bootstrap (Priority 2)
 
@@ -613,18 +709,26 @@ available.
 
 These directions are largely independent and can be explored in parallel:
 
-| Direction | Addresses | Effort | Independent of |
-|---|---|---|---|
-| G.1 Variance-model band | 50% CI, tunability | Low | G.2, G.3 |
-| G.2 Multiplier bootstrap | Calibration bias | Moderate | G.1, G.3, G.5 |
-| G.3 Band depth ranking | Band tightness | Moderate | G.1, G.2 |
-| G.4 Conformal bands | Formal guarantees | Moderate-high | All others |
-| G.5 Finite-difference slopes | Near-boundary zone | Low | G.1, G.2, G.3 |
+| Direction | Addresses | Effort | Status | Independent of |
+|---|---|---|---|---|
+| G.1 Variance-model band | 50% CI, tunability | Low | **Done — negative result** | G.2, G.3 |
+| G.1a Calibration threshold | HT-autocalib robustness | Low | Characterized, not implemented | G.2, G.3 |
+| G.2 Multiplier bootstrap | Calibration bias | Moderate | Open | G.1, G.3, G.5 |
+| G.3 Band depth ranking | Band tightness | Moderate | Open | G.1, G.2 |
+| G.4 Conformal bands | Formal guarantees | Moderate-high | Open | All others |
+| G.5 Finite-difference slopes | Near-boundary zone | Low | Open | G.1, G.2, G.3 |
 
-G.1 and G.5 are the lowest-effort, highest-expected-value changes. G.2 is
-the most theoretically motivated improvement to the bootstrap mechanism
-itself. G.3 and G.4 are more exploratory but connect to mature literatures
-with potential for substantial improvements.
+G.1's negative result eliminates the simplest path to improved alpha
+tunability and narrows the remaining options. The key lesson -- that bootstrap
+calibration requires a smooth variance estimate -- constrains G.2 and G.5:
+any variance improvement must produce a smooth function of t, not a noisy
+pointwise estimate.
+
+G.5 (finite-difference slopes) and G.2 (multiplier bootstrap) are now the
+highest-priority open directions. G.5 could provide the smooth variance
+estimate that G.1 lacked, and G.2 addresses the step-function conservatism
+orthogonally. G.1a is a small, self-contained improvement to the existing
+HT-autocalib method.
 
 ### Key references
 
@@ -644,4 +748,4 @@ with potential for substantial improvements.
 
 ---
 
-*Report generated 2026-04-28, updated 2026-04-28. Based on code review of 5 method implementations, simulation specification, and 2,254,000 evaluations across 7 DGPs, 6 sample sizes, and 23 method variants.*
+*Report generated 2026-04-28, updated 2026-05-01. Based on code review of 5 method implementations, simulation specification, 2,254,000 evaluations across 7 DGPs, 6 sample sizes, and 23 method variants, plus targeted simulations of the variance-model band (G.1) across 4 scenarios at 500 simulations each.*
