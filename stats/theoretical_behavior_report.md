@@ -2,10 +2,28 @@
 
 This report provides a theoretical account of the expected behavior of
 `envelope_wilson` — the studentized bootstrap envelope SCB for ROC curves with
-adaptive Wilson variance floor — across confidence levels, sample sizes, AUC
-ranges, and distributional assumptions. It draws on the method specification
+adaptive Wilson variance floor and exact Beta order-statistic floor — across
+confidence levels, sample sizes, AUC ranges, and distributional assumptions. It draws on the method specification
 (`nonparam_envelope.md`), implementation (`envelope_boot.py`), and the simulation
 study (`method_recommendation_report.md`, 2,254,000 evaluations across 7 DGPs).
+
+**Revision note (2026-06-09):** Updated to reflect the June 2026 follow-up
+experiments documented in `project_evaluation_report.md` (sections D.8, D.9):
+the paired old/new implementation comparison, the Monte Carlo variance
+decomposition at low-FPR grid points, and the failure-point microscopy. The
+main corrections: the failure zone is the first few grid points (k = 1–10),
+not k = 15–50; the binding mechanism there is one-sided bootstrap support
+collapse plus upward bias of the empirical ROC, not symmetric variance
+underestimation; the n=1000 coverage figure of 0.950 was a prevalence-pooling
+artifact (0.915 at prevalence 50%); and the Wilson floor's success region (the
+TPR plateau) is disjoint from the failure region (the steep low-FPR corner).
+
+**Revision note (2026-06-10):** The exact Beta order-statistic floor is now
+integrated into `envelope_boot.py` as part of `boundary_method="wilson"`. It
+repairs the first-k fragile zone described in §5.2: on the problem-domain
+strata that previously under-covered, coverage rises to 0.95–0.99 and >5pp
+misses vanish (§3.4, §5.4). Coverage figures quoted from the stored 2.25M
+simulation suite describe the band *without* this floor.
 
 ---
 
@@ -15,16 +33,31 @@ The method constructs simultaneous confidence bands by:
 
 1. **Bootstrapping**: Generate B stratified bootstrap ROC curves.
 2. **Studentizing**: Normalize each bootstrap curve's pointwise deviation from
-   the empirical ROC by the bootstrap standard deviation at each FPR grid point.
+   the empirical ROC by the bootstrap standard deviation at each FPR grid point
+   (floored by the Wilson variance to keep studentization stable).
 3. **Retaining**: Keep the (1−α) fraction of curves with the smallest
    supremum studentized deviation (KS statistic).
 4. **Enveloping**: Take the pointwise min/max of retained curves.
-5. **Wilson floor**: In tail regions where bootstrap variance collapses, apply
-   Šidák-corrected Wilson Rectangle bounds as a floor.
+5. **Wilson floor**: Where the bootstrap variance falls below the Wilson
+   variance (deficiency `max(0, 1 − σ²_boot/σ²_Wilson) > 0`), apply
+   Šidák-corrected Wilson Rectangle bounds as a floor on both band sides,
+   with the Šidák strength set by the continuous effective dimensionality
+   K_eff = Σ deficiency; then enforce band monotonicity. (The earlier
+   implementation used fixed count cutoffs k < 15, m < 10 and applied the
+   floor one-sided per tail; a 1,400-case paired comparison shows the two
+   are behaviorally equivalent — see §3.1 and `project_evaluation_report.md`
+   D.8.)
+6. **Beta order-statistic floor**: Floor the lower band at extreme FPR using
+   the exact, distribution-free law of the true FPR at the j-th largest
+   negative score, F̄(X₍ⱼ₎) ~ Beta(j, n₀+1−j), for j = 1..25, each event
+   paired with a one-sided Wilson bound on the empirical TPR at that order
+   statistic (per-event alpha = α/50). Vacuous below the first Beta quantile
+   (≈ 7/n₀); jurisdiction ends ≈ 43/n₀ (§3.4).
 
-The method is a **hybrid** of two distinct uncertainty quantification
-strategies: a bootstrap envelope in the interior of the ROC curve, and a
-parametric (binomial) correction in the tails. Understanding its behavior
+The method is a **hybrid** of three distinct uncertainty quantification
+strategies: a bootstrap envelope in the interior of the ROC curve, a
+parametric (binomial) correction at the TPR plateau, and an exact
+order-statistic bound at the steep low-FPR corner. Understanding its behavior
 requires analyzing each component and their interaction.
 
 ---
@@ -51,9 +84,25 @@ nonparametric bootstrap. No resampling scheme that draws from the empirical
 distribution can represent uncertainty about probability mass in unobserved
 regions of score space.
 
-The symmetric problem occurs at FPR near 1: TPR approaches 1, few negatives
-remain below threshold, and the bootstrap cannot represent uncertainty about the
-upper-right corner of the ROC.
+**The collapse is one-sided at the first grid points, not total.** Measured
+against Monte Carlo ground truth on violating high-AUC cases at n = 10,000
+(`project_evaluation_report.md` D.9): at k = 1–3 the pointwise bootstrap sd is
+roughly correct (0.6–1.0× truth), but the bootstrap deviation distribution is
+asymmetric. The resampled maximum negative can never exceed the observed
+maximum, so bootstrap curves deviate freely *upward* (when extreme negatives
+are dropped from the resample) but barely *downward*. The lower envelope arm
+reaches only ~0.8–1.4 sd below the empirical curve at k = 1–3, versus ~3.5 sd
+in the interior, while the upper arm stays at ~2.6–2.8 sd. A symmetric
+variance summary cannot detect this — the variance looks healthy while the
+lower tail of the deviation distribution is missing.
+
+A formally analogous problem occurs at FPR near 1, but its *consequence* is
+different: there the ROC sits on its TPR plateau (TPR ≈ 1 for both estimate
+and truth over a wide FPR range), the slope is ~0 so threshold error converts
+to ~zero vertical error, and binomial TPR uncertainty is the complete
+uncertainty model. That corner is fully repairable with a binomial (Wilson)
+floor; the steep low-FPR corner is not (§3.2) — it requires the
+order-statistic floor of §3.4.
 
 ### 2.2 Consequence for the envelope
 
@@ -69,6 +118,14 @@ produce a data realization where R_true deviates from R̂ at one or more
 collapsed-variance grid points. The base studentized bootstrap envelope is not a
 valid simultaneous confidence band, at any sample size.
 
+The geography of the bare envelope's failures is informative: at n = 10,000,
+`envelope_standard` violates in the FPR 90–100% region in 55% of simulations
+and in 70–90% in 9%, versus 17% in 0–10%. The TPR plateau — where every
+bootstrap resample gives TPR ≈ 1 and the envelope width is exactly zero — is
+the dominant failure of the *uncorrected* method. The Wilson floor eliminates
+it almost entirely (90–100% rate drops to 0.6%), which is why the floored
+method's residual failures are concentrated at the opposite (steep) corner.
+
 ---
 
 ## 3. The Wilson Floor: Mechanism and Scaling
@@ -77,17 +134,39 @@ valid simultaneous confidence band, at any sample size.
 
 The implementation applies Wilson-based corrections at two stages:
 
-**Stage 1 — Variance floor during studentization** (lines 548–558 of
-`envelope_boot.py`): The bootstrap variance is floored to at least the Wilson
-score variance σ²_Wilson(p) = [p(1−p)/n₁ + z²/(4n₁²)] / (1 + z²/n₁)². This
-prevents studentized statistics from blowing up at zero-variance points,
-ensuring the KS retention criterion is well-behaved everywhere.
+**Stage 1 — Variance floor during studentization**: The bootstrap variance is
+floored to at least the Wilson score variance
+σ²_Wilson(p) = [p(1−p)/n₁ + z²/(4n₁²)] / (1 + z²/n₁)². This prevents
+studentized statistics from blowing up at zero-variance points, ensuring the KS
+retention criterion is well-behaved everywhere.
 
-**Stage 2 — Wilson Rectangle tail floor** (lines 636–646): After envelope
-construction, the band is widened in *tail regions* using Šidák-corrected Wilson
-Rectangle bounds. Tail regions are defined as grid points where effective counts
-fall below fixed thresholds: k < k_min_lower (default 15) negatives above the
-classification threshold, or m < m_min (default 10) positives.
+**Stage 2 — Wilson Rectangle floor on the envelope**: After envelope
+construction, Šidák-corrected Wilson Rectangle bounds are applied as a floor.
+The two generations of the implementation differ here, in instructive ways:
+
+- *Hard-cutoff version* (behind the stored simulation suite): tail regions
+  defined by fixed effective-count thresholds (k < 15 negatives above
+  threshold, or m < 10 positives), with the floor applied **one-sided per
+  tail** — in the lower tail (FPR ≈ 0) only the *upper* bound is raised; in
+  the upper tail (FPR ≈ 1) only the *lower* bound is dropped. The implicit
+  assumption is mirror symmetry: that the (0,0) corner pin protects the lower
+  band near the origin the way the (1,1) pin protects the upper band near the
+  end.
+- *Variance-ratio version* (current code): deficiency weights
+  `max(0, 1 − σ²_boot/σ²_Wilson)` decide where the floor applies, the Šidák
+  correction strength uses the continuous effective dimensionality
+  K_eff = Σ deficiency, and the floor is applied to **both** band sides at
+  deficient points, followed by monotonicity enforcement.
+
+**The two versions are behaviorally equivalent** (1,400-case paired comparison
+on identical data and bootstrap matrices: coverage within 0.3pp in every
+n × AUC stratum, 4/1400 discordant outcomes). The equivalence has a precise
+mechanism: at the points where coverage actually fails (k = 1–3, mid-range TPR
+on a steep curve), the bootstrap variance *exceeds* the Wilson variance by a
+factor of 10–60, so the variance-ratio gate never fires there; and the
+hard-cutoff version's gate did fire (k < 15) but only raised the upper bound.
+Either way, the lower band at the failure points is the bare envelope arm —
+verified bit-identical between versions at k = 1–25 on violating cases.
 
 ### 3.2 Why the floor is restricted to the tails
 
@@ -104,6 +183,16 @@ points requiring joint coverage, the per-point significance is
 α_tail = 1 − (1−α)^{1/K_tail}. Fewer tail points means milder correction and
 tighter bands.
 
+**The yardstick caveat.** "Where the binomial model undercuts the bootstrap"
+and "where coverage fails" turn out to be different places. Measured against
+Monte Carlo truth at the failure points (steep curve, k = 1–5): the Wilson sd
+is only 0.1–0.3 of the true sd (the slope term dominates and Wilson omits it),
+while the bootstrap sd is 0.5–1.3× truth. The binomial floor is therefore the
+*complete* variance model at the TPR plateau (slope ≈ 0) and the wrong
+yardstick — by a factor of 3–6 in sd — at the steep corner. This single fact
+explains both why the floor works so well at the upper-right corner and why no
+Wilson-referenced gate can engage where the method actually fails.
+
 ### 3.3 Scaling behavior with n
 
 The tail region is defined by *fixed* count thresholds (k_min = 15, m_min = 10).
@@ -119,7 +208,59 @@ As n grows:
 
 This means the Wilson correction provides comprehensive coverage at small n
 but vanishes at large n. The method's overall coverage trajectory is a direct
-consequence of this scaling.
+consequence of this scaling — with one refinement from the follow-up
+experiments: what disengages at large n is not just the floor's *extent* but
+its *relevance*. The corrected region (where the floor binds) and the failure
+region (the first few grid points of a steep curve) become disjoint: the floor
+keeps firing at the TPR plateau, where it is no longer needed, while the
+fragile first-k points fall outside every Wilson-referenced criterion.
+
+### 3.4 The Beta order-statistic floor: an exact bound on the channel the others cannot see
+
+The Wilson corrections measure *vertical* (binomial TPR) uncertainty. At the
+first grid points of a steep curve the dominant uncertainty is *horizontal* —
+the true FPR of the operating threshold, which is an extreme order statistic
+of the negatives — and no vertical-variance yardstick can detect or repair
+it (§3.2). The integrated Beta floor carries this channel directly, using
+the one exact, finite-sample, distribution-free law available in the
+problem: for continuous scores, the true FPR exceedance at the j-th largest
+negative score is F̄(X₍ⱼ₎) ~ Beta(j, n₀+1−j), regardless of the score
+distribution (probability integral transform).
+
+The construction: let q_j be the (1−α_e) upper Beta quantile, with
+α_e = α/(2J) Bonferroni over the 2J one-sided events (J = 25). On the event
+{F̄(X₍ⱼ₎) ≤ q_j}, monotonicity of the true ROC gives, for every evaluation
+point t ≥ q_j: R_true(t) ≥ G(X₍ⱼ₎) ≥ WilsonLower(R̂(j/n₀)). The lower band
+at t is floored by the bound from the largest j with q_j ≤ t — a
+backward-looking anchor at a smaller-FPR operating point whose true FPR
+provably (whp) sits at or below t. Below q₁ (≈ 6.9/n₀ at α_e = 0.001) the
+floor is vacuous: no distribution-free lower bound exists there, and the
+band honestly reports ~0 rather than the unsupportable claims that produced
+the pre-floor violations.
+
+Theoretical properties worth noting:
+
+1. **Exactness where asymptotics fail.** The Beta law is finite-sample and
+   assumption-free (beyond continuity), so the floor's guarantee holds at
+   precisely the moving boundary points t = k/n₀ where the empirical-process
+   and bootstrap-consistency arguments break down.
+2. **One-sided by construction.** It widens only the lower arm at the steep
+   corner — the measured deficit — rather than symmetrically inflating the
+   band.
+3. **Bias-aware.** The empirical ROC's upward bias at k = 1–3 is the same
+   order-statistic geometry; anchoring at R̂(j/n₀) for larger j (a far
+   better-estimated quantity) absorbs it.
+4. **Self-deactivating; no gate.** On flat ROC segments R̂(j/n₀) ≈ R̂(t) and
+   the floor costs nothing; on steep segments it widens in proportion to the
+   realized slope. The geometry is the gate — avoiding the Wilson floor's
+   gate problem (§3.2) entirely.
+5. **Conservative under ties.** With score atoms the exceedance is
+   stochastically smaller than the Beta law, so discreteness errs safe
+   (verified down to 20 score levels).
+6. **Fixed-k jurisdiction.** Like the count-based Wilson tail, the
+   jurisdiction (k ≤ ~43) is a vanishing *fraction* of the grid as n grows —
+   but unlike the Wilson floor, that is exactly where the failures stay
+   (§5.2), so the floor and the failure set remain aligned at every n.
 
 ---
 
@@ -157,101 +298,181 @@ while the target miscoverage rate changes 10×.
 This means the envelope construction is **not smoothly tunable** across
 confidence levels. It functions as a high-confidence tool: useful near
 α = 0.05, but producing massively over-conservative bands at lower confidence
-levels. The observed 85% coverage at the 50% nominal level (when 50% is the
-target) is a direct consequence of this extreme-value scaling. No modification
-to the studentization, variance floor, or individual bootstrap curve estimation
-(e.g., Harrell-Davis smoothing) changes this property, because the issue is in
-the envelope operator itself — the pointwise min/max of a finite sample of
-whole curves.
+levels.
 
-Achieving calibrated bands at lower confidence levels would require abandoning
-the envelope in favor of pointwise quantile-based construction (e.g., the
-(α/2, 1−α/2) quantiles of bootstrap TPR at each FPR) with a simultaneous
-correction. This is effectively what the Working-Hotelling and Wilson Rectangle
-methods do, with different correction strategies. Such constructions lose the
-adaptive shape and natural asymmetry that make the envelope attractive at 95%.
+Three refinements to this account, from the follow-up experiments
+(`project_evaluation_report.md` B.4a, D.2, G.1):
+
+1. **The weak α-sensitivity is a property of sup-norm simultaneity, not of
+   the envelope operator specifically.** The critical-value ratio
+   c₀.₉₅/c₀.₅₀ for a supremum statistic over many correlated grid points is
+   inherently modest (~1.3–1.5×). The G.1 experiment replaced the envelope
+   with a variance-model band (R̂ ± c·σ̂, bootstrap-calibrated c) and 50%
+   calibration did *not* improve — in most scenarios it worsened. Abandoning
+   the envelope does not buy tunability unless the variance estimate is
+   smooth (HT-autocalib achieves tunability via a smooth analytical variance
+   and a single scalable critical value).
+
+2. **The 50% over-coverage diminishes with n** (coverage at the 50% level:
+   0.93 at n = 10 → 0.64 at n = 10,000 at prevalence 50%). It is a
+   finite-sample compound of the Wilson floor (dominant at small n),
+   bootstrap step-function conservatism, and the sup-norm effect — not a
+   fixed property.
+
+3. **The 50% failures are globally distributed**, unlike the 95% failures: at
+   α = 0.5 violations occur in every FPR region (4–6% in each interior
+   region at n = 10,000, 24% at 0–10%), and the AUC gradient reverses at
+   moderate n. The 50% problem is a global calibration problem; the 95%
+   problem is a localized boundary problem. They need different fixes.
 
 ---
 
 ## 5. Coverage Trajectory Across Sample Sizes
 
-The coverage trajectory of `envelope_wilson` at the 95% confidence level is:
+The coverage trajectory of `envelope_wilson` at the 95% confidence level,
+at prevalence 50% (balanced classes), *before* the integrated Beta floor
+(§5.4), is:
 
-| n | Coverage | Dominant mechanism |
+| n | Coverage (prev 50%) | Dominant mechanism |
 |---|----------|--------------------|
 | 10 | 1.000 | Wilson floor covers entire curve |
 | 30 | 0.991 | Wilson floor covers most of the curve |
 | 100 | 0.976 | Wilson covers tails; envelope over-conservative in interior |
 | 300 | 0.953 | Wilson covers shrinking tails; near-nominal balance |
-| 1,000 | 0.950 | Small tail correction; interior over-conservatism compensates |
-| 10,000 | 0.830 | Wilson floor negligible; base envelope under-coverage exposed |
+| 1,000 | 0.915 | Already below nominal; first-k failures emerging |
+| 10,000 | 0.830 | Floor disengaged at failure points; one-sided tail collapse exposed |
 
-### 5.1 Three-region model
+**Prevalence caveat.** Earlier summaries reported 0.950 at n = 1,000; that
+figure pooled the prevalence-10% configuration (coverage 0.985 — only 100
+positives, hence a wide Wilson floor) with the prevalence-50% configuration
+(0.915), and the average happened to land on nominal. Coverage crosses nominal
+between n = 300 and n = 1,000; there is no n = 1,000 sweet spot. A corollary:
+class imbalance makes the method *more* conservative (the floor scales with
+1/n₁), so balanced classes at large n are the risk configuration, not
+imbalance.
 
-At any sample size, the FPR grid can be partitioned into three regions with
-distinct coverage properties:
+### 5.1 Two-corner model (replacing the earlier three-region model)
 
-| Region | Definition | Bootstrap quality | Wilson floor | Coverage driver |
-|--------|-----------|-------------------|-------------|----------------|
-| **Tails** | k < k_min or m < m_min | Structurally unable to estimate variance | Active | Wilson provides calibrated width |
-| **Near-boundary** | k_min ≤ k ≲ 50 | Variance present but noisy/discrete | Inactive | Bootstrap alone; under-covers |
-| **Interior** | k ≫ 50 | Reliable; captures both binomial and density-ratio variance | Inactive | Bootstrap + projection inflation; over-covers |
+An earlier version of this analysis partitioned the grid into tails (floor
+active), a near-boundary zone (k = 15–50, hypothesized under-coverage), and
+interior. Direct measurement falsified the near-boundary localization: the
+failures live at **k = 1–10**, with the bulk at k = 1–3 (median violation FPR
+~0.00015 at n = 10,000; 87.5% of violations below FPR 0.001). The corrected
+partition:
 
-At small n, the tail region dominates → Wilson drives overall over-coverage.
-At moderate n, all three regions contribute → balanced near 95%.
-At large n, the tail region vanishes and the interior's over-conservatism cannot
-fully compensate for the near-boundary region's under-coverage.
+| Region | Definition | What dominates uncertainty | Wilson floor | Outcome |
+|--------|-----------|---------------------------|-------------|---------|
+| **TPR plateau** (upper-right) | empirical TPR ≈ 1 (and the FPR ≈ 1 corner) | Binomial TPR variance (slope ≈ 0) | Active — and the *complete* model here | Fully repaired (90–100% region violation rate 0.6%) |
+| **Steep corner, first-k points** | k = 1–10 negatives above threshold on a steep curve | Threshold location (extreme order statistics) × slope | Inert — bootstrap var ≫ Wilson var | Residual failures live here |
+| **Interior** | everything else | Both variance components, captured by bootstrap | Inactive | Over-covers slightly (projection inflation) |
 
-### 5.2 The near-boundary gap
+At small n the floor is wide relative to local sd and shields the first-k
+points; at large n the floor and the failure set decouple.
 
-The critical region is the "near-boundary" zone: grid points with effective
-counts just above the Wilson floor thresholds (k = 15–50) where the bootstrap
-has some variance but may still underestimate the true variance of R̂(t). At
-these points:
+### 5.2 The first-k fragile zone
 
-- The bootstrap variance is non-zero but driven by moderate-count combinatorics.
-- The Wilson floor is not applied (k ≥ k_min).
-- The true ROC has genuine uncertainty that the bootstrap may underrepresent.
+At the first few grid points of a steep curve, three measured effects compound
+(medians across violating high-AUC cases at n = 10,000):
 
-This gap between the Wilson floor's coverage and the bootstrap's reliability is
-the proximate cause of coverage degradation at large n. As n grows, more grid
-points enter this gap region (the tail shrinks but the near-boundary zone
-persists), accumulating opportunities for small violations.
+| k | Upward bias of R̂ (sd units) | Lower envelope arm (sd) | Upper envelope arm (sd) |
+|---|---|---|---|
+| 1 | +0.66 | 0.80 | 2.78 |
+| 3 | +0.38 | 1.40 | 2.60 |
+| 10 | +0.18 | 3.16 | 3.25 |
+| 25 | +0.10 | 3.50 | 3.40 |
 
-### 5.3 Violation magnitudes remain small
+1. **One-sided support collapse**: the lower envelope arm is ~1 sd where the
+   interior reaches ~3.5 sd (the bootstrap cannot deviate below the observed
+   extreme order statistics), while pointwise variance looks healthy.
+2. **Upward bias of the empirical ROC**: extreme-quantile geometry biases R̂
+   up by ~0.4–0.7 sd at k = 1–3; the bootstrap, centered on R̂, cannot see it.
+   Violating draws are *optimistic* draws (their empirical AUC exceeds truth).
+3. **No floor engagement**: bootstrap variance exceeds Wilson variance by
+   10–60×, so the deficiency gate reads "healthy" exactly here.
 
-Despite the coverage drop at large n, the **magnitude** of violations remains
-tiny. At n = 10,000:
+Because effects (1) and (2) are order-statistic geometry at fixed k, they do
+not shrink in sd units as n grows, while the floor's protection withdraws.
+Violations therefore become more frequent but smaller in absolute TPR with n:
+the 0–10% FPR region violation rate rises 0.8% → 15.1% from n = 30 to
+n = 10,000 while the median violation magnitude falls ~5pp → ~0.5pp.
 
-- Mean max violation: ~0.002 (0.2 percentage points of TPR)
+The Beta order-statistic floor (§3.4) targets exactly this zone: all three
+effects are manifestations of extreme-order-statistic geometry, which the
+floor bounds exactly rather than approximately.
+
+### 5.3 Violation magnitudes are small on average — with a high-AUC caveat
+
+At n = 10,000:
+
+- Mean max violation: ~0.002 (0.2 percentage points of TPR); median among
+  violators ~0.5pp, with 66% of violations under 1pp
 - P99 max violation: ~0.046
-- Violations concentrate in the first ~5% of FPR (fig3)
+- Violations concentrate below FPR ≈ 0.001 — the first one to five grid
+  points (fig3 shows the coarser 0–10% binning)
 
-This is because violations occur at near-boundary points where:
-- The true ROC deviation from R̂ is O(1/√n) (sampling variability)
-- The band has non-zero but insufficient width
-- The shortfall is a fraction of the already-small deviation
+The "technical failure" framing — R_true escapes by amounts too small to
+matter — is accurate *on average* but must be qualified by AUC. In the
+AUC > 0.95 stratum, violations exceeding 5pp of TPR occur in 4.0% of cases at
+n = 300, 5.3% at n = 1,000, and 7.1% at n = 10,000, and the worst stored miss
+is 0.668. For high-AUC applications where decisions ride on low-FPR operating
+points, these are precisely the cases that matter.
 
-The method fails *technically* (R_true escapes the band) but not *practically*
-(by amounts far smaller than any clinical or operational decision threshold).
+### 5.4 Coverage with the integrated Beta floor
+
+Measured on 1,400 problem-domain cases (4 DGP families × n ∈ {1000, 10000}
+× high/low AUC, prevalence 50% — the strata where the pre-floor band fails),
+comparing the band with and without the integrated floor on identical data
+and bootstrap matrices:
+
+| Stratum | Without Beta floor | With Beta floor | Area ratio |
+|---|---|---|---|
+| n=1000, AUC ≤ 0.9 | 0.948 | 0.988 | 1.020 |
+| n=1000, AUC > 0.9 | 0.843 | 0.990 | 1.106 |
+| n=10000, AUC ≤ 0.9 | 0.813 | 0.953 | 1.003 |
+| n=10000, AUC > 0.9 | 0.767 | 0.977 | 1.020 |
+
+The floor fixes ~85% of violations (75/84 at n=1000, 105/126 at n=10000)
+while breaking zero covered cases; the >5pp violation rate in the high-AUC
+stratum drops from 7.25%/3.67% to 0.0%. Remaining violations sit at median
+grid index k ≈ 100–220, outside any tail jurisdiction — the separate, milder
+interior-calibration residue. Two qualifications: (i) the floored band
+slightly overshoots nominal (0.95–0.99 vs 0.95) because the floor's alpha is
+bolted on rather than folded into the band's budget; (ii) the informativeness
+cost is real and concentrated below FPR ≈ 43/n₀ on the lower side only — in
+particular the lower band is honestly ~0 below FPR ≈ 7/n₀, where the
+pre-floor band's nonzero claims were never supportable.
+
+**Band attribution** (mean % of x-axis grid points whose final bound each
+mechanism strictly set): the Beta floor governs 7.5–8.1% of the lower band
+at n=1000 and 0.8% at n=10000 (its fixed-k jurisdiction as a fraction of the
+grid); the Wilson rectangle owns the TPR plateau (67% of the lower band at
+high-AUC n=1000, 45% at high-AUC n=10000); the bootstrap envelope sets the
+rest of the lower band and ≥95% of the upper band. The three mechanisms
+barely overlap — each carries the uncertainty channel the others cannot see,
+which is the quantitative form of the hybrid argument in §1.
 
 ---
 
 ## 6. Dependence on AUC
 
-Coverage degrades more at high AUC (fig5: ~75% coverage at AUC ≈ 1.0 vs ~90%
-at AUC ≈ 0.6 for n = 10,000). This is expected from the tail mechanism:
+Coverage degrades monotonically in AUC: at n = 10,000, coverage by AUC bin is
+0.907 / 0.838 / 0.772 / 0.759 / 0.742 across (0.5–0.7 / 0.7–0.8 / 0.8–0.9 /
+0.9–0.95 / 0.95–1.0). This is expected from the first-k mechanism:
 
-At high AUC, the ROC curve rises steeply at low FPR — most of the
-discriminative information is concentrated in the boundary region where the
-bootstrap tail problem is worst. The true ROC at FPR = 0.01 may have TPR = 0.8,
-while the empirical ROC is a step function that jumps discretely. The gap
-between the smooth true curve and the step-function empirical is largest
-precisely where the bootstrap has least power.
+At high AUC, the ROC curve rises steeply at low FPR, so the slope term
+(g/f)² · t(1−t)/n₀ dominates the local variance and the threshold-location
+error at the first grid points converts into large vertical misses. At low
+AUC, the curve is flat near the origin, R̂(t_hi) ≈ R̂(t) for nearby FPR values,
+and the first-k effects cost little.
 
-At low AUC, the ROC curve rises gradually, and most uncertainty is in the
-interior where the bootstrap works well. The boundary region contributes little
-to the overall coverage.
+The precise risk factor is the **early slope**, not the AUC number itself.
+Within-DGP point-biserial correlations of violation with true AUC at
+n = 10,000 are +0.19 to +0.27 for five of seven DGP families; the exceptions
+(hetero_gaussian +0.02, weibull +0.05) are families whose high-AUC
+parameterizations produce comparatively shallow early slopes. A related
+curiosity: within student_t, heavier tails (lower df) are slightly *safer*,
+plausibly because heavy-tailed negatives place observations deeper into the
+extreme tail, extending the bootstrap's support exactly where it matters.
 
 ---
 
@@ -334,39 +555,65 @@ Not suitable without distributional verification.
 
 ### Where the method is well-calibrated
 
-- **95% CI, n = 30–1,000**: Coverage 0.950–0.991 across all DGPs tested.
-  This is the method's sweet spot and covers the majority of practical ROC
-  analyses.
-- **All DGPs**: Coverage varies by at most 5pp across 7 tested distributions
-  at any fixed sample size (fig1).
-- **Low-to-moderate AUC (< 0.85)**: Coverage is ≥93% at all sample sizes
-  tested.
+- **95% CI, n ≈ 100–500 per class**: Coverage 0.953–0.976 at prevalence 50%.
+  This is the method's sweet spot. At n = 1,000 (prevalence 50%) coverage is
+  already 0.915; the previously reported 0.950 at n = 1,000 was a
+  prevalence-pooling artifact.
+- **All DGPs**: Coverage varies by at most ~6pp across 7 tested distributions
+  at any fixed sample size (fig1). Distribution family is second-order; ROC
+  geometry (early slope) is first-order.
+- **Class imbalance**: Coverage improves as prevalence departs from 50%
+  (fewer positives → wider Wilson floor). Imbalance is not a risk factor.
 
 ### Where the method is over-conservative
 
 - **Small n (≤ 30)**: Coverage is 99–100% because the Wilson floor dominates.
   Bands are wider than necessary.
-- **50% CI at any n**: Coverage is ~85% (vs 50% target) because the envelope
-  operator is insensitive to the retention fraction. The method is not
-  designed for, and should not be used at, low confidence levels.
+- **50% CI**: Coverage is far above the 50% target (0.93 at n = 10,
+  diminishing to 0.64 at n = 10,000). The cause is a compound of the Wilson
+  floor, bootstrap step-function conservatism, and the sup-norm's weak
+  sensitivity to α — the last of which affects any sup-norm-calibrated
+  simultaneous band, not just the envelope (confirmed by the G.1
+  variance-model experiment). The method is not designed for, and should not
+  be used at, low confidence levels.
 
-### Where the method under-covers
+### Where the method under-covered before the Beta floor
 
-- **Large n (≥ 10,000)**: Coverage drops to ~83% as the Wilson tail correction
-  vanishes. Violations are small in magnitude (~0.2pp) and concentrated in
-  the low-FPR region.
-- **High AUC + large n**: The worst case. At n = 10,000 and AUC > 0.95,
-  coverage may drop to ~75%. The ROC's steep rise at low FPR concentrates
-  uncertainty in the bootstrap's weakest region.
+- **Moderate-to-large n with balanced classes**: 0.915 at n = 1,000 and 0.830
+  at n = 10,000 (prevalence 50%). Violations were lower-bound (~10:1),
+  concentrated at the first few grid points (k = 1–10 negatives above
+  threshold), and small on average (~0.5pp median at n = 10,000).
+- **High AUC**: Monotone degradation, visible from n = 100 up. At n = 10,000
+  and AUC > 0.95, coverage was ~0.74. The steep early slope makes the
+  threshold-location uncertainty at the first grid points large in TPR units,
+  and neither the bootstrap (one-sided support collapse, upward-biased
+  center) nor the Wilson floor (wrong yardstick: binomial-only variance,
+  3–6× too small in sd there) addresses it.
 
-### Graceful degradation
+The integrated Beta order-statistic floor (§3.4) repairs this regime: on the
+problem-domain strata, coverage rises to 0.95–0.99 and the >5pp violation
+rate drops to zero (§5.4). The price is paid where it is owed — the lower
+band is vacuous below FPR ≈ 7/n₀ (no distribution-free bound exists there)
+and weakened up to FPR ≈ 43/n₀ — plus a mild overshoot of nominal pending
+joint alpha calibration. The misses that remain even with the floor (2–5% of
+cases at n = 10,000) live at interior grid points k ≈ 50–500 and are the
+milder global-calibration phenomenon, not the boundary mechanism.
 
-In all observed failure modes, violation magnitudes remain small:
-- Mean max violation never exceeds 0.003 (0.3pp of TPR) at any sample size.
-- P99 max violation is ≤0.046 across all settings.
-- Only 0.69% of simulations produce any violation exceeding 5pp.
+### Degradation profile
 
-The method does not fail catastrophically. When coverage is lost, it is lost by
-tiny amounts in a small region of the ROC curve — a qualitatively different
-failure mode from parametric methods, which can miss the true ROC by tens of
-percentage points under model misspecification.
+Before the Beta floor, typical failures were small and localized: mean max
+violation ≤ 0.003 at every sample size, P99 ≤ 0.046, and only 0.69% of
+simulations exceeded 5pp overall. But the average concealed the high-AUC
+stratum: for AUC > 0.95, the >5pp rate was 4.0% / 5.3% / 7.1% at
+n = 300 / 1,000 / 10,000, with a worst stored miss of 0.668 of TPR.
+
+With the floor integrated, the conditional summary collapses to a simpler
+one: violations that remain are tiny and interior (median worst point at
+k ≈ 100–220), the catastrophic high-AUC low-FPR misses are eliminated
+(0% > 5pp on the problem domains), and the method's honest limitation is
+informativeness rather than validity — it declines to certify a lower bound
+below FPR ≈ 7/n₀, because no nonparametric method can. Applications needing
+guarantees at lower FPR must size n₀ accordingly. Remaining qualifications:
+the floored band has been validated on the problem-domain strata (4 DGP
+families, n ∈ {1000, 10000}); the full 7-DGP suite evaluation and folding
+the floor's alpha into the band's overall budget are outstanding.
