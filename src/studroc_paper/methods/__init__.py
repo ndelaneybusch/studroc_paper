@@ -2,7 +2,11 @@
 
 from .bp_smoothed_boot import BernsteinCDF, ExactBPROC, bp_smoothed_bootstrap_band
 from .ellipse_envelope import ellipse_envelope_band
-from .envelope_boot import envelope_bootstrap_band
+from .envelope_boot import (
+    envelope_band_suite,
+    envelope_bootstrap_band,
+    wilson_beta_band,
+)
 from .hsieh_turnbull_band import hsieh_turnbull_band
 from .ks_band import fixed_width_ks_band
 from .max_modulus_boot import logit_bootstrap_band
@@ -16,7 +20,9 @@ __all__ = [
     "ExactBPROC",
     "bp_smoothed_bootstrap_band",
     "ellipse_envelope_band",
+    "envelope_band_suite",
     "envelope_bootstrap_band",
+    "wilson_beta_band",
     "fixed_width_ks_band",
     "hsieh_turnbull_band",
     "logit_bootstrap_band",

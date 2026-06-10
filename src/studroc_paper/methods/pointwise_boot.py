@@ -1,5 +1,7 @@
 """Pointwise Bootstrap Confidence Bands using PyTorch."""
 
+from typing import Literal
+
 import numpy as np
 import torch
 from numpy.typing import NDArray
@@ -7,9 +9,14 @@ from torch import Tensor
 
 from .method_utils import numpy_to_torch, torch_to_numpy
 
+CorrectionMethod = Literal["none", "sidak"]
+
 
 def pointwise_bootstrap_band(
-    boot_tpr_matrix: NDArray | Tensor, fpr_grid: NDArray | Tensor, alpha: float = 0.05
+    boot_tpr_matrix: NDArray | Tensor,
+    fpr_grid: NDArray | Tensor,
+    alpha: float = 0.05,
+    correction: CorrectionMethod = "none",
 ) -> tuple[NDArray, NDArray, NDArray]:
     """Compute Pointwise Bootstrap Confidence Bands.
 
@@ -18,6 +25,15 @@ def pointwise_bootstrap_band(
                          Contains TPR values interpolated at fpr_grid points.
         fpr_grid: (F,) array of FPR values corresponding to columns.
         alpha: Significance level.
+        correction: Multiple comparisons correction across grid points.
+            - "none": Pointwise (1-alpha) intervals at each grid point. Joint
+              coverage of the whole curve is far below 1-alpha.
+            - "sidak": Per-point level alpha' = 1 - (1-alpha)^(1/m), where m is
+              the number of interior grid points (the two pinned endpoints are
+              excluded). Note that for large m the required quantiles exceed
+              the resolution of B bootstrap replicates, in which case the band
+              degrades to the min/max envelope of all replicates.
+            Defaults to "none".
 
     Returns:
         Tuple of (fpr_grid, lower_envelope, upper_envelope) as numpy arrays.
@@ -36,10 +52,16 @@ def pointwise_bootstrap_band(
     boot_tpr = numpy_to_torch(boot_tpr_matrix, device).float()
     fpr = numpy_to_torch(fpr_grid, device).float()
 
+    if correction == "sidak":
+        m = max(boot_tpr.shape[1] - 2, 1)
+        alpha_point = 1.0 - (1.0 - alpha) ** (1.0 / m)
+    else:
+        alpha_point = alpha
+
     # Calculate quantiles column-wise (dim 0)
     # torch.quantile uses [0, 1] range, not [0, 100]
-    lower_q = alpha / 2.0
-    upper_q = 1.0 - alpha / 2.0
+    lower_q = alpha_point / 2.0
+    upper_q = 1.0 - alpha_point / 2.0
 
     lower_envelope = torch.quantile(boot_tpr, lower_q, dim=0)
     upper_envelope = torch.quantile(boot_tpr, upper_q, dim=0)

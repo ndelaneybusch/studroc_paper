@@ -12,7 +12,6 @@ from dataclasses import dataclass, field
 
 import numpy as np
 from scipy import stats
-from scipy.optimize import brentq
 from scipy.special import betainc, betaincinv
 
 # =============================================================================
@@ -221,20 +220,14 @@ def make_beta_opposing_skew_dgp(alpha: float = 2, beta: float = 5) -> DGP:
         return scores_pos, scores_neg
 
     def true_roc(fpr):
-        fpr = np.asarray(fpr)
-        tpr = np.zeros_like(fpr, dtype=float)
+        fpr = np.asarray(fpr, dtype=float)
+        tpr = np.zeros_like(fpr)
 
-        for i, f in enumerate(fpr.flat):
-            if f <= 0:
-                tpr.flat[i] = 0.0
-            elif f >= 1:
-                tpr.flat[i] = 1.0
-            else:
-                # Threshold where FPR = f
-                # 1 - I_t(α, β) = f => I_t(α, β) = 1 - f
-                t = betaincinv(alpha, beta, 1 - f)
-                # TPR at this threshold
-                tpr.flat[i] = 1 - betainc(beta, alpha, t)
+        interior = (fpr > 0) & (fpr < 1)
+        # Threshold where FPR = f: 1 - I_t(α, β) = f => I_t(α, β) = 1 - f
+        t = betaincinv(alpha, beta, 1 - fpr[interior])
+        tpr[interior] = 1 - betainc(beta, alpha, t)
+        tpr[fpr >= 1] = 1.0
 
         return tpr
 
@@ -434,25 +427,14 @@ def make_gamma_dgp(
         return scores_pos, scores_neg
 
     def true_roc(fpr):
-        fpr = np.asarray(fpr)
-        tpr = np.zeros_like(fpr, dtype=float)
+        fpr = np.asarray(fpr, dtype=float)
+        tpr = np.zeros_like(fpr)
 
-        # Numerical bounds for threshold search
-        t_min = min(neg_dist.ppf(1e-10), pos_dist.ppf(1e-10))
-        t_max = max(neg_dist.ppf(1 - 1e-10), pos_dist.ppf(1 - 1e-10))
-
-        for i, f in enumerate(fpr.flat):
-            if f <= 0:
-                tpr.flat[i] = 0.0
-            elif f >= 1:
-                tpr.flat[i] = 1.0
-            else:
-                # Find t such that 1 - F_neg(t) = f
-                try:
-                    t = brentq(lambda t: (1 - neg_dist.cdf(t)) - f, t_min, t_max)
-                    tpr.flat[i] = 1 - pos_dist.cdf(t)
-                except ValueError:
-                    tpr.flat[i] = np.nan
+        interior = (fpr > 0) & (fpr < 1)
+        # Threshold where 1 - F_neg(t) = f, via the inverse survival function
+        thresholds = neg_dist.isf(fpr[interior])
+        tpr[interior] = pos_dist.sf(thresholds)
+        tpr[fpr >= 1] = 1.0
 
         return tpr
 
@@ -582,31 +564,33 @@ def make_gaussian_mixture_dgp(
         return scores_pos, scores_neg
 
     def true_roc(fpr):
-        fpr = np.asarray(fpr)
-        tpr = np.zeros_like(fpr, dtype=float)
+        fpr = np.asarray(fpr, dtype=float)
+        tpr = np.zeros_like(fpr)
 
-        # Determine search bounds
+        # Determine search bounds wide enough that SF_neg spans (almost) (0, 1)
         all_means = np.concatenate([neg_means, pos_means])
         all_stds = np.concatenate([neg_stds, pos_stds])
-        t_min = all_means.min() - 5 * all_stds.max()
-        t_max = all_means.max() + 5 * all_stds.max()
+        t_min = all_means.min() - 9 * all_stds.max()
+        t_max = all_means.max() + 9 * all_stds.max()
 
-        for i, f in enumerate(fpr.flat):
-            if f <= 0:
-                tpr.flat[i] = 0.0
-            elif f >= 1:
-                tpr.flat[i] = 1.0
-            else:
-                # Find t such that SF_neg(t) = f
-                try:
-                    t = brentq(
-                        lambda t: mixture_sf(t, neg_means, neg_stds, neg_weights) - f,
-                        t_min,
-                        t_max,
-                    )
-                    tpr.flat[i] = mixture_sf(t, pos_means, pos_stds, pos_weights)
-                except ValueError:
-                    tpr.flat[i] = np.nan
+        interior = (fpr > 0) & (fpr < 1)
+        f = fpr[interior]
+
+        # Vectorized bisection for t such that SF_neg(t) = f.
+        # SF_neg is strictly decreasing, so each step halves the bracket;
+        # 64 iterations reduce the bracket far below float64 resolution.
+        lo = np.full_like(f, t_min)
+        hi = np.full_like(f, t_max)
+        for _ in range(64):
+            mid = 0.5 * (lo + hi)
+            sf_mid = mixture_sf(mid, neg_means, neg_stds, neg_weights)
+            go_right = sf_mid > f
+            lo = np.where(go_right, mid, lo)
+            hi = np.where(go_right, hi, mid)
+        thresholds = 0.5 * (lo + hi)
+
+        tpr[interior] = mixture_sf(thresholds, pos_means, pos_stds, pos_weights)
+        tpr[fpr >= 1] = 1.0
 
         return tpr
 

@@ -133,6 +133,28 @@ class TestHeteroGaussianParams:
         assert np.abs(computed_auc - auc) < 1e-3
 
 
+class TestBinormalParams:
+    """Test strictly binormal (equal variance) mapping."""
+
+    @pytest.mark.parametrize(
+        "auc",
+        [0.55, 0.7, 0.9, 0.99],
+        ids=["near_chance", "moderate", "high", "extreme"],
+    )
+    def test_achieves_target_auc(self, auc):
+        """Verify binormal mapping produces correct AUC with equal variances."""
+        params = map_lhs_to_dgp("binormal", {"auc": np.array([auc])})
+
+        assert params["sigma_neg"] == 1.0
+        assert params["sigma_pos"] == 1.0
+
+        # Equal-variance binormal: AUC = Φ(d' / √2) exactly
+        d_prime = params["delta_mu"][0]
+        computed_auc = stats.norm.cdf(d_prime / np.sqrt(2))
+
+        assert np.abs(computed_auc - auc) < 1e-10
+
+
 class TestExponentialParams:
     """Test exponential closed-form solution."""
 
@@ -388,6 +410,11 @@ class TestMapLhsToDgp:
             (
                 "hetero_gaussian",
                 {"auc": [0.8], "sigma_ratio": [2.0]},
+                {"delta_mu", "sigma_neg", "sigma_pos"},
+            ),
+            (
+                "binormal",
+                {"auc": [0.8]},
                 {"delta_mu", "sigma_neg", "sigma_pos"},
             ),
             ("exponential", {"auc": [0.7]}, {"neg_rate", "pos_rate"}),

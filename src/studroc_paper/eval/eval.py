@@ -93,6 +93,17 @@ class BandResult:
         violation_fpr_mean: Mean FPR of all violations in this band.
         violation_fpr_min: Minimum FPR of all violations in this band.
         violation_fpr_max: Maximum FPR of all violations in this band.
+        violation_area_above: Integrated area by which the true ROC exceeds
+            the upper band (zero where covered).
+        violation_area_below: Integrated area by which the true ROC falls
+            below the lower band (zero where covered).
+        violation_fpr_above_min: Minimum FPR with a violation above, or None.
+        violation_fpr_above_max: Maximum FPR with a violation above, or None.
+        violation_fpr_below_min: Minimum FPR with a violation below, or None.
+        violation_fpr_below_max: Maximum FPR with a violation below, or None.
+        width_at_landmarks: Band width interpolated at fixed landmark FPR
+            values, keyed by the landmark (e.g., "0.05").
+        width_by_region: Mean band width within each FPR region.
     """
 
     # Core coverage
@@ -121,6 +132,23 @@ class BandResult:
     violation_fpr_mean: float | None  # Mean FPR of violations in this band
     violation_fpr_min: float | None  # Min FPR of violations in this band
     violation_fpr_max: float | None  # Max FPR of violations in this band
+
+    # Integrated violation magnitudes (area between true ROC and the band
+    # where the band fails, in each direction)
+    violation_area_above: float = 0.0
+    violation_area_below: float = 0.0
+
+    # Direction-specific violation FPR extents
+    violation_fpr_above_min: float | None = None
+    violation_fpr_above_max: float | None = None
+    violation_fpr_below_min: float | None = None
+    violation_fpr_below_max: float | None = None
+
+    # Band width at fixed landmark FPR values (keys are landmark strings)
+    width_at_landmarks: dict = field(default_factory=dict)
+
+    # Mean band width within each FPR region
+    width_by_region: dict = field(default_factory=dict)
 
     # Violation indicators by FPR region
     # Keys: '0-10', '10-30', '30-50', '50-70', '70-90', '90-100'
@@ -197,6 +225,8 @@ class BandEvaluation:
     # Violation magnitudes
     mean_max_violation: float
     percentile_95_max_violation: float
+    mean_violation_area_above: float
+    mean_violation_area_below: float
 
     # Violation grid point statistics
     mean_proportion_grid_points_violated: float
@@ -328,13 +358,48 @@ def evaluate_single_band(
     }
 
     violation_by_region = {}
+    width_by_region = {}
     for region_name, (lo, hi) in regions.items():
         mask = (fpr_grid >= lo) & (fpr_grid < hi if hi < 1.0 else fpr_grid <= hi)
         if mask.any():
             # Any violation in this region?
             violation_by_region[region_name] = (above[mask] | below[mask]).any()
+            width_by_region[region_name] = float(np.nanmean(band_widths[mask]))
         else:
             violation_by_region[region_name] = False
+            width_by_region[region_name] = np.nan
+
+    # Band width at fixed landmark FPR values (linear interpolation between
+    # grid points; NaN widths propagate through interpolation)
+    landmark_fprs = (0.01, 0.05, 0.10, 0.25, 0.50, 0.75, 0.90)
+    landmark_widths = np.interp(landmark_fprs, fpr_grid, band_widths)
+    width_at_landmarks = {
+        f"{lm:g}": float(w) for lm, w in zip(landmark_fprs, landmark_widths)
+    }
+
+    # Integrated violation areas (NaN-aware, mirroring band_area handling)
+    def _violation_area(magnitudes: np.ndarray) -> float:
+        valid = ~np.isnan(magnitudes)
+        if valid.sum() < 2:
+            return 0.0
+        return float(np.trapezoid(magnitudes[valid], fpr_grid[valid]))
+
+    violation_area_above = _violation_area(violations_above_mag)
+    violation_area_below = _violation_area(violations_below_mag)
+
+    # Direction-specific violation FPR extents
+    violation_fpr_above_min = (
+        float(np.min(violation_fpr_above)) if violation_above else None
+    )
+    violation_fpr_above_max = (
+        float(np.max(violation_fpr_above)) if violation_above else None
+    )
+    violation_fpr_below_min = (
+        float(np.min(violation_fpr_below)) if violation_below else None
+    )
+    violation_fpr_below_max = (
+        float(np.max(violation_fpr_below)) if violation_below else None
+    )
 
     # Proportion of grid points violated (excluding boundaries)
     if data_range_mask.any():
@@ -375,6 +440,14 @@ def evaluate_single_band(
         violation_fpr_mean=violation_fpr_mean_band,
         violation_fpr_min=violation_fpr_min_band,
         violation_fpr_max=violation_fpr_max_band,
+        violation_area_above=violation_area_above,
+        violation_area_below=violation_area_below,
+        violation_fpr_above_min=violation_fpr_above_min,
+        violation_fpr_above_max=violation_fpr_above_max,
+        violation_fpr_below_min=violation_fpr_below_min,
+        violation_fpr_below_max=violation_fpr_below_max,
+        width_at_landmarks=width_at_landmarks,
+        width_by_region=width_by_region,
     )
 
 
@@ -630,6 +703,13 @@ def aggregate_band_results(
     mean_max_violation = np.nanmean(max_violations)
     percentile_95_max_violation = np.nanpercentile(max_violations, 95)
 
+    mean_violation_area_above = float(
+        np.nanmean([r.violation_area_above for r in results_list])
+    )
+    mean_violation_area_below = float(
+        np.nanmean([r.violation_area_below for r in results_list])
+    )
+
     # -------------------------------------------------------------------------
     # Violation grid point statistics
     # -------------------------------------------------------------------------
@@ -677,6 +757,8 @@ def aggregate_band_results(
         violation_fpr_distribution_below=all_violation_fpr_below,
         mean_max_violation=mean_max_violation,
         percentile_95_max_violation=percentile_95_max_violation,
+        mean_violation_area_above=mean_violation_area_above,
+        mean_violation_area_below=mean_violation_area_below,
         mean_proportion_grid_points_violated=mean_proportion_grid_points_violated,
         violation_fpr_mean=violation_fpr_mean,
         violation_fpr_min=violation_fpr_min,

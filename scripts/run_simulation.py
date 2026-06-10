@@ -5,46 +5,59 @@ ROC Confidence Band Simulation Study
 This script runs the complete simulation experiment comparing confidence band methods
 across various DGPs, sample sizes, and prevalence scenarios.
 
+Method roster:
+    Baselines: fixed-width KS (Campbell), Working-Hotelling (parametric binormal),
+    pointwise bootstrap (uncorrected and Sidak-corrected), Wilson rectangles
+    (Sidak and Bonferroni margin corrections).
+
+    Envelope family: the final studentized bootstrap envelope (Wilson variance
+    floor + gated Wilson Rectangle floor + Beta order-statistic floor), three
+    ablations (no Beta floor, no Wilson floor, no bootstrap), two symmetric-tail
+    variants (Beta floors on both tails, Wilson rectangle on both tails), and the
+    bare envelope with no floors.
+
+AUC is sampled on the probit scale (uniform in z = Phi^-1(AUC), i.e. uniform in
+binormal d'), which concentrates sampling in the high-AUC regime where tail
+behavior matters most.
+
 Usage:
     python run_simulation.py                          # Run with defaults
     python run_simulation.py --n-lhs 500 --n-sim 10  # Custom parameters
-    python run_simulation.py --dgps lognormal         # Run specific DGP only
+    python run_simulation.py --dgps binormal          # Run specific DGP only
     python run_simulation.py --help                   # Show all options
 """
 
 import argparse
 import json
-import sys
+import subprocess
+import time
 from datetime import datetime
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import scipy
+import sklearn
 import torch
 from numpy.typing import NDArray
-from sklearn.metrics import roc_auc_score, roc_curve
+from scipy.stats import norm
+from sklearn.metrics import roc_auc_score
 from tqdm import tqdm
 
 from studroc_paper.datagen.roc_to_dgp import map_lhs_to_dgp
 from studroc_paper.datagen.true_rocs import (
     make_beta_opposing_skew_dgp,
     make_bimodal_negative_dgp,
-    make_exponential_dgp,
-    make_gamma_dgp,
     make_heteroskedastic_gaussian_dgp,
     make_logitnormal_dgp,
-    make_lognormal_dgp,
     make_student_t_dgp,
     make_weibull_dgp,
 )
 from studroc_paper.eval.eval import aggregate_band_results, evaluate_single_band
-from studroc_paper.methods.ellipse_envelope import ellipse_envelope_band
-from studroc_paper.methods.envelope_boot import envelope_bootstrap_band
-from studroc_paper.methods.hsieh_turnbull_band import hsieh_turnbull_band
+from studroc_paper.methods.envelope_boot import envelope_band_suite, wilson_beta_band
 from studroc_paper.methods.ks_band import fixed_width_ks_band
-from studroc_paper.methods.max_modulus_boot import logit_bootstrap_band
 from studroc_paper.methods.pointwise_boot import pointwise_bootstrap_band
-from studroc_paper.methods.wilson_band import wilson_band, wilson_rectangle_band
+from studroc_paper.methods.wilson_band import wilson_rectangle_band
 from studroc_paper.methods.working_hotelling import working_hotelling_band
 from studroc_paper.sampling.bootstrap_grid import generate_bootstrap_grid
 from studroc_paper.sampling.lhs import iman_conover_transform, maximin_lhs
@@ -53,77 +66,122 @@ from studroc_paper.sampling.lhs import iman_conover_transform, maximin_lhs
 # Configuration
 # =============================================================================
 
+# Envelope-family variants computed jointly by envelope_band_suite
+ENVELOPE_SUITE_METHODS = [
+    "envelope",
+    "envelope_no_beta_floor",
+    "envelope_no_wilson_floor",
+    "envelope_no_floors",
+    "envelope_beta_both_tails",
+    "envelope_wilson_both_tails",
+]
+
+METHOD_NAMES = [
+    # Baselines
+    "ks",
+    "working_hotelling",
+    "pointwise",
+    "pointwise_sidak",
+    "wilson_rectangle_sidak",
+    "wilson_rectangle_bonferroni",
+    # Envelope family (final method, ablations, symmetric-tail variants)
+    *ENVELOPE_SUITE_METHODS,
+    "envelope_no_bootstrap",
+]
+
+# Band width is recorded at these FPR landmarks (must match eval.py landmarks)
+WIDTH_LANDMARKS = ("0.01", "0.05", "0.1", "0.25", "0.5", "0.75", "0.9")
+
+FPR_REGIONS = ("0-10", "10-30", "30-50", "50-70", "70-90", "90-100")
+
+# Dense FPR grid for measuring the true AUC, log-refined toward both corners
+# where high-AUC curves are steep; independent of the per-config eval grid
+TRUE_AUC_GRID = np.unique(
+    np.concatenate(
+        [
+            [0.0, 1.0],
+            np.logspace(-6, np.log10(0.5), 1500),
+            1.0 - np.logspace(-6, np.log10(0.5), 1500),
+        ]
+    )
+)
+
 
 def get_dgp_specs() -> dict:
-    """Define DGP specifications for LHS sampling."""
+    """Define DGP specifications for LHS sampling.
+
+    The "auc" dimension is sampled uniformly on the probit scale (see
+    scale_lhs_samples); bounds are stated in AUC units.
+    """
     return {
-        "lognormal": {
-            "make_dgp": make_lognormal_dgp,
-            "lhs_params": ["auc", "sigma"],
-            "lhs_bounds": [(0.55, 0.99), (0.1, 3.0)],
-            "data_floor": 0.0,
-            "data_ceil": None,
+        "binormal": {
+            "make_dgp": make_heteroskedastic_gaussian_dgp,
+            "lhs_params": ["auc"],
+            "lhs_bounds": [(0.55, 0.99)],
         },
         "logitnormal": {
             "make_dgp": make_logitnormal_dgp,
             "lhs_params": ["auc", "sigma"],
             "lhs_bounds": [(0.55, 0.99), (0.1, 3.0)],
-            "data_floor": 0.0,
-            "data_ceil": 1.0,
         },
         "hetero_gaussian": {
             "make_dgp": make_heteroskedastic_gaussian_dgp,
             "lhs_params": ["auc", "sigma_ratio"],
             "lhs_bounds": [(0.55, 0.99), (0.2, 5.0)],
-            "data_floor": None,
-            "data_ceil": None,
         },
         "beta_opposing": {
             "make_dgp": make_beta_opposing_skew_dgp,
             "lhs_params": ["auc", "alpha"],
             "lhs_bounds": [(0.55, 0.99), (0.5, 10.0)],
-            "data_floor": 0.0,
-            "data_ceil": 1.0,
         },
         "student_t": {
             "make_dgp": make_student_t_dgp,
             "lhs_params": ["auc", "df"],
             "lhs_bounds": [(0.55, 0.99), (1.1, 30.0)],
-            "data_floor": None,
-            "data_ceil": None,
         },
         "bimodal_negative": {
             "make_dgp": make_bimodal_negative_dgp,
             "lhs_params": ["auc", "mixture_weight", "mode_separation"],
             "lhs_bounds": [(0.55, 0.99), (0.1, 0.9), (0.1, 4.0)],
-            "data_floor": None,
-            "data_ceil": None,
-        },
-        "exponential": {
-            "make_dgp": make_exponential_dgp,
-            "lhs_params": ["auc", "neg_rate"],
-            "lhs_bounds": [(0.55, 0.99), (0.1, 10.0)],
-            "data_floor": 0.0,
-            "data_ceil": None,
         },
         "weibull": {
             "make_dgp": make_weibull_dgp,
             "lhs_params": ["auc", "shape"],
             "lhs_bounds": [(0.55, 0.99), (0.5, 5.0)],
-            "data_floor": 0.0,
-            "data_ceil": None,
-        },
-        "gamma": {
-            "make_dgp": make_gamma_dgp,
-            "lhs_params": ["auc", "shape"],
-            "lhs_bounds": [(0.55, 0.95), (0.5, 10.0)],
-            "data_floor": 0.0,
-            "data_ceil": None,
         },
     }
 
 
-def get_sample_size_configs():
+def scale_lhs_samples(lhs_unit: NDArray, dgp_spec: dict) -> dict[str, NDArray]:
+    """Scale unit-hypercube LHS samples to parameter bounds.
+
+    The "auc" dimension is transformed through the probit scale: the unit
+    sample is mapped uniformly onto [Phi^-1(lo), Phi^-1(hi)] and pushed back
+    through Phi. Uniform sampling in z = Phi^-1(AUC) is uniform in binormal
+    d' = sqrt(2) * z, concentrating the design in the high-AUC regime (the
+    density in AUC units is proportional to 1/phi(z), about 15x higher at
+    AUC = 0.99 than at 0.55). All other dimensions are scaled linearly.
+
+    Args:
+        lhs_unit: (n, k) LHS samples on the unit hypercube.
+        dgp_spec: DGP specification with "lhs_params" and "lhs_bounds".
+
+    Returns:
+        Mapping of parameter name to scaled sample column.
+    """
+    columns = {}
+    for i, name in enumerate(dgp_spec["lhs_params"]):
+        lo, hi = dgp_spec["lhs_bounds"][i]
+        u = lhs_unit[:, i]
+        if name == "auc":
+            z_lo, z_hi = norm.ppf(lo), norm.ppf(hi)
+            columns[name] = norm.cdf(z_lo + u * (z_hi - z_lo))
+        else:
+            columns[name] = lo + u * (hi - lo)
+    return columns
+
+
+def get_sample_size_configs() -> list[dict]:
     """Define sample size configurations (n0, n1 pairs)."""
     configs = []
 
@@ -142,7 +200,6 @@ def get_sample_size_configs():
     # Special prevalence scenarios for n=1000
     configs.extend(
         [
-            # {"n_total": 1000, "n_pos": 10, "n_neg": 990, "prevalence": 0.01},
             {"n_total": 1000, "n_pos": 100, "n_neg": 900, "prevalence": 0.10},
             {"n_total": 1000, "n_pos": 500, "n_neg": 500, "prevalence": 0.50},
         ]
@@ -156,559 +213,125 @@ def get_sample_size_configs():
 # =============================================================================
 
 
-def compute_bands_with_empirical_bootstrap(
-    y_true: NDArray,
-    y_score: NDArray,
-    boot_tpr_matrix: NDArray,
-    fpr_grid: NDArray,
-    true_tpr: NDArray,
-    alpha: float,
-) -> dict[str, dict]:
-    """Compute confidence bands requiring empirical bootstrap samples."""
-    results = {}
-
-    # envelope_standard: boundary_method="none", retention_method="ks", use_logit=False, tpr_method="empirical"
-    fpr_out, lower, upper = envelope_bootstrap_band(
-        boot_tpr_matrix=boot_tpr_matrix,
-        fpr_grid=fpr_grid,
-        y_true=y_true,
-        y_score=y_score,
-        alpha=alpha,
-        boundary_method="none",
-        retention_method="ks",
-        use_logit=False,
-        tpr_method="empirical",
-        plot=False,
-        plot_title=None,
-    )
-    results["envelope_standard"] = evaluate_single_band(
-        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-    )
-
-    # envelope_wilson: boundary_method="wilson", retention_method="ks", use_logit=False, tpr_method="empirical"
-    fpr_out, lower, upper = envelope_bootstrap_band(
-        boot_tpr_matrix=boot_tpr_matrix,
-        fpr_grid=fpr_grid,
-        y_true=y_true,
-        y_score=y_score,
-        alpha=alpha,
-        boundary_method="wilson",
-        retention_method="ks",
-        use_logit=False,
-        tpr_method="empirical",
-        plot=False,
-        plot_title=None,
-    )
-    results["envelope_wilson"] = evaluate_single_band(
-        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-    )
-
-    # envelope_wilson_symmetric: boundary_method="wilson", retention_method="symmetric", use_logit=False, tpr_method="empirical"
-    fpr_out, lower, upper = envelope_bootstrap_band(
-        boot_tpr_matrix=boot_tpr_matrix,
-        fpr_grid=fpr_grid,
-        y_true=y_true,
-        y_score=y_score,
-        alpha=alpha,
-        boundary_method="wilson",
-        retention_method="symmetric",
-        use_logit=False,
-        tpr_method="empirical",
-        plot=False,
-        plot_title=None,
-    )
-    results["envelope_wilson_symmetric"] = evaluate_single_band(
-        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-    )
-
-    # envelope_logit: boundary_method="none", retention_method="ks", use_logit=True, tpr_method="empirical"
-    fpr_out, lower, upper = envelope_bootstrap_band(
-        boot_tpr_matrix=boot_tpr_matrix,
-        fpr_grid=fpr_grid,
-        y_true=y_true,
-        y_score=y_score,
-        alpha=alpha,
-        boundary_method="none",
-        retention_method="ks",
-        use_logit=True,
-        tpr_method="empirical",
-        plot=False,
-        plot_title=None,
-    )
-    results["envelope_logit"] = evaluate_single_band(
-        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-    )
-
-    # envelope_wilson_logit: boundary_method="wilson", retention_method="ks", use_logit=True, tpr_method="empirical"
-    fpr_out, lower, upper = envelope_bootstrap_band(
-        boot_tpr_matrix=boot_tpr_matrix,
-        fpr_grid=fpr_grid,
-        y_true=y_true,
-        y_score=y_score,
-        alpha=alpha,
-        boundary_method="wilson",
-        retention_method="ks",
-        use_logit=True,
-        tpr_method="empirical",
-        plot=False,
-        plot_title=None,
-    )
-    results["envelope_wilson_logit"] = evaluate_single_band(
-        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-    )
-
-    # envelope_wilson_symmetric_logit: boundary_method="wilson", retention_method="symmetric", use_logit=True, tpr_method="empirical"
-    fpr_out, lower, upper = envelope_bootstrap_band(
-        boot_tpr_matrix=boot_tpr_matrix,
-        fpr_grid=fpr_grid,
-        y_true=y_true,
-        y_score=y_score,
-        alpha=alpha,
-        boundary_method="wilson",
-        retention_method="symmetric",
-        use_logit=True,
-        tpr_method="empirical",
-        plot=False,
-        plot_title=None,
-    )
-    results["envelope_wilson_symmetric_logit"] = evaluate_single_band(
-        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-    )
-
-    # logit_max_modulus: tpr_method="empirical"
-    fpr_out, lower, upper = logit_bootstrap_band(
-        boot_tpr_matrix=boot_tpr_matrix,
-        fpr_grid=fpr_grid,
-        y_true=y_true,
-        y_score=y_score,
-        alpha=alpha,
-        tpr_method="empirical",
-    )
-    results["logit_max_modulus"] = evaluate_single_band(
-        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-    )
-
-    # pointwise
-    fpr_out, lower, upper = pointwise_bootstrap_band(
-        boot_tpr_matrix=boot_tpr_matrix,
-        fpr_grid=fpr_grid,
-        alpha=alpha,
-    )
-    results["pointwise"] = evaluate_single_band(
-        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-    )
-
-    return results
-
-
-def compute_bands_with_harrell_davis_bootstrap(
-    y_true: NDArray,
-    y_score: NDArray,
-    boot_tpr_matrix_hd: NDArray,
-    fpr_grid: NDArray,
-    true_tpr: NDArray,
-    alpha: float,
-) -> dict[str, dict]:
-    """Compute confidence bands requiring Harrell-Davis bootstrap samples."""
-    results = {}
-
-    # envelope_hd: boundary_method="none", retention_method="ks", use_logit=False, tpr_method="harrell_davis"
-    fpr_out, lower, upper = envelope_bootstrap_band(
-        boot_tpr_matrix=boot_tpr_matrix_hd,
-        fpr_grid=fpr_grid,
-        y_true=y_true,
-        y_score=y_score,
-        alpha=alpha,
-        boundary_method="none",
-        retention_method="ks",
-        use_logit=False,
-        tpr_method="harrell_davis",
-        plot=False,
-        plot_title=None,
-    )
-    results["envelope_hd"] = evaluate_single_band(
-        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-    )
-
-    # envelope_wilson_hd: boundary_method="wilson", retention_method="ks", use_logit=False, tpr_method="harrell_davis"
-    fpr_out, lower, upper = envelope_bootstrap_band(
-        boot_tpr_matrix=boot_tpr_matrix_hd,
-        fpr_grid=fpr_grid,
-        y_true=y_true,
-        y_score=y_score,
-        alpha=alpha,
-        boundary_method="wilson",
-        retention_method="ks",
-        use_logit=False,
-        tpr_method="harrell_davis",
-        plot=False,
-        plot_title=None,
-    )
-    results["envelope_wilson_hd"] = evaluate_single_band(
-        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-    )
-
-    # envelope_logit_hd: boundary_method="none", retention_method="ks", use_logit=True, tpr_method="harrell_davis"
-    fpr_out, lower, upper = envelope_bootstrap_band(
-        boot_tpr_matrix=boot_tpr_matrix_hd,
-        fpr_grid=fpr_grid,
-        y_true=y_true,
-        y_score=y_score,
-        alpha=alpha,
-        boundary_method="none",
-        retention_method="ks",
-        use_logit=True,
-        tpr_method="harrell_davis",
-        plot=False,
-        plot_title=None,
-    )
-    results["envelope_logit_hd"] = evaluate_single_band(
-        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-    )
-
-    # envelope_wilson_logit_hd: boundary_method="wilson", retention_method="ks", use_logit=True, tpr_method="harrell_davis"
-    fpr_out, lower, upper = envelope_bootstrap_band(
-        boot_tpr_matrix=boot_tpr_matrix_hd,
-        fpr_grid=fpr_grid,
-        y_true=y_true,
-        y_score=y_score,
-        alpha=alpha,
-        boundary_method="wilson",
-        retention_method="ks",
-        use_logit=True,
-        tpr_method="harrell_davis",
-        plot=False,
-        plot_title=None,
-    )
-    results["envelope_wilson_logit_hd"] = evaluate_single_band(
-        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-    )
-
-    # logit_max_modulus_hd: tpr_method="harrell_davis"
-    fpr_out, lower, upper = logit_bootstrap_band(
-        boot_tpr_matrix=boot_tpr_matrix_hd,
-        fpr_grid=fpr_grid,
-        y_true=y_true,
-        y_score=y_score,
-        alpha=alpha,
-        tpr_method="harrell_davis",
-    )
-    results["logit_max_modulus_hd"] = evaluate_single_band(
-        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-    )
-
-    return results
-
-
 def compute_bands_without_bootstrap(
     y_true: NDArray,
     y_score: NDArray,
     fpr_grid: NDArray,
     true_tpr: NDArray,
     alpha: float,
-    data_floor: float | None = None,
-    data_ceil: float | None = None,
 ) -> dict[str, dict]:
-    """Compute confidence bands that do not require bootstrap samples."""
+    """Compute and evaluate confidence bands that do not require bootstrap samples."""
+    method_calls = {
+        "ks": (
+            fixed_width_ks_band,
+            {"y_true": y_true, "y_score": y_score, "k": len(fpr_grid), "alpha": alpha},
+        ),
+        "working_hotelling": (
+            working_hotelling_band,
+            {"y_true": y_true, "y_score": y_score, "k": len(fpr_grid), "alpha": alpha},
+        ),
+        "wilson_rectangle_sidak": (
+            wilson_rectangle_band,
+            {
+                "y_true": y_true,
+                "y_score": y_score,
+                "k": len(fpr_grid),
+                "alpha": alpha,
+                "correction": "sidak",
+                "tpr_method": "empirical",
+            },
+        ),
+        "wilson_rectangle_bonferroni": (
+            wilson_rectangle_band,
+            {
+                "y_true": y_true,
+                "y_score": y_score,
+                "k": len(fpr_grid),
+                "alpha": alpha,
+                "correction": "bonferroni",
+                "tpr_method": "empirical",
+            },
+        ),
+        "envelope_no_bootstrap": (
+            wilson_beta_band,
+            {"y_true": y_true, "y_score": y_score, "k": len(fpr_grid), "alpha": alpha},
+        ),
+    }
+
     results = {}
+    for name, (band_fn, kwargs) in method_calls.items():
+        t_start = time.perf_counter()
+        _, lower, upper = band_fn(**kwargs)
+        runtime = time.perf_counter() - t_start
+        results[name] = {
+            "band": evaluate_single_band(
+                lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
+            ),
+            "runtime_seconds": runtime,
+            "runtime_is_shared": False,
+        }
+    return results
 
-    # ellipse_envelope_sweep: envelope_method="sweep"
-    fpr_out, lower, upper = ellipse_envelope_band(
+
+def compute_bands_with_bootstrap(
+    y_true: NDArray,
+    y_score: NDArray,
+    boot_tpr_matrix,
+    fpr_grid: NDArray,
+    true_tpr: NDArray,
+    confidence_levels: list[float],
+) -> dict[float, dict[str, dict]]:
+    """Compute and evaluate bands that consume the shared bootstrap matrix.
+
+    The envelope-family variants are computed jointly by envelope_band_suite,
+    sharing the expensive studentization work across variants and alphas;
+    their recorded runtime is the suite total (flagged runtime_is_shared).
+    """
+    results: dict[float, dict[str, dict]] = {alpha: {} for alpha in confidence_levels}
+
+    for alpha in confidence_levels:
+        for name, correction in [("pointwise", "none"), ("pointwise_sidak", "sidak")]:
+            t_start = time.perf_counter()
+            _, lower, upper = pointwise_bootstrap_band(
+                boot_tpr_matrix=boot_tpr_matrix,
+                fpr_grid=fpr_grid,
+                alpha=alpha,
+                correction=correction,
+            )
+            runtime = time.perf_counter() - t_start
+            results[alpha][name] = {
+                "band": evaluate_single_band(
+                    lower_band=lower,
+                    upper_band=upper,
+                    true_tpr=true_tpr,
+                    fpr_grid=fpr_grid,
+                ),
+                "runtime_seconds": runtime,
+                "runtime_is_shared": False,
+            }
+
+    t_start = time.perf_counter()
+    suite = envelope_band_suite(
+        boot_tpr_matrix=boot_tpr_matrix,
+        fpr_grid=fpr_grid,
         y_true=y_true,
         y_score=y_score,
-        num_grid_points=len(fpr_grid),
-        alpha=alpha,
-        minimum_std=1e-8,
-        probit_clip=1e-9,
-        envelope_method="sweep",
-        num_cutoffs=1000,
-        plot=False,
-        plot_title=None,
+        alphas=confidence_levels,
     )
-    results["ellipse_envelope_sweep"] = evaluate_single_band(
-        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-    )
+    suite_runtime = time.perf_counter() - t_start
 
-    # ellipse_envelope_quartic: envelope_method="quartic"
-    fpr_out, lower, upper = ellipse_envelope_band(
-        y_true=y_true,
-        y_score=y_score,
-        num_grid_points=len(fpr_grid),
-        alpha=alpha,
-        minimum_std=1e-8,
-        probit_clip=1e-9,
-        envelope_method="quartic",
-        num_cutoffs=1000,
-        plot=False,
-        plot_title=None,
-    )
-    results["ellipse_envelope_quartic"] = evaluate_single_band(
-        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-    )
-
-    # HT_log_concave: density_method="log_concave", use_logit_transform=False, n_bootstraps=0
-    fpr_out, lower, upper = hsieh_turnbull_band(
-        y_true=y_true,
-        y_score=y_score,
-        k=len(fpr_grid),
-        alpha=alpha,
-        use_logit_transform=False,
-        density_method="log_concave",
-        n_bootstraps=0,
-        check_assumptions=False,
-        use_wilson_variance_floor=False,
-        data_floor=data_floor,
-        data_ceil=data_ceil,
-        plot=False,
-        plot_title=None,
-    )
-    results["HT_log_concave"] = evaluate_single_band(
-        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-    )
-
-    # HT_log_concave_logit: density_method="log_concave", use_logit_transform=True, n_bootstraps=0
-    fpr_out, lower, upper = hsieh_turnbull_band(
-        y_true=y_true,
-        y_score=y_score,
-        k=len(fpr_grid),
-        alpha=alpha,
-        use_logit_transform=True,
-        density_method="log_concave",
-        n_bootstraps=0,
-        check_assumptions=False,
-        use_wilson_variance_floor=False,
-        data_floor=data_floor,
-        data_ceil=data_ceil,
-        plot=False,
-        plot_title=None,
-    )
-    results["HT_log_concave_logit"] = evaluate_single_band(
-        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-    )
-
-    # HT_log_concave_logit_autocalib: density_method="log_concave", use_logit_transform=True, n_bootstraps="auto"
-    fpr_out, lower, upper = hsieh_turnbull_band(
-        y_true=y_true,
-        y_score=y_score,
-        k=len(fpr_grid),
-        alpha=alpha,
-        use_logit_transform=True,
-        density_method="log_concave",
-        n_bootstraps="auto",
-        check_assumptions=False,
-        use_wilson_variance_floor=False,
-        data_floor=data_floor,
-        data_ceil=data_ceil,
-        plot=False,
-        plot_title=None,
-    )
-    results["HT_log_concave_logit_autocalib"] = evaluate_single_band(
-        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-    )
-
-    # HT_reflected_kde_logit: density_method="reflected_kde", use_logit_transform=True, n_bootstraps=0
-    fpr_out, lower, upper = hsieh_turnbull_band(
-        y_true=y_true,
-        y_score=y_score,
-        k=len(fpr_grid),
-        alpha=alpha,
-        use_logit_transform=True,
-        density_method="reflected_kde",
-        n_bootstraps=0,
-        check_assumptions=False,
-        use_wilson_variance_floor=False,
-        data_floor=data_floor,
-        data_ceil=data_ceil,
-        plot=False,
-        plot_title=None,
-    )
-    results["HT_reflected_kde_logit"] = evaluate_single_band(
-        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-    )
-
-    # HT_reflected_kde_logit_autocalib: density_method="reflected_kde", use_logit_transform=True, n_bootstraps="auto"
-    fpr_out, lower, upper = hsieh_turnbull_band(
-        y_true=y_true,
-        y_score=y_score,
-        k=len(fpr_grid),
-        alpha=alpha,
-        use_logit_transform=True,
-        density_method="reflected_kde",
-        n_bootstraps="auto",
-        check_assumptions=False,
-        use_wilson_variance_floor=False,
-        data_floor=data_floor,
-        data_ceil=data_ceil,
-        plot=False,
-        plot_title=None,
-    )
-    results["HT_reflected_kde_logit_autocalib"] = evaluate_single_band(
-        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-    )
-
-    # HT_log_concave_logit_wilson: density_method="log_concave", use_logit_transform=True, use_wilson_variance_floor=True, n_bootstraps=0
-    fpr_out, lower, upper = hsieh_turnbull_band(
-        y_true=y_true,
-        y_score=y_score,
-        k=len(fpr_grid),
-        alpha=alpha,
-        use_logit_transform=True,
-        density_method="log_concave",
-        n_bootstraps=0,
-        check_assumptions=False,
-        use_wilson_variance_floor=True,
-        data_floor=data_floor,
-        data_ceil=data_ceil,
-        plot=False,
-        plot_title=None,
-    )
-    results["HT_log_concave_logit_wilson"] = evaluate_single_band(
-        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-    )
-
-    # HT_log_concave_logit_autocalib_wilson: density_method="log_concave", use_logit_transform=True, n_bootstraps="auto", use_wilson_variance_floor=True
-    fpr_out, lower, upper = hsieh_turnbull_band(
-        y_true=y_true,
-        y_score=y_score,
-        k=len(fpr_grid),
-        alpha=alpha,
-        use_logit_transform=True,
-        density_method="log_concave",
-        n_bootstraps="auto",
-        check_assumptions=False,
-        use_wilson_variance_floor=True,
-        data_floor=data_floor,
-        data_ceil=data_ceil,
-        plot=False,
-        plot_title=None,
-    )
-    results["HT_log_concave_logit_autocalib_wilson"] = evaluate_single_band(
-        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-    )
-
-    # ks
-    fpr_out, lower, upper = fixed_width_ks_band(
-        y_true=y_true,
-        y_score=y_score,
-        k=len(fpr_grid),
-        alpha=alpha,
-    )
-    results["ks"] = evaluate_single_band(
-        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-    )
-
-    # working_hotelling
-    fpr_out, lower, upper = working_hotelling_band(
-        y_true=y_true,
-        y_score=y_score,
-        k=len(fpr_grid),
-        alpha=alpha,
-    )
-    results["working_hotelling"] = evaluate_single_band(
-        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-    )
-
-    # wilson: harrell_davis=False
-    fpr_out, lower, upper = wilson_band(
-        y_true=y_true,
-        y_score=y_score,
-        k=len(fpr_grid),
-        alpha=alpha,
-        harrell_davis=False,
-    )
-    results["wilson"] = evaluate_single_band(
-        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-    )
-
-    # # wilson_hd: harrell_davis=True
-    # fpr_out, lower, upper = wilson_band(
-    #     y_true=y_true,
-    #     y_score=y_score,
-    #     k=len(fpr_grid),
-    #     alpha=alpha,
-    #     harrell_davis=True,
-    # )
-    # results["wilson_hd"] = evaluate_single_band(
-    #     lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-    # )
-
-    # wilson_rectangle: tpr_method="empirical", correction="none"
-    fpr_out, lower, upper = wilson_rectangle_band(
-        y_true=y_true,
-        y_score=y_score,
-        k=len(fpr_grid),
-        alpha=alpha,
-        correction="none",
-        tpr_method="empirical",
-    )
-    results["wilson_rectangle"] = evaluate_single_band(
-        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-    )
-
-    # wilson_rectangle_sidak: tpr_method="empirical", correction="sidak"
-    fpr_out, lower, upper = wilson_rectangle_band(
-        y_true=y_true,
-        y_score=y_score,
-        k=len(fpr_grid),
-        alpha=alpha,
-        correction="sidak",
-        tpr_method="empirical",
-    )
-    results["wilson_rectangle_sidak"] = evaluate_single_band(
-        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-    )
-
-    # wilson_rectangle_bonferroni: tpr_method="empirical", correction="bonferroni"
-    fpr_out, lower, upper = wilson_rectangle_band(
-        y_true=y_true,
-        y_score=y_score,
-        k=len(fpr_grid),
-        alpha=alpha,
-        correction="bonferroni",
-        tpr_method="empirical",
-    )
-    results["wilson_rectangle_bonferroni"] = evaluate_single_band(
-        lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-    )
-
-    # # wilson_rectangle_hd: tpr_method="harrell_davis", correction="none"
-    # fpr_out, lower, upper = wilson_rectangle_band(
-    #     y_true=y_true,
-    #     y_score=y_score,
-    #     k=len(fpr_grid),
-    #     alpha=alpha,
-    #     correction="none",
-    #     tpr_method="harrell_davis",
-    # )
-    # results["wilson_rectangle_hd"] = evaluate_single_band(
-    #     lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-    # )
-
-    # # wilson_rectangle_sidak_hd: tpr_method="harrell_davis", correction="sidak"
-    # fpr_out, lower, upper = wilson_rectangle_band(
-    #     y_true=y_true,
-    #     y_score=y_score,
-    #     k=len(fpr_grid),
-    #     alpha=alpha,
-    #     correction="sidak",
-    #     tpr_method="harrell_davis",
-    # )
-    # results["wilson_rectangle_sidak_hd"] = evaluate_single_band(
-    #     lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-    # )
-
-    # # wilson_rectangle_bonferroni_hd: tpr_method="harrell_davis", correction="bonferroni"
-    # fpr_out, lower, upper = wilson_rectangle_band(
-    #     y_true=y_true,
-    #     y_score=y_score,
-    #     k=len(fpr_grid),
-    #     alpha=alpha,
-    #     correction="bonferroni",
-    #     tpr_method="harrell_davis",
-    # )
-    # results["wilson_rectangle_bonferroni_hd"] = evaluate_single_band(
-    #     lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-    # )
+    for alpha, variants in suite.items():
+        for name, (lower, upper) in variants.items():
+            results[alpha][name] = {
+                "band": evaluate_single_band(
+                    lower_band=lower,
+                    upper_band=upper,
+                    true_tpr=true_tpr,
+                    fpr_grid=fpr_grid,
+                ),
+                "runtime_seconds": suite_runtime,
+                "runtime_is_shared": True,
+            }
 
     return results
 
@@ -720,129 +343,86 @@ def compute_bands_without_bootstrap(
 
 def run_single_simulation(
     dgp,
-    n_pos,
-    n_neg,
-    confidence_levels,
-    fpr_grid,
-    rng,
+    n_pos: int,
+    n_neg: int,
+    confidence_levels: list[float],
+    fpr_grid: NDArray,
+    true_tpr: NDArray,
+    rng: np.random.Generator,
     dtype,
-    B,
-    data_floor=None,
-    data_ceil=None,
-):
+    B: int,
+) -> dict:
     """
     Run a single simulation: generate data, compute CIs, evaluate.
 
     Returns:
-        dict: Results keyed by (method_name, confidence_level)
+        dict: Results keyed by confidence level, plus "auc" and
+        "bootstrap_gen_seconds".
     """
+    # Seed torch from the numpy stream so bootstrap resampling is reproducible
+    torch.manual_seed(int(rng.integers(0, 2**63 - 1)))
+
     # Generate data
     scores_pos, scores_neg = dgp.sample(n_pos, n_neg, rng)
-    true_tpr = dgp.get_true_roc(fpr_grid)
 
     # Create labels and scores for sklearn-style interface
     y_true = np.concatenate([np.ones(n_pos), np.zeros(n_neg)]).astype(dtype)
     y_score = np.concatenate([scores_pos, scores_neg]).astype(dtype)
     fpr_grid = fpr_grid.astype(dtype)
 
-    # Compute ROC curve for band methods that need it
-    fpr, tpr, _ = roc_curve(y_true, y_score)
-    fpr = fpr.astype(dtype)
-    tpr = tpr.astype(dtype)
+    results = {"auc": roc_auc_score(y_true, y_score)}
 
-    # Evaluate each method at each confidence level
-    results = {
-        "fpr": fpr,
-        "tpr": tpr,
-        "true_tpr": true_tpr,
-        "auc": roc_auc_score(y_true, y_score),
-    }
+    # Generate shared bootstrap matrix (stays on the compute device; all
+    # consumers move/keep it there without copies)
+    t_start = time.perf_counter()
+    boot_tpr_matrix = generate_bootstrap_grid(
+        y_true=torch.from_numpy(y_true),
+        y_score=torch.from_numpy(y_score),
+        B=B,
+        grid=torch.from_numpy(fpr_grid),
+        device=None,
+        batch_size=500,
+        tpr_method="empirical",
+    )
+    results["bootstrap_gen_seconds"] = time.perf_counter() - t_start
 
-    # Convert to torch for bootstrap generation
-    y_true_torch = torch.from_numpy(y_true)
-    y_score_torch = torch.from_numpy(y_score)
-    fpr_grid_torch = torch.from_numpy(fpr_grid)
-
-    boot_tpr_matrix_empirical = generate_bootstrap_grid(
-            y_true=y_true_torch,
-            y_score=y_score_torch,
-            B=B,
-            grid=fpr_grid_torch,
-            device=None,
-            batch_size=500,
-            tpr_method="empirical",
-        )
+    boot_results = compute_bands_with_bootstrap(
+        y_true=y_true,
+        y_score=y_score,
+        boot_tpr_matrix=boot_tpr_matrix,
+        fpr_grid=fpr_grid,
+        true_tpr=true_tpr,
+        confidence_levels=confidence_levels,
+    )
+    del boot_tpr_matrix
 
     for alpha in confidence_levels:
-        results[alpha] = {}
-
-        # First: Compute bands that don't require bootstrap samples
-        results[alpha].update(
-            compute_bands_without_bootstrap(
-                y_true=y_true,
-                y_score=y_score,
-                fpr_grid=fpr_grid,
-                true_tpr=true_tpr,
-                alpha=alpha,
-                data_floor=data_floor,
-                data_ceil=data_ceil,
-            )
+        results[alpha] = compute_bands_without_bootstrap(
+            y_true=y_true,
+            y_score=y_score,
+            fpr_grid=fpr_grid,
+            true_tpr=true_tpr,
+            alpha=alpha,
         )
-
-        # Second: empirical bootstrap bands
-        results[alpha].update(
-            compute_bands_with_empirical_bootstrap(
-                y_true=y_true,
-                y_score=y_score,
-                boot_tpr_matrix=boot_tpr_matrix_empirical,
-                fpr_grid=fpr_grid,
-                true_tpr=true_tpr,
-                alpha=alpha,
-            )
-        )
-        
-    # # Generate Harrell-Davis bootstrap matrix
-    # del boot_tpr_matrix_empirical
-    # boot_tpr_matrix_hd = generate_bootstrap_grid(
-    #     y_true=y_true_torch,
-    #     y_score=y_score_torch,
-    #     B=B,
-    #     grid=fpr_grid_torch,
-    #     device=None,
-    #     batch_size=500,
-    #     tpr_method="harrell_davis",
-    # )
-
-    # for alpha in confidence_levels:
-    #     results[alpha].update(
-    #         compute_bands_with_harrell_davis_bootstrap(
-    #             y_true=y_true,
-    #             y_score=y_score,
-    #             boot_tpr_matrix_hd=boot_tpr_matrix_hd,
-    #             fpr_grid=fpr_grid,
-    #             true_tpr=true_tpr,
-    #             alpha=alpha,
-    #         )
-    #     )
-    # del boot_tpr_matrix_hd
+        results[alpha].update(boot_results[alpha])
 
     return results
 
 
 def run_lhs_combination(
-    lhs_idx,
-    dgp_params,
-    dgp_type,
-    dgp_spec,
-    sample_config,
-    n_sim,
-    confidence_levels,
-    fpr_grid,
-    lhs_params_dict,
-    rng,
+    lhs_idx: int,
+    dgp_params: dict,
+    dgp_type: str,
+    dgp_spec: dict,
+    sample_config: dict,
+    n_sim: int,
+    confidence_levels: list[float],
+    fpr_grid: NDArray,
+    lhs_params_dict: dict,
+    rng: np.random.Generator,
     dtype,
-    B,
-):
+    B: int,
+) -> list[dict]:
     """
     Run all simulations for a single LHS parameter combination.
 
@@ -865,9 +445,10 @@ def run_lhs_combination(
 
     dgp = dgp_spec["make_dgp"](**params_for_dgp)
 
-    # Extract data bounds from DGP spec
-    data_floor = dgp_spec.get("data_floor", None)
-    data_ceil = dgp_spec.get("data_ceil", None)
+    # The true ROC is a property of the DGP instance, not of any sample;
+    # compute it once per (LHS combination, sample size) rather than per repeat
+    true_tpr = dgp.get_true_roc(fpr_grid)
+    true_auc = float(np.trapezoid(dgp.get_true_roc(TRUE_AUC_GRID), TRUE_AUC_GRID))
 
     # Run n_sim simulations
     simulation_results = []
@@ -879,11 +460,10 @@ def run_lhs_combination(
             n_neg=sample_config["n_neg"],
             confidence_levels=confidence_levels,
             fpr_grid=fpr_grid,
+            true_tpr=true_tpr,
             rng=rng,
             B=B,
             dtype=dtype,
-            data_floor=data_floor,
-            data_ceil=data_ceil,
         )
         # Collect metadata for this simulation
         metadata = {
@@ -894,6 +474,7 @@ def run_lhs_combination(
             "n_neg": sample_config["n_neg"],
             "n_total": sample_config["n_total"],
             "prevalence": sample_config["prevalence"],
+            "true_auc": true_auc,
         }
 
         # Add LHS parameters
@@ -910,19 +491,19 @@ def run_lhs_combination(
 
 
 def run_sample_size_config(
-    sample_config,
-    dgp_type,
-    dgp_spec,
-    lhs_params_dict,
-    dgp_params,
-    n_lhs,
-    n_sim,
-    confidence_levels,
-    output_dir,
-    seed,
+    sample_config: dict,
+    dgp_type: str,
+    dgp_spec: dict,
+    lhs_params_dict: dict,
+    dgp_params: dict,
+    n_lhs: int,
+    n_sim: int,
+    confidence_levels: list[float],
+    output_dir: Path,
+    seed: int,
     dtype,
-    B,
-):
+    B: int,
+) -> None:
     """
     Run all LHS combinations for a single sample size configuration.
 
@@ -965,21 +546,22 @@ def run_sample_size_config(
         sample_config=sample_config,
         confidence_levels=confidence_levels,
         output_dir=output_dir,
+        B=B,
     )
 
 
 def run_dgp(
-    dgp_type,
-    dgp_spec,
-    sample_configs,
-    n_lhs,
-    n_sim,
-    confidence_levels,
-    output_dir,
-    seed,
+    dgp_type: str,
+    dgp_spec: dict,
+    sample_configs: list[dict],
+    n_lhs: int,
+    n_sim: int,
+    confidence_levels: list[float],
+    output_dir: Path,
+    seed: int,
     dtype,
-    B,
-):
+    B: int,
+) -> None:
     """
     Run all sample size configurations for a single DGP.
     """
@@ -997,17 +579,21 @@ def run_dgp(
         n=n_lhs, k=n_dims, method="build", dup=5, seed=rng.integers(0, 2**31)
     )
 
-    lhs_unit = iman_conover_transform(lhs_unit, target_corr=np.eye(n_dims), rng=rng)
+    # Decorrelate columns; the sample correlation matrix can be singular when
+    # the number of samples is not comfortably larger than the dimension
+    if n_dims > 1:
+        try:
+            lhs_unit = iman_conover_transform(
+                lhs_unit, target_corr=np.eye(n_dims), rng=rng
+            )
+        except np.linalg.LinAlgError:
+            print(
+                "  WARNING: Iman-Conover decorrelation skipped "
+                f"(singular correlation with n_lhs={n_lhs}, n_dims={n_dims})"
+            )
 
-    # Scale to parameter bounds
-    lower = np.array([b[0] for b in dgp_spec["lhs_bounds"]])
-    upper = np.array([b[1] for b in dgp_spec["lhs_bounds"]])
-    lhs_scaled = lower + lhs_unit * (upper - lower)
-
-    # Create parameter dictionary
-    lhs_params_dict = {
-        name: lhs_scaled[:, i] for i, name in enumerate(dgp_spec["lhs_params"])
-    }
+    # Scale to parameter bounds (AUC dimension via the probit transform)
+    lhs_params_dict = scale_lhs_samples(lhs_unit, dgp_spec)
 
     # Map to DGP parameters
     dgp_params = map_lhs_to_dgp(dgp_type, lhs_params_dict)
@@ -1063,8 +649,13 @@ def run_dgp(
 
 
 def save_results(
-    simulation_results, dgp_type, sample_config, confidence_levels, output_dir
-):
+    simulation_results: list[dict],
+    dgp_type: str,
+    sample_config: dict,
+    confidence_levels: list[float],
+    output_dir: Path,
+    B: int,
+) -> None:
     """
     Save simulation results to disk.
 
@@ -1078,48 +669,6 @@ def save_results(
 
     base_filename = f"{dgp_type}_n{n_total}_prev{prev}_{timestamp}"
 
-    # Hardcoded method names
-    method_names = [
-        "ellipse_envelope_sweep", # envelope_method="sweep"
-        "ellipse_envelope_quartic", # envelope_method="quartic"
-        # envelope_bootstrap default values:
-        # boundary_method="none", retention_method="ks",
-        # use_logit=False, tpr_method="empirical"
-        "envelope_standard",
-        "envelope_hd", # tpr_method="harrell_davis"
-        "envelope_wilson", # boundary_method="wilson"
-        "envelope_wilson_hd", # boundary_method="wilson", tpr_method="harrell_davis"
-        "envelope_wilson_symmetric", # boundary_method="wilson", retention_method="symmetric"
-        "envelope_logit", # use_logit=True
-        "envelope_logit_hd", # use_logit=True, tpr_method="harrell_davis"
-        "envelope_wilson_logit", # boundary_method="wilson", use_logit=True
-        "envelope_wilson_logit_hd", # boundary_method="wilson", use_logit=True, tpr_method="harrell_davis"
-        "envelope_wilson_symmetric_logit", # boundary_method="wilson", retention_method="symmetric", use_logit=True
-        # hsieh_turnbull default values:
-        # use_logit_transform=False, density_method="log_concave", n_bootstraps=0,
-        # check_assumptions=False, use_wilson_variance_floor=False, data_floor=None, data_ceil=None
-        "HT_log_concave", # density_method="log_concave"
-        "HT_log_concave_logit", # density_method="log_concave", use_logit_transform=True
-        "HT_log_concave_logit_autocalib", # density_method="log_concave", use_logit_transform=True, n_bootstraps="auto"
-        "HT_reflected_kde_logit", # density_method="reflected_kde", use_logit_transform=True
-        "HT_reflected_kde_logit_autocalib", # density_method="reflected_kde", use_logit_transform=True, n_bootstraps="auto"
-        "HT_log_concave_logit_wilson", # density_method="log_concave", use_logit_transform=True, use_wilson_variance_floor=True
-        "HT_log_concave_logit_autocalib_wilson", # density_method="log_concave", use_logit_transform=True, n_bootstraps="auto", use_wilson_variance_floor=True
-        "logit_max_modulus", # tpr_method="empirical"
-        "logit_max_modulus_hd", # tpr_method="harrell_davis"
-        "pointwise",
-        "ks",
-        "working_hotelling",
-        "wilson", # harrell_davis = False
-        "wilson_hd", # harrell_davis = True 
-        "wilson_rectangle", # tpr_method = "empirical", correction="none"
-        "wilson_rectangle_sidak", # tpr_method = "empirical", correction="sidak"
-        "wilson_rectangle_bonferroni", # tpr_method = "empirical", correction="bonferroni"
-        "wilson_rectangle_hd", # tpr_method = "harrell_davis", correction="none"
-        "wilson_rectangle_sidak_hd", # tpr_method = "harrell_davis", correction="sidak"
-        "wilson_rectangle_bonferroni_hd", # tpr_method = "harrell_davis", correction="bonferroni"
-    ]
-
     # Prepare individual results (long format)
     individual_records = []
 
@@ -1130,9 +679,6 @@ def save_results(
         metadata = sim_result["metadata"]
         ci_results = sim_result["ci_results"]
 
-        # Add empirical AUC to metadata
-        metadata["empirical_auc"] = ci_results.get("auc", np.nan)
-
         # Iterate over confidence levels
         for alpha in confidence_levels:
             if alpha not in ci_results:
@@ -1141,11 +687,12 @@ def save_results(
             alpha_results = ci_results[alpha]
 
             # Iterate over methods
-            for method_name in method_names:
+            for method_name in METHOD_NAMES:
                 if method_name not in alpha_results:
                     continue
 
-                band_result = alpha_results[method_name]
+                method_result = alpha_results[method_name]
+                band_result = method_result["band"]
 
                 # Add to aggregation dict
                 key = (method_name, alpha)
@@ -1154,7 +701,6 @@ def save_results(
                 results_by_method_alpha[key].append(band_result)
 
                 # Create individual record
-                # Start with all metadata to ensure unique identification
                 record = {}
 
                 # Core identifiers
@@ -1170,20 +716,28 @@ def save_results(
                 record["prevalence"] = metadata["prevalence"]
 
                 # Extract LHS parameters (columns starting with "lhs_")
-                for key, value in metadata.items():
-                    if key.startswith("lhs_"):
-                        record[key] = value
+                for key_, value in metadata.items():
+                    if key_.startswith("lhs_"):
+                        record[key_] = value
 
                 # Extract DGP parameters (columns starting with "dgp_")
-                for key, value in metadata.items():
-                    if key.startswith("dgp_"):
-                        record[key] = value
+                for key_, value in metadata.items():
+                    if key_.startswith("dgp_"):
+                        record[key_] = value
 
                 record["lhs_idx"] = metadata["lhs_idx"]
                 record["sim_idx"] = metadata["sim_idx"]
 
-                # Empirical AUC
-                record["empirical_auc"] = metadata["empirical_auc"]
+                # AUC: design target / analytic (true) and realized (empirical)
+                record["true_auc"] = metadata["true_auc"]
+                record["empirical_auc"] = ci_results.get("auc", np.nan)
+
+                # Timing
+                record["runtime_seconds"] = method_result["runtime_seconds"]
+                record["runtime_is_shared"] = method_result["runtime_is_shared"]
+                record["bootstrap_gen_seconds"] = ci_results.get(
+                    "bootstrap_gen_seconds", np.nan
+                )
 
                 # Band evaluation results
                 record["covers_entirely"] = band_result.covers_entirely
@@ -1191,8 +745,35 @@ def save_results(
                 record["violation_below"] = band_result.violation_below
                 record["max_violation_above"] = float(band_result.max_violation_above)
                 record["max_violation_below"] = float(band_result.max_violation_below)
+                record["violation_area_above"] = float(band_result.violation_area_above)
+                record["violation_area_below"] = float(band_result.violation_area_below)
                 record["band_area"] = float(band_result.band_area)
                 record["mean_band_width"] = float(band_result.band_widths.mean())
+                record["proportion_grid_points_violated"] = float(
+                    band_result.proportion_grid_points_violated
+                )
+
+                # Direction-specific violation FPR extents (None -> NaN)
+                for field_name in (
+                    "violation_fpr_above_min",
+                    "violation_fpr_above_max",
+                    "violation_fpr_below_min",
+                    "violation_fpr_below_max",
+                ):
+                    value = getattr(band_result, field_name)
+                    record[field_name] = np.nan if value is None else float(value)
+
+                # Band width at landmark FPRs
+                for landmark in WIDTH_LANDMARKS:
+                    record[f"width_at_fpr_{landmark}"] = band_result.width_at_landmarks.get(
+                        landmark, np.nan
+                    )
+
+                # Mean band width by FPR region
+                for region in FPR_REGIONS:
+                    record[f"width_region_{region}"] = band_result.width_by_region.get(
+                        region, np.nan
+                    )
 
                 # Add regional violations
                 for region, violated in band_result.violation_by_region.items():
@@ -1240,6 +821,8 @@ def save_results(
             "percentile_95_max_violation": float(
                 aggregated.percentile_95_max_violation
             ),
+            "mean_violation_area_above": float(aggregated.mean_violation_area_above),
+            "mean_violation_area_below": float(aggregated.mean_violation_area_below),
         }
 
         if method_name not in aggregated_results:
@@ -1253,6 +836,7 @@ def save_results(
         "n_pos": sample_config["n_pos"],
         "n_neg": sample_config["n_neg"],
         "prevalence": sample_config["prevalence"],
+        "bootstrap_replicates": B,
         "timestamp": timestamp,
         "n_lhs_combinations": len(
             set(r["metadata"]["lhs_idx"] for r in simulation_results)
@@ -1271,12 +855,48 @@ def save_results(
     print(f"  Saved: {json_path.name}")
 
 
+def write_run_metadata(args: argparse.Namespace, output_dir: Path) -> None:
+    """Write run-level reproducibility metadata alongside the results."""
+    try:
+        git_hash = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        git_hash = None
+
+    metadata = {
+        "timestamp": datetime.now().isoformat(),
+        "args": {k: str(v) for k, v in vars(args).items()},
+        "git_hash": git_hash,
+        "methods": METHOD_NAMES,
+        "versions": {
+            "numpy": np.__version__,
+            "scipy": scipy.__version__,
+            "sklearn": sklearn.__version__,
+            "torch": torch.__version__,
+            "pandas": pd.__version__,
+        },
+        "cuda_available": torch.cuda.is_available(),
+        "device_name": (
+            torch.cuda.get_device_name(0) if torch.cuda.is_available() else "cpu"
+        ),
+    }
+
+    path = output_dir / f"run_metadata_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    with open(path, "w") as f:
+        json.dump(metadata, f, indent=2)
+    print(f"Run metadata saved to: {path}")
+
+
 # =============================================================================
 # Main Entry Point
 # =============================================================================
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="Run ROC confidence band simulation study",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -1328,7 +948,7 @@ def main():
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path("data/results/24022026/"),
+        default=Path("data/results/final_run/"),
         help="Output directory for results",
     )
 
@@ -1343,6 +963,10 @@ def main():
 
     # Get DGP specs
     dgp_specs = get_dgp_specs()
+    if "all" in args.dgps:
+        dgp_types = list(dgp_specs.keys())
+    else:
+        dgp_types = args.dgps
 
     # Get sample size configs
     if args.sample_sizes:
@@ -1352,12 +976,6 @@ def main():
                 # Add all prevalence scenarios
                 sample_configs.extend(
                     [
-                        # {
-                        #     "n_total": 1000,
-                        #     "n_pos": 10,
-                        #     "n_neg": 990,
-                        #     "prevalence": 0.01,
-                        # },
                         {
                             "n_total": 1000,
                             "n_pos": 100,
@@ -1388,11 +1006,13 @@ def main():
     print("\n" + "=" * 60)
     print("SIMULATION CONFIGURATION")
     print("=" * 60)
+    print(f"DGPs: {dgp_types}")
     print(f"Sample size configs: {len(sample_configs)}")
     print(f"LHS combinations per DGP: {args.n_lhs}")
     print(f"Simulation repeats per combination: {args.n_sim}")
     print(f"Bootstrap replicates (envelope): {args.bootstrap_size}")
     print(f"Confidence levels (alpha): {args.confidence_levels}")
+    print(f"Methods ({len(METHOD_NAMES)}): {METHOD_NAMES}")
     print(f"Output directory: {output_dir}")
     print(f"Random seed: {args.seed}")
     print("=" * 60)
@@ -1403,18 +1023,12 @@ def main():
     else:
         print("Running on CPU (consider using GPU for faster bootstrap)")
 
+    write_run_metadata(args, output_dir)
+
     # Run simulations
     rng = np.random.default_rng(args.seed)
 
-    for dgp_type in [
-        # "gamma",
-        "student_t",
-        "logitnormal",
-        "beta_opposing",
-        "hetero_gaussian",
-        "bimodal_negative",
-        "weibull",
-    ]:
+    for dgp_type in dgp_types:
         dgp_spec = dgp_specs[dgp_type]
         run_dgp(
             dgp_type=dgp_type,

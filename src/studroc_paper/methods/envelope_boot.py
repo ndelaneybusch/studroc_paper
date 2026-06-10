@@ -14,6 +14,8 @@ The main function, envelope_bootstrap_band, computes confidence bands by:
 Key features:
 - Studentized bootstrap for improved finite-sample coverage
 - Adaptive tail floor using Wilson Rectangle bounds with Šidák correction
+- Exact Beta order-statistic floor carrying threshold-location uncertainty
+  at extreme FPR
 - KS-style boundary extension option
 - Logit-space construction option for variance stabilization
 - GPU acceleration for large bootstrap samples
@@ -21,11 +23,14 @@ Key features:
 """
 
 import math
+from collections.abc import Sequence
 from typing import Literal
 
 import numpy as np
 import torch
 from numpy.typing import NDArray
+from scipy.stats import beta as beta_dist
+from scipy.stats import norm
 from torch import Tensor
 
 from studroc_paper.viz import plot_band_diagnostics
@@ -334,6 +339,503 @@ def _apply_wilson_variance_ratio_floor(
     return lower_result, upper_result
 
 
+def _wilson_lower_one_sided(p_hat: NDArray, n: int, alpha: float) -> NDArray:
+    """Compute the one-sided Wilson score lower bound at level alpha.
+
+    Args:
+        p_hat: Observed proportions.
+        n: Number of trials.
+        alpha: One-sided significance level.
+
+    Returns:
+        Lower confidence bounds, clipped to [0, 1].
+    """
+    z = float(norm.ppf(1.0 - alpha))
+    denom = 1.0 + z * z / n
+    center = (p_hat + z * z / (2 * n)) / denom
+    halfwidth = (z / denom) * np.sqrt(
+        p_hat * (1.0 - p_hat) / n + z * z / (4 * n * n)
+    )
+    return np.clip(center - halfwidth, 0.0, 1.0)
+
+
+def _apply_beta_orderstat_floor(
+    *,
+    fpr_grid: Tensor,
+    lower_envelope: Tensor,
+    y_true: Tensor,
+    y_score: Tensor,
+    alpha: float,
+    j_max: int = 25,
+) -> Tensor:
+    """Apply the exact Beta order-statistic floor to the lower envelope.
+
+    At extreme FPR the dominant uncertainty is horizontal -- the true FPR of
+    the threshold at the j-th largest negative score -- not the binomial TPR
+    uncertainty that variance-based corrections measure. For continuous
+    scores that true FPR follows Beta(j, n_neg + 1 - j) exactly (probability
+    integral transform), independent of the score distribution.
+
+    Let q_j be the (1 - alpha_event) upper quantile of that law. On the
+    event {true FPR of the j-th largest negative <= q_j}, monotonicity of
+    the true ROC gives, for every evaluation point t >= q_j:
+
+        R_true(t) >= R_true at that threshold >= WilsonLower(TPR_hat there)
+
+    The floor at t is therefore the one-sided Wilson lower bound of the
+    empirical TPR at the largest j with q_j <= t -- a backward-looking bound
+    anchored at a smaller-FPR operating point whose true FPR provably (with
+    high probability) sits at or below t. For t < q_1 no order statistic
+    qualifies and the floor is vacuous (zero): no distribution-free lower
+    bound exists there. The alpha budget is split Bonferroni-style across
+    the 2 * j_max one-sided events (j_max Beta quantile events plus j_max
+    Wilson bounds). With ties the true exceedance is stochastically smaller
+    than the Beta law, so discrete scores err conservative.
+
+    Args:
+        fpr_grid: FPR grid values.
+        lower_envelope: Current lower envelope bound.
+        y_true: True binary labels.
+        y_score: Predicted scores.
+        alpha: Total alpha budget for the floor.
+        j_max: Number of order statistics used. The floor's jurisdiction
+            ends at the Beta upper quantile of the j_max-th order statistic
+            (roughly 1.7 * j_max / n_neg grid points).
+
+    Returns:
+        Lower envelope with the floor applied (pointwise minimum within the
+        floor's jurisdiction, unchanged elsewhere).
+    """
+    neg_scores = torch_to_numpy(y_score[y_true == 0]).astype(np.float64)
+    pos_scores = torch_to_numpy(y_score[y_true == 1]).astype(np.float64)
+    n_neg = len(neg_scores)
+    n_pos = len(pos_scores)
+    j_used = min(j_max, n_neg)
+    if j_used == 0 or n_pos == 0:
+        return lower_envelope
+
+    alpha_event = alpha / (2 * j_max)
+    js = np.arange(1, j_used + 1)
+    q_j = beta_dist.ppf(1.0 - alpha_event, js, n_neg + 1 - js)
+
+    # Wilson-lowered empirical TPR at each of the j largest negatives
+    neg_desc = np.sort(neg_scores)[::-1]
+    tpr_hat = (pos_scores[None, :] > neg_desc[:j_used, None]).mean(axis=1)
+    bounds = np.concatenate(
+        ([0.0], _wilson_lower_one_sided(tpr_hat, n_pos, alpha_event))
+    )
+
+    # Floor value at t: bound from the largest j with q_j <= t; +inf outside
+    # the jurisdiction so the pointwise minimum is a no-op there
+    fpr_np = torch_to_numpy(fpr_grid).astype(np.float64)
+    zone = (fpr_np > 0.0) & (fpr_np <= q_j[-1])
+    if not zone.any():
+        return lower_envelope
+
+    floor_np = np.full_like(fpr_np, np.inf)
+    j_star = np.searchsorted(q_j, fpr_np[zone], side="right")
+    floor_np[zone] = bounds[j_star]
+
+    floor = numpy_to_torch(floor_np, lower_envelope.device).float()
+    return torch.minimum(lower_envelope, floor)
+
+
+def _wilson_upper_one_sided(p_hat: NDArray, n: int, alpha: float) -> NDArray:
+    """Compute the one-sided Wilson score upper bound at level alpha.
+
+    Args:
+        p_hat: Observed proportions.
+        n: Number of trials.
+        alpha: One-sided significance level.
+
+    Returns:
+        Upper confidence bounds, clipped to [0, 1].
+    """
+    z = float(norm.ppf(1.0 - alpha))
+    denom = 1.0 + z * z / n
+    center = (p_hat + z * z / (2 * n)) / denom
+    halfwidth = (z / denom) * np.sqrt(
+        p_hat * (1.0 - p_hat) / n + z * z / (4 * n * n)
+    )
+    return np.clip(center + halfwidth, 0.0, 1.0)
+
+
+def _apply_beta_orderstat_floor_upper_tail(
+    *,
+    fpr_grid: Tensor,
+    lower_envelope: Tensor,
+    y_true: Tensor,
+    y_score: Tensor,
+    alpha: float,
+    j_max: int = 25,
+) -> Tensor:
+    """Apply the mirrored Beta order-statistic floor at the high-FPR tail.
+
+    Mirror image of _apply_beta_orderstat_floor under the class-swap
+    symmetry of ROC space. Anchors are the j-th smallest positive scores
+    Y_(j): the true positive-class CDF at Y_(j) follows Beta(j, n_pos+1-j)
+    exactly, so with per-event confidence the true TPR of the operating
+    point at Y_(j) is at least 1 - rho_j, where rho_j is the Beta upper
+    quantile. The true FPR of that operating point is bounded above by a
+    one-sided Wilson upper bound f_j on the empirical FPR there (n_neg
+    Bernoulli trials independent of Y_(j)). By ROC monotonicity, for every
+    evaluation point t >= f_j the true curve satisfies
+    R_true(t) >= 1 - rho_{j*} with j* the smallest j such that f_j <= t.
+
+    On the TPR plateau this lowers an over-tight lower envelope (collapsed
+    bootstrap support) to an exact, distribution-free bound, mirroring what
+    the low-FPR floor does at the steep corner. The alpha budget is split
+    Bonferroni-style across the 2 * j_max one-sided events.
+
+    Args:
+        fpr_grid: FPR grid values.
+        lower_envelope: Current lower envelope bound.
+        y_true: True binary labels.
+        y_score: Predicted scores.
+        alpha: Total alpha budget for the floor.
+        j_max: Number of positive order statistics used.
+
+    Returns:
+        Lower envelope with the floor applied (pointwise minimum within the
+        floor's jurisdiction, unchanged elsewhere).
+    """
+    neg_scores = torch_to_numpy(y_score[y_true == 0]).astype(np.float64)
+    pos_scores = torch_to_numpy(y_score[y_true == 1]).astype(np.float64)
+    n_neg = len(neg_scores)
+    n_pos = len(pos_scores)
+    j_used = min(j_max, n_pos)
+    if j_used == 0 or n_neg == 0:
+        return lower_envelope
+
+    alpha_event = alpha / (2 * j_max)
+    js = np.arange(1, j_used + 1)
+    # Certified true-TPR lower bound at the j-th smallest positive
+    rho_j = beta_dist.ppf(1.0 - alpha_event, js, n_pos + 1 - js)
+    tpr_bounds = 1.0 - rho_j
+
+    # Wilson-raised empirical FPR at each of the j smallest positives marks
+    # the start of that anchor's jurisdiction
+    pos_asc = np.sort(pos_scores)
+    fpr_hat = (neg_scores[None, :] > pos_asc[:j_used, None]).mean(axis=1)
+    f_j = _wilson_upper_one_sided(fpr_hat, n_neg, alpha_event)
+
+    fpr_np = torch_to_numpy(fpr_grid).astype(np.float64)
+    zone = (fpr_np >= f_j[-1]) & (fpr_np < 1.0)
+    if not zone.any():
+        return lower_envelope
+
+    # f_j is non-increasing in j; the best (largest) certified bound at t
+    # comes from the smallest j with f_j <= t
+    f_ascending = f_j[::-1].copy()
+    count_qualifying = np.searchsorted(f_ascending, fpr_np[zone], side="right")
+    j_star_idx = j_used - count_qualifying
+
+    floor_np = np.full_like(fpr_np, np.inf)
+    floor_np[zone] = tpr_bounds[j_star_idx]
+
+    floor = numpy_to_torch(floor_np, lower_envelope.device).float()
+    return torch.minimum(lower_envelope, floor)
+
+
+def _beta_tail_mask(
+    fpr_grid: Tensor, n_neg: int, alpha: float, j_max: int = 25
+) -> Tensor:
+    """Mark the FPR-space tail jurisdictions matching the Beta floor's reach.
+
+    The low tail is (0, q_J] where q_J is the Beta(J, n_neg+1-J) upper
+    quantile at the floor's per-event level; the high tail is its mirror
+    [1 - q_J, 1). Used to force the Wilson Rectangle floor onto both tails
+    in the symmetric-tail ablation.
+
+    Args:
+        fpr_grid: FPR grid values.
+        n_neg: Number of negative samples.
+        alpha: Total alpha budget (split as in the Beta floor).
+        j_max: Number of order statistics defining the jurisdiction.
+
+    Returns:
+        Boolean tensor marking grid points inside either tail jurisdiction.
+    """
+    j_used = min(j_max, n_neg)
+    alpha_event = alpha / (2 * j_max)
+    q_j = float(beta_dist.ppf(1.0 - alpha_event, j_used, n_neg + 1 - j_used))
+    low_tail = (fpr_grid > 0.0) & (fpr_grid <= q_j)
+    high_tail = (fpr_grid < 1.0) & (fpr_grid >= 1.0 - q_j)
+    return low_tail | high_tail
+
+
+def _studentized_ks_statistics(
+    deviations: Tensor, std_dev: Tensor, epsilon: float
+) -> Tensor:
+    """Compute per-curve maximum absolute studentized deviations.
+
+    Args:
+        deviations: (B, K) signed deviations of bootstrap curves from the
+            empirical ROC.
+        std_dev: (K,) standard deviation used for studentization.
+        epsilon: Regularizer below which variance is treated as collapsed;
+            deviations smaller than epsilon are treated as numerical noise.
+
+    Returns:
+        (B,) tensor of studentized KS statistics.
+    """
+    studentized = torch.zeros_like(deviations)
+    low_var_mask = std_dev < epsilon
+    normal_mask = ~low_var_mask
+    if normal_mask.any():
+        studentized[:, normal_mask] = (
+            deviations[:, normal_mask] / std_dev[normal_mask]
+        )
+    if low_var_mask.any():
+        low_devs = deviations[:, low_var_mask]
+        studentized[:, low_var_mask] = torch.where(
+            torch.abs(low_devs) < epsilon,
+            torch.zeros_like(low_devs),
+            low_devs / epsilon,
+        )
+    return torch.abs(studentized).max(dim=1).values
+
+
+def _ks_retention_envelope(
+    boot_tpr: Tensor, ks_statistics: Tensor, alpha: float
+) -> tuple[Tensor, Tensor]:
+    """Retain the (1-alpha) most typical curves and take their envelope.
+
+    Args:
+        boot_tpr: (B, K) bootstrap TPR curves.
+        ks_statistics: (B,) studentized KS statistic per curve.
+        alpha: Significance level.
+
+    Returns:
+        Tuple of (lower, upper) envelopes, clipped to [0, 1].
+    """
+    n_bootstrap = boot_tpr.shape[0]
+    n_retain = int(np.ceil((1 - alpha) * n_bootstrap))
+    ks_sorted = torch.sort(ks_statistics).values
+    threshold = ks_sorted[n_retain - 1] if n_retain > 0 else float("inf")
+    retained = boot_tpr[ks_statistics <= threshold]
+    lower = torch.clamp(retained.min(dim=0).values, 0.0, 1.0)
+    upper = torch.clamp(retained.max(dim=0).values, 0.0, 1.0)
+    return lower, upper
+
+
+def envelope_band_suite(
+    *,
+    boot_tpr_matrix: NDArray | Tensor,
+    fpr_grid: NDArray | Tensor,
+    y_true: NDArray | Tensor,
+    y_score: NDArray | Tensor,
+    alphas: Sequence[float],
+    tpr_method: TprMethod = "empirical",
+) -> dict[float, dict[str, tuple[NDArray, NDArray]]]:
+    """Compute the envelope band and its ablation variants with shared work.
+
+    Produces, for each alpha, the probability-space KS-retention envelope
+    in six configurations that differ only in which tail repairs are applied:
+
+    - "envelope": Wilson variance floor during studentization, variance-ratio
+      gated Wilson Rectangle floor, and the exact Beta order-statistic floor
+      on the lower band at low FPR. Identical to
+      envelope_bootstrap_band(boundary_method="wilson").
+    - "envelope_no_beta_floor": as "envelope" without the Beta floor.
+    - "envelope_no_wilson_floor": raw bootstrap variance for studentization,
+      no rectangle floor; the Beta floor alone repairs the low-FPR tail.
+    - "envelope_no_floors": raw variance, no repairs. Identical to
+      envelope_bootstrap_band(boundary_method="none").
+    - "envelope_beta_both_tails": no Wilson machinery; Beta order-statistic
+      floors applied at both tails of the lower band (negative order
+      statistics at low FPR, mirrored positive order statistics at high FPR).
+    - "envelope_wilson_both_tails": Wilson machinery only, with the
+      rectangle floor forced onto both FPR tail jurisdictions in addition
+      to the variance-ratio gate; no Beta floor.
+
+    The expensive shared quantities (bootstrap deviations, variances,
+    studentized statistics) are computed once across all variants and alphas.
+
+    Args:
+        boot_tpr_matrix: (n_bootstrap, n_grid_points) array of TPR values.
+        fpr_grid: (n_grid_points,) array of FPR values.
+        y_true: Array of true binary labels (0 or 1) from original data.
+        y_score: Array of predicted scores from original data.
+        alphas: Significance levels to evaluate.
+        tpr_method: Method for computing the empirical ROC curve.
+
+    Returns:
+        Mapping alpha -> variant name -> (lower_envelope, upper_envelope)
+        numpy arrays on the input FPR grid.
+    """
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    if isinstance(y_score, np.ndarray):
+        dtype = y_score.dtype
+    elif isinstance(y_score, torch.Tensor):
+        dtype = y_score.cpu().numpy().dtype
+    else:
+        dtype = np.asarray(y_score).dtype
+
+    boot_tpr = numpy_to_torch(boot_tpr_matrix, device).float()
+    fpr = numpy_to_torch(fpr_grid, device).float()
+    y_true_t = numpy_to_torch(y_true, device)
+    y_score_t = numpy_to_torch(y_score, device).float()
+
+    n_neg = int((y_true_t == 0).sum().item())
+    n_pos = int((y_true_t == 1).sum().item())
+    n_total = n_neg + n_pos
+
+    empirical_tpr = _compute_empirical_roc(y_true_t, y_score_t, fpr, method=tpr_method)
+
+    deviations = boot_tpr - empirical_tpr.unsqueeze(0)
+    var_raw = torch.var(boot_tpr, dim=0, correction=1)
+    std_raw = torch.sqrt(var_raw)
+    epsilon = min(1.0 / n_total, 1e-6)
+
+    # Raw-variance studentization is alpha-independent; compute once
+    ks_raw = _studentized_ks_statistics(deviations, std_raw, epsilon)
+
+    results: dict[float, dict[str, tuple[NDArray, NDArray]]] = {}
+
+    for alpha in alphas:
+        z_alpha = (2.0**0.5) * torch.erfinv(torch.tensor(1.0 - alpha)).item()
+        wilson_var = (
+            wilson_halfwidth_squared_torch(empirical_tpr, n_pos, z_alpha) / z_alpha**2
+        )
+        std_floored = torch.sqrt(torch.maximum(var_raw, wilson_var))
+        ks_floored = _studentized_ks_statistics(deviations, std_floored, epsilon)
+
+        lower_raw, upper_raw = _ks_retention_envelope(boot_tpr, ks_raw, alpha)
+        lower_flr, upper_flr = _ks_retention_envelope(boot_tpr, ks_floored, alpha)
+
+        # Variance-ratio gated rectangle (shared by "envelope" and
+        # "envelope_no_beta_floor")
+        deficiency, alpha_wilson = _compute_variance_ratio_alpha(
+            var_raw, wilson_var, alpha
+        )
+        lower_rect, upper_rect = _apply_wilson_variance_ratio_floor(
+            fpr, lower_flr, upper_flr, y_true_t, y_score_t, deficiency, alpha_wilson
+        )
+
+        # Rectangle forced onto both FPR tails in addition to the gate
+        tail_mask = _beta_tail_mask(fpr, n_neg, alpha)
+        deficiency_tails = torch.maximum(deficiency, tail_mask.float())
+        k_eff_tails = float(deficiency_tails.sum().item())
+        alpha_wilson_tails = (
+            1.0 - (1.0 - alpha) ** (1.0 / k_eff_tails) if k_eff_tails > 1.0 else alpha
+        )
+        lower_rect_tails, upper_rect_tails = _apply_wilson_variance_ratio_floor(
+            fpr,
+            lower_flr,
+            upper_flr,
+            y_true_t,
+            y_score_t,
+            deficiency_tails,
+            alpha_wilson_tails,
+        )
+
+        beta_lower_kwargs = dict(
+            fpr_grid=fpr, y_true=y_true_t, y_score=y_score_t, alpha=alpha
+        )
+
+        lower_beta_low_tail = _apply_beta_orderstat_floor(
+            lower_envelope=lower_raw, **beta_lower_kwargs
+        )
+        variants = {
+            "envelope": (
+                _apply_beta_orderstat_floor(
+                    lower_envelope=lower_rect, **beta_lower_kwargs
+                ),
+                upper_rect,
+            ),
+            "envelope_no_beta_floor": (lower_rect, upper_rect),
+            "envelope_no_wilson_floor": (lower_beta_low_tail, upper_raw),
+            "envelope_no_floors": (lower_raw, upper_raw),
+            "envelope_beta_both_tails": (
+                _apply_beta_orderstat_floor_upper_tail(
+                    lower_envelope=lower_beta_low_tail, **beta_lower_kwargs
+                ),
+                upper_raw,
+            ),
+            "envelope_wilson_both_tails": (lower_rect_tails, upper_rect_tails),
+        }
+
+        results[alpha] = {}
+        for name, (lower_t, upper_t) in variants.items():
+            lower_np = np.array(torch_to_numpy(lower_t), dtype=dtype, copy=True)
+            upper_np = np.array(torch_to_numpy(upper_t), dtype=dtype, copy=True)
+            lower_np[0] = 0.0
+            upper_np[-1] = 1.0
+            results[alpha][name] = (lower_np, upper_np)
+
+    return results
+
+
+def wilson_beta_band(
+    y_true: NDArray | Tensor,
+    y_score: NDArray | Tensor,
+    k: int | None = None,
+    alpha: float = 0.05,
+) -> tuple[NDArray, NDArray, NDArray]:
+    """Compute the no-bootstrap ablation of the envelope band.
+
+    Applies the envelope method's two tail repairs to the whole curve
+    without any bootstrap component:
+
+    1. Wilson Rectangle bounds at every grid point, with the per-point level
+       Šidák-corrected across the interior grid points (the role the
+       variance-ratio gate's K_eff plays when the bootstrap is present), and
+       Šidák-corrected across each rectangle's two margins.
+    2. The exact Beta order-statistic floor on the lower band, extended to
+       all n_neg order statistics so its jurisdiction spans the whole curve
+       (per-event level alpha / (2 * n_neg)).
+
+    Args:
+        y_true: True binary labels (0 or 1).
+        y_score: Predicted scores.
+        k: Number of points in the FPR grid. If None, uses n_neg + 1.
+        alpha: Significance level.
+
+    Returns:
+        Tuple of (fpr_grid, lower_envelope, upper_envelope) as numpy arrays.
+    """
+    y_true_t = numpy_to_torch(y_true, torch.device("cpu"))
+    y_score_t = numpy_to_torch(y_score, torch.device("cpu")).float()
+    n_neg = int((y_true_t == 0).sum().item())
+
+    if k is None:
+        k = n_neg + 1
+
+    m = max(k - 2, 1)
+    alpha_grid = 1.0 - (1.0 - alpha) ** (1.0 / m)
+
+    fpr_np, lower_np, upper_np = wilson_rectangle_band(
+        y_true=y_true,
+        y_score=y_score,
+        k=k,
+        alpha=alpha_grid,
+        correction="sidak",
+        tpr_method="empirical",
+    )
+
+    # Enforce band monotonicity
+    upper_np = np.maximum.accumulate(upper_np)
+    lower_np = np.minimum.accumulate(lower_np[::-1])[::-1].copy()
+
+    dtype = lower_np.dtype
+    lower_t = _apply_beta_orderstat_floor(
+        fpr_grid=numpy_to_torch(fpr_np, torch.device("cpu")).float(),
+        lower_envelope=numpy_to_torch(lower_np, torch.device("cpu")).float(),
+        y_true=y_true_t,
+        y_score=y_score_t,
+        alpha=alpha,
+        j_max=n_neg,
+    )
+    lower_np = torch_to_numpy(lower_t).astype(dtype)
+
+    lower_np[0] = 0.0
+    upper_np[-1] = 1.0
+
+    return fpr_np, lower_np, upper_np
+
+
 def envelope_bootstrap_band(
     boot_tpr_matrix: NDArray | Tensor,
     fpr_grid: NDArray | Tensor,
@@ -360,14 +862,19 @@ def envelope_bootstrap_band(
         alpha: Significance level. Defaults to 0.05.
         boundary_method: Method for handling zero-variance boundaries where
             bootstrap collapses. Options:
-            - "wilson": Adaptive floor using Wilson Rectangle bounds. Uses the
-              variance ratio r(t) = bootstrap_var / wilson_var to detect where
-              the bootstrap has collapsed (r < 1) and applies Šidák-corrected
-              Wilson Rectangle bounds as a floor at those points. The Šidák
+            - "wilson": Adaptive floor using Wilson Rectangle bounds plus an
+              exact Beta order-statistic floor. Uses the variance ratio
+              r(t) = bootstrap_var / wilson_var to detect where the bootstrap
+              has collapsed (r < 1) and applies Šidák-corrected Wilson
+              Rectangle bounds as a floor at those points. The Šidák
               correction strength adapts to the effective number of deficient
               points. Interior points where bootstrap variance exceeds Wilson
-              variance are left untouched. Also uses simple Wilson variance
-              floor during studentization to prevent division by zero.
+              variance are left untouched. The lower envelope additionally
+              receives a distribution-free Beta order-statistic floor at
+              extreme FPR, where threshold-location uncertainty dominates and
+              variance-based detection is blind. Also uses simple Wilson
+              variance floor during studentization to prevent division by
+              zero.
             - "ks": Use KS-style margin extension (Campbell 1994).
               Extends the band from interior points to corners using
               horizontal/vertical margins based on sample sizes.
@@ -631,6 +1138,17 @@ def envelope_bootstrap_band(
         lower_envelope, upper_envelope = _apply_wilson_variance_ratio_floor(
             fpr, lower_envelope, upper_envelope,
             y_true_t, y_score_t, deficiency, alpha_wilson,
+        )
+        # The variance-ratio floor measures vertical (binomial) uncertainty
+        # and cannot see the horizontal threshold-location uncertainty that
+        # dominates at extreme FPR; the exact Beta order-statistic floor
+        # carries that channel for the lower band.
+        lower_envelope = _apply_beta_orderstat_floor(
+            fpr_grid=fpr,
+            lower_envelope=lower_envelope,
+            y_true=y_true_t,
+            y_score=y_score_t,
+            alpha=alpha,
         )
 
     # Enforce boundary conditions

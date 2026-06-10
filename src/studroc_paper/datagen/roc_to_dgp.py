@@ -277,8 +277,9 @@ def map_lhs_to_dgp(dgp_type: str, lhs_params: dict) -> dict:
     Parameters
     ----------
     dgp_type : str
-        One of: 'lognormal', 'logitnormal', 'hetero_gaussian', 'beta_opposing',
-                'student_t', 'bimodal_negative', 'exponential', 'gamma', 'weibull'
+        One of: 'lognormal', 'logitnormal', 'hetero_gaussian', 'binormal',
+                'beta_opposing', 'student_t', 'bimodal_negative', 'exponential',
+                'gamma', 'weibull'
     lhs_params : dict
         Must contain 'auc' and DGP-specific shape parameters.
 
@@ -302,6 +303,11 @@ def map_lhs_to_dgp(dgp_type: str, lhs_params: dict) -> dict:
         sigma_ratio = np.asarray(lhs_params["sigma_ratio"])
         delta_mu = hetero_gaussian_params(auc, sigma_ratio)
         return {"delta_mu": delta_mu, "sigma_neg": 1.0, "sigma_pos": sigma_ratio}
+
+    elif dgp_type == "binormal":
+        # Strictly binormal with equal variances: delta_mu = sqrt(2) * Φ⁻¹(AUC)
+        delta_mu = hetero_gaussian_params(auc, np.ones_like(auc))
+        return {"delta_mu": delta_mu, "sigma_neg": 1.0, "sigma_pos": 1.0}
 
     elif dgp_type == "exponential":
         neg_rate = lhs_params.get("neg_rate", 1.0)
@@ -341,10 +347,15 @@ def map_lhs_to_dgp(dgp_type: str, lhs_params: dict) -> dict:
                 for w, sep, a in zip(mixture_weight, mode_separation, auc)
             ]
         )
+        # Pass the unit standard deviations the solver assumed; the DGP
+        # factory's defaults differ (0.8), which would shift the achieved AUC
+        # away from the LHS target
         return {
             "neg_means": [(0.0, sep) for sep in mode_separation],
+            "neg_stds": [(1.0, 1.0)] * len(mode_separation),
             "neg_weights": [(w, 1 - w) for w in mixture_weight],
             "pos_mean": pos_mean,
+            "pos_std": 1.0,
         }
 
     else:
