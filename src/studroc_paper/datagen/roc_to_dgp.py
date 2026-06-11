@@ -154,6 +154,28 @@ class BimodalNegativeSolver:
             for w, m, s in zip(weights, means, stds)
         )
 
+    def _neg_thresholds(
+        self, neg_means: list, neg_stds: list, neg_weights: list
+    ) -> np.ndarray:
+        """Invert the negative-mixture survival function at each FPR.
+
+        Uses vectorized bisection over the whole FPR grid. The thresholds
+        depend only on the negative mixture, so they can be computed once
+        and reused across candidate positive means.
+        """
+        # Wide enough that the mixture SF spans (almost) (0, 1):
+        # FPR = 1e-10 requires ~6.4 standard deviations
+        max_std = max(neg_stds)
+        lo = np.full_like(self.fpr, min(neg_means) - 9 * max_std)
+        hi = np.full_like(self.fpr, max(neg_means) + 9 * max_std)
+        for _ in range(64):
+            mid = 0.5 * (lo + hi)
+            sf_mid = self._mixture_sf(mid, neg_means, neg_stds, neg_weights)
+            go_right = sf_mid > self.fpr
+            lo = np.where(go_right, mid, lo)
+            hi = np.where(go_right, hi, mid)
+        return 0.5 * (lo + hi)
+
     def _compute_auc(
         self,
         neg_means: list,
@@ -166,24 +188,8 @@ class BimodalNegativeSolver:
         if neg_stds is None:
             neg_stds = [1.0] * len(neg_means)
 
-        # Find thresholds for each FPR
-        # Need ±7 std devs to handle FPR extremes (1e-10 requires ~6.4 std devs)
-        all_means = neg_means + [pos_mean]
-        t_min = min(all_means) - 7
-        t_max = max(all_means) + 7
-
-        tpr = np.zeros_like(self.fpr)
-        for i, f in enumerate(self.fpr):
-            try:
-                t = brentq(
-                    lambda t: self._mixture_sf(t, neg_means, neg_stds, neg_weights) - f,
-                    t_min,
-                    t_max,
-                )
-                tpr[i] = stats.norm.sf(t, loc=pos_mean, scale=pos_std)
-            except ValueError:
-                tpr[i] = np.nan
-
+        thresholds = self._neg_thresholds(neg_means, neg_stds, neg_weights)
+        tpr = stats.norm.sf(thresholds, loc=pos_mean, scale=pos_std)
         return np.trapezoid(tpr, self.fpr)
 
     def solve(
@@ -200,10 +206,16 @@ class BimodalNegativeSolver:
         neg_weights = [mixture_weight, 1 - mixture_weight]
         """
         neg_means = [0.0, mode_separation]
+        neg_stds = [1.0, 1.0]
         neg_weights = [mixture_weight, 1 - mixture_weight]
 
+        # Thresholds depend only on the negative mixture; compute once and
+        # reuse across all candidate positive means inside the root search
+        thresholds = self._neg_thresholds(neg_means, neg_stds, neg_weights)
+
         def objective(pos_mean):
-            return self._compute_auc(neg_means, neg_weights, pos_mean) - target_auc
+            tpr = stats.norm.sf(thresholds, loc=pos_mean, scale=1.0)
+            return np.trapezoid(tpr, self.fpr) - target_auc
 
         return brentq(objective, pos_mean_bounds[0], pos_mean_bounds[1], xtol=1e-6)
 
