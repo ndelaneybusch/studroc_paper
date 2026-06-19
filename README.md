@@ -1,24 +1,320 @@
-# ROC Confidence Band Methods: A Comprehensive Simulation Study
+# A Distribution-Free Confidence Band for the ROC Curve
 
-Code and analysis for evaluating simultaneous confidence bands for ROC curves under diverse distributional conditions.
+A simultaneous confidence band for the **true population ROC curve** that is
+genuinely distribution-free, far more informative than the textbook
+distribution-free band, and well calibrated across heavy-tailed, skewed, and
+multimodal score distributions where the classical parametric bands fail.
 
-## The Problem
+The method — a **studentized bootstrap envelope** with two exact tail floors —
+is specified in [`stats/nonparam_envelope.md`](stats/nonparam_envelope.md), its
+expected behavior is derived in
+[`stats/theoretical_behavior_report.md`](stats/theoretical_behavior_report.md),
+and every figure below is produced from a 2.25M-evaluation simulation study
+spanning seven data-generating processes, six sample sizes, and three
+confidence levels.
 
-Classical ROC confidence band methods (Working-Hotelling, Ellipse-Envelope) assume **binormal scores**—that both classes follow Normal distributions. Real-world classifiers, especially deep learning models, often produce heavy-tailed, skewed, or multimodal score distributions that violate this assumption.
+---
 
-This project evaluates **9 confidence band methods** across **18+ data-generating processes** spanning 8 distribution families, using **Latin Hypercube Sampling** to systematically explore the parameter space.
+## 1. The problem with the methods we have
 
-### Key Questions
+If you want a band around an ROC curve today, you essentially choose between two
+families, and both have a fatal flaw.
 
-1. How badly do classical methods fail when binormality is violated?
-2. Can bootstrap methods achieve valid coverage across heavy-tailed, skewed, and multimodal distributions?
-3. What is the width cost of distribution-free methods?
+**Working–Hotelling (and its ellipse-envelope refinement) assume the scores are
+binormal.** The construction parametrizes the ROC as
+`TPR = Φ(a + b·Φ⁻¹(FPR))` and lays a hyperbolic regression band around it in
+probit–probit space (Ma & Hall 1993; Working & Hotelling 1929). When both class
+score distributions really are Gaussian, this is excellent: tight bands, correct
+coverage. When they are not, the band converges confidently to *the wrong
+curve*. Worse, the failure scales with sample size — more data tightens the band
+around a biased estimate, so coverage drops toward zero exactly when you trust
+the result most.
+
+**The Kolmogorov–Smirnov / DKW fixed-width band is distribution-free but
+uninformative.** It places a constant-width strip of half-width
+`ε = √(ln(2/α)/(2n))` around the curve (Campbell 1994; Dvoretzky–Kiefer–
+Wolfowitz 1956; Massart 1990). It never fails to cover — but it covers *too
+much*. The 50% band is nearly as wide as the 95% band, the strip has the same
+width at the steep low-FPR corner as in the flat interior, and it tells you
+almost nothing about *where* the true curve actually lies. It is a safety
+benchmark, not an answer.
+
+What is actually needed is a band that is (i) **distribution-free**, like KS,
+making no parametric commitment about the score distributions; (ii)
+**substantially more informative than KS**, with width that adapts to where the
+uncertainty really is; and (iii) **well calibrated across diverse distribution
+families**, holding coverage near nominal whether the scores are Gaussian,
+heavy-tailed, skewed, or multimodal.
+
+### Why "alternative distributions" is the realistic case, not the exotic one
+
+Binormality is the exception, not the rule, for modern classifiers:
+
+- **Heavy tails.** Deep network logits and many calibrated probability outputs
+  have far heavier tails than a Gaussian; a handful of extreme-confidence
+  predictions dominate the low-FPR corner of the ROC, which is precisely where
+  parametric bands are most fragile.
+- **Skew and bounded support.** Probability outputs live in `[0, 1]` and pile up
+  near the boundaries; risk scores are often right-skewed. Neither is Gaussian on
+  any scale.
+- **Multimodality.** When a population mixes subgroups — easy vs. hard cases,
+  multiple disease subtypes, distinct fraud patterns — the negative or positive
+  score distribution is multimodal, producing genuine inflections in the ROC that
+  no binormal model can represent.
+
+A clarifying non-example: choosing to build the band on **logit** scores rather
+than **probability** scores is *not* a reason to worry about distributional
+assumptions. The ROC curve is invariant to any monotone rescaling of the score,
+so the probability-vs-logit choice does not move the curve at all and cannot, by
+itself, motivate a distribution-free method. The motivation is the genuine shape
+of the underlying class-conditional distributions — heavy tails, skew,
+multimodality — not the coordinate system you happen to plot them in.
+
+---
+
+## 2. How badly the classical bands fail
+
+The contrast is stark. The heatmaps below show coverage minus the 0.95 nominal
+target: white is perfect, blue is conservative, red is undercoverage.
+
+![Envelope vs Working–Hotelling coverage](figures/paper/fig05_envelope_vs_wh_heatmap.png)
+
+The studentized envelope (left) is at or slightly above nominal for **every**
+distribution at **every** sample size. Working–Hotelling (right) is fine on the
+two binormal-compatible families (Binormal, Heteroscedastic Gaussian) but turns
+deep red everywhere else, and the red *deepens with n*: on Student-t data its
+coverage falls to 0.02 at n = 10,000, on Logit-normal to 0.13, on Bimodal
+negatives to 0.23. The parametric band does not merely lose efficiency
+off-model — it loses validity, catastrophically and irreversibly.
+
+This is not a knife-edge that only trips on pathological data. It is a smooth,
+continuous collapse as the data drift away from binormality:
+
+![Working–Hotelling fragility](figures/paper/fig07_wh_fragility.png)
+
+As Student-t tails get heavier (degrees of freedom decreasing, top row) or the
+negative class becomes more clearly bimodal (mode separation increasing, bottom
+row), Working–Hotelling coverage slides continuously from acceptable to near
+zero, and the larger sample size (right column) makes it *worse*. The envelope
+and KS bands ride flat along the top throughout. There is no safe operating
+region for the parametric band defined by a simple diagnostic — any departure
+from binormality is paid for in coverage.
+
+---
+
+## 3. The case for the envelope: coverage *and* tightness, on every family
+
+The right way to judge a band is jointly on coverage (must be ≥ nominal) and
+width (smaller is better). The figures below plot per-DGP coverage against mean
+band area with 95% confidence intervals, for three sample sizes (rows) and the
+three distribution families.
+
+**Gaussian-like distributions** (the home turf of the parametric methods):
+
+![Pareto CI, Gaussian-like](figures/paper/fig08b_pareto_ci_gaussian_like.png)
+
+**Heavy-tailed / skewed distributions:**
+
+![Pareto CI, heavy-tailed](figures/paper/fig08b_pareto_ci_heavy_tailed.png)
+
+**Non-standard shapes (bounded support, multimodal):**
+
+![Pareto CI, non-standard](figures/paper/fig08b_pareto_ci_nonstandard.png)
+
+Reading these together, the studentized envelope (orange) is the only method
+that stays pinned at or just above the 0.95 line *in every panel*, while sitting
+well to the left of KS (black) — i.e. tighter. The competitors each fail a
+requirement:
+
+- **KS (black)** is always at ~1.0 coverage but always the widest point — safe
+  but uninformative, exactly as designed.
+- **Working–Hotelling (dark blue)** is competitive only on Gaussian-like data,
+  and even there its coverage falls off the bottom of the plot as n grows; on
+  heavy-tailed and non-standard data it is near the floor.
+- **Wilson rectangles (green)** are tight and well-calibrated at small n but
+  drift below nominal as n increases (the Šidák correction mishandles many
+  correlated grid points).
+- **Pointwise bootstrap (light blue)** ignores multiplicity entirely and
+  under-covers everywhere.
+
+Only the envelope occupies the desirable corner — high coverage, modest width —
+across all three families and all sample sizes.
+
+---
+
+## 4. How the method works
+
+The band is built in three layers, each carrying a different channel of
+uncertainty. The full specification is in
+[`stats/nonparam_envelope.md`](stats/nonparam_envelope.md); the sketch:
+
+1. **A studentized bootstrap envelope (the interior).** Resample negatives and
+   positives with replacement, recompute the ROC for each of `B` bootstrap
+   replicates, and measure how "strange" each replicate is by its maximum
+   *studentized* deviation from the empirical curve — the pointwise deviation
+   divided by the local bootstrap standard error, maximized over the FPR grid.
+   Retain the `(1−α)` fraction of curves with the smallest such supremum
+   deviation, and take their pointwise min/max. Studentization makes the band
+   adapt to local variance — tight near the corners, wider in the high-variance
+   middle — and the envelope is naturally asymmetric, because the bootstrap
+   distribution itself is asymmetric near the boundaries. This is the inversion
+   of a bootstrap supremum statistic (Hall & Horowitz 2013), and it is correct
+   in the *interior* of the curve.
+
+2. **A Wilson rectangle floor (the TPR plateau).** Near FPR = 1 the empirical
+   TPR sits on a plateau at ~1 and the bootstrap variance collapses to zero — the
+   envelope would pinch shut and fail to cover. Where the bootstrap variance
+   falls below the binomial (Wilson score) variance, the band is floored by a
+   Šidák-corrected Wilson rectangle. At the plateau the slope is ~0, so binomial
+   TPR uncertainty is the *complete* uncertainty model, and the Wilson floor is
+   exactly right.
+
+3. **An exact Beta order-statistic floor (the steep low-FPR corner).** At the
+   first few grid points of a steep curve the dominant uncertainty is
+   *horizontal* — the true FPR of the operating threshold, which is an extreme
+   order statistic of the negatives. No variance-based yardstick can see this,
+   and the bootstrap cannot resample beyond the observed extremes. But there is
+   one exact, finite-sample, distribution-free law available: for continuous
+   scores the true FPR exceedance at the j-th largest negative score is
+   `Beta(j, n₀+1−j)`, regardless of the score distribution (probability integral
+   transform). The lower band is floored using this law (David & Nagaraja 2003),
+   which repairs the corner exactly where the bootstrap and asymptotic arguments
+   both break down. Below FPR ≈ 7/n₀ it is honestly vacuous — no distribution-
+   free lower bound exists there, and the band says so rather than overclaiming.
+
+The three layers barely overlap: each carries the uncertainty channel the others
+cannot see. The figure below shows the assembled band on nine example datasets
+(n = 300, three target AUCs × three Gaussian-like DGPs), with the regions
+color-coded by which mechanism set the lower bound:
+
+![Example bands with components](figures/paper/fig15a_example_bands_gaussian_like.png)
+
+The orange band tracks the true curve (dashed) closely. The **yellow** region at
+low FPR is where the **Beta order-statistic floor** sets the lower bound; the
+**green** region near the plateau is where the **Wilson rectangle floor** sets
+it; the **unshaded** interior is the **bootstrap envelope**. As the target AUC
+rises (top to bottom) the curve steepens and the Beta floor's jurisdiction at
+the low-FPR corner does more of the work — exactly the regime where every other
+method fails.
+
+---
+
+## 5. The properties that make it trustworthy
+
+**Stable across AUC.** Coverage holds near or above nominal across the full
+range of true AUC, for every DGP and sample size — it does not degrade as the
+curve gets steeper:
+
+![Coverage vs AUC](figures/paper/fig02_envelope_coverage_vs_auc.png)
+
+**Stable across distribution shape.** Sweeping each DGP's shape parameter — tail
+heaviness, skew strength, variance ratio, mode separation, mixture weight —
+leaves coverage essentially flat above the nominal line:
+
+![Coverage vs shape](figures/paper/fig03_envelope_coverage_vs_shape.png)
+
+**Stable across sample size, where competitors are not.** This is the decisive
+comparison. The envelope (orange) holds calibration across all six sample sizes
+on all seven families, while Working–Hotelling (blue) collapses with n on every
+non-binormal family and the Wilson rectangles (green) drift down everywhere:
+
+![Coverage vs n by DGP](figures/paper/fig06_coverage_vs_n_by_dgp.png)
+
+**Far tighter than KS, while staying calibrated.** Plotting band area on a
+WH-to-KS scale (1.0 = KS, the widest distribution-free band; 0 = WH, the
+tightest parametric band), the envelope's area falls from 90% of KS at n = 10 to
+31% at n = 10,000 — it buys most of KS's safety at roughly a third of the width
+— while its calibration error (right panel) stays flat near the ideal, unlike
+WH and the rectangles, whose errors explode with n:
+
+![Tightness vs KS](figures/paper/fig09_tightness_vs_ks.png)
+
+**When it misses, it misses small.** No finite-sample method is perfect, but the
+envelope's residual violations are tiny: the conditional miss depth is almost
+always well under a few points of TPR (left), and the 99th-percentile worst
+violation stays near zero across all sample sizes, where Working–Hotelling and
+the rectangles climb to 0.7–0.85 (right):
+
+![Violation magnitude](figures/paper/fig17_violation_magnitude.png)
+
+---
+
+## 6. Ablations: every component is load-bearing
+
+The hybrid is not over-engineered — removing any single piece breaks the band in
+a specific, predictable way.
+
+**Without the floors, the bare bootstrap envelope is not a valid band at all.**
+It fails at both corners — the collapsed-variance plateau and the steep low-FPR
+corner — covering only ~25–35% of the time. The full method repairs both:
+
+![Bare bootstrap failure](figures/paper/fig11_bare_bootstrap_failure.png)
+
+**The two floors own different corners.** Dropping the Beta floor reopens the
+steep low-FPR corner (and the damage concentrates at high AUC, where that corner
+matters); dropping the Wilson floor reopens the plateau corner, with violation
+rates there climbing to ~0.7. Each floor is necessary for its own region:
+
+![Floor ablation](figures/paper/fig12_floor_ablation.png)
+
+**Neither floor alone suffices.** A Beta-only band leaves an unprotected gap just
+beyond the Beta floor's fixed-k jurisdiction; a Wilson-only band buys low-FPR
+coverage only by inflating the band to vacuous widths there. The hybrid is the
+one configuration that is neither leaky nor vacuous:
+
+![Symmetric tail ablation](figures/paper/fig13_symmetric_tail_ablation.png)
+
+**The bootstrap interior earns its place too.** Replacing the bootstrap interior
+with the floors alone yields a band that is safe at 95% but neither tight nor
+tunable — it over-covers badly at the 50% level and runs wider than the full
+method. The studentized bootstrap is what gives the interior its adaptive,
+informative width:
+
+![No-bootstrap ablation](figures/paper/fig14_no_bootstrap_ablation.png)
+
+---
+
+## 7. What the theory says to expect
+
+The full account is in
+[`stats/theoretical_behavior_report.md`](stats/theoretical_behavior_report.md);
+the essential predictions, all confirmed in simulation:
+
+- **Asymptotic validity in the interior, exact finite-sample floors at the
+  boundary.** The empirical ROC process converges weakly to a Gaussian process
+  (Hsieh & Turnbull 1996), and the studentized bootstrap inverts a supremum
+  statistic over it — but the argument holds only on compact subintervals of
+  `(0,1)`. At the *moving* boundary grid points `t = k/n₀` (fixed small k) the
+  relevant quantities are extreme order statistics, not empirical-process
+  averages: the Gaussian approximation does not apply, the bootstrap support is
+  one-sided, and the empirical ROC is upward-biased by order-statistic geometry.
+  The Beta floor is built precisely for these points, where its guarantee is
+  finite-sample and distribution-free rather than asymptotic.
+- **The two corners are governed by two different, complementary models.** At the
+  TPR plateau the curve is flat, so binomial (Wilson) variance is the complete
+  model. At the steep low-FPR corner the Hsieh–Turnbull slope term
+  `(g/f)²·t(1−t)/n₀` dominates and binomial variance is 3–6× too small — only the
+  order-statistic floor recovers it. This is why a single mechanism cannot work.
+- **Coverage degrades with AUC, and the real risk factor is early slope.** A
+  steep low-FPR rise converts threshold-location error into large vertical
+  misses; flat curves near the origin cost little. The Beta floor targets exactly
+  this regime, raising coverage on the previously failing high-AUC strata from
+  ~0.77–0.84 to 0.95–0.99.
+- **It is a high-confidence tool.** A supremum-calibrated simultaneous band is
+  inherently insensitive to α (the 0.95-vs-0.50 critical-value ratio is only
+  ~1.3–1.5×), so the band over-covers at low confidence levels. This is a
+  property of sup-norm simultaneity, not of the envelope specifically — use it
+  near 95%, not at 50%.
+- **The honest limitation is informativeness, not validity.** The lower band is
+  vacuous below FPR ≈ 7/n₀ because no distribution-free lower bound exists there.
+  Applications that need guarantees at lower FPR must size n₀ accordingly — but
+  the band declines to certify what cannot be certified, rather than overclaiming.
 
 ---
 
 ## Installation
 
-Requires Python 3.12+ and UV package manager.
+Requires Python 3.12+ and the [uv](https://docs.astral.sh/uv/) package manager.
 
 ```bash
 git clone https://github.com/ndelaneybusch/studroc_paper.git
@@ -26,155 +322,52 @@ cd studroc_paper
 uv sync
 ```
 
----
+All bootstrap methods use PyTorch for automatic GPU acceleration (10–50× speedup
+for `B > 500`); inputs remain NumPy arrays for scikit-learn compatibility.
 
-## Methods
-
-### Classical (Parametric)
-
-| Method | Assumptions | Failure Mode |
-|--------|-------------|--------------|
-| **Working-Hotelling** | Binormal scores, equal variance | Catastrophic undercoverage on heavy-tailed data |
-| **Ellipse-Envelope** | Binormal scores | Same as W-H, slightly more conservative |
-| **Fixed-Width KS** | None (distribution-free) | Overconservative (>95% coverage even at nominal 50%) |
-| **Pointwise Bootstrap** | Independence across FPR grid | Ignores multiplicity, very poor coverage, sets lower bound for width |
-
-### Novel Bootstrap Methods
-
-| Method | Key Innovation | Strengths |
-|--------|----------------|-----------|
-| **Studentized Bootstrap Envelope** | Modular boundary corrections (Wilson, KDE, log-concave) | Wilson floor prevents band collapse at upper bound |
-| **Max-Modulus (Logit)** | Pure logit-space construction with Haldane correction | Aggressive variance stabilization, very conservative, wider even than KS |
-| **Hsieh-Turnbull** | Asymptotic variance with density estimation | Near-optimal when log-concave assumption holds, but difficult to estimate |
-
-### PyTorch Acceleration and Resource Optimization
-
-All bootstrap methods use PyTorch for automatic GPU acceleration (10-50× speedup for B > 500).
-
-**Transparent GPU acceleration:** Methods automatically detect and use CUDA devices. Inputs remain NumPy arrays (scikit-learn compatible), while computationally intensive operations run on GPU.
-
-**Batched grid evaluation:** The `generate_bootstrap_grid` function processes bootstrap samples in memory-efficient batches, computing TPR values at grid points without materializing full score arrays. For each grid FPR value, it computes the threshold directly from bootstrap negative scores (via quantile), then counts positive scores exceeding that threshold—avoiding storage of complete empirical ROC curves for each replicate.
-
-**Optimal B/K allocation:** Under compute constraints, the `optim_k_b.py` module balances bootstrap replicates (B) against grid resolution (K). Given memory budget C:
-- **Full grid** (K = n₀+1 jump points): Zero discretization error, optimal when n₀ is small
-- **Uniform grid** (K optimized): Balances bootstrap error β/√B with discretization error D/K
-
-The allocation formula determines when full grid is optimal: (n₀+1)³ < 27D²C/(4β²). See `stats/optim_K_B.md` for derivation.
-
-
----
-
-## Data-Generating Processes
-
-The simulation uses a **generate-and-verify** approach: generate data from known distributions, derive the true population ROC analytically or numerically, then check whether confidence bands contain it.
-
-| DGP | What It Tests | True ROC Method |
-|-----|---------------|-----------------|
-| Gaussian (equal var) | Baseline | Closed-form |
-| Heteroskedastic Gaussian | Unequal variances | Closed-form |
-| Log-Normal | Right skewness | Closed-form (after transform) |
-| Beta (opposing skew) | Bounded support [0,1] | Numerical inversion |
-| Student's t | **Heavy tails** (critical test) | Numerical inversion |
-| Gamma | Right skewness, flexible shape | Numerical inversion |
-| Bimodal Negative | Multimodality, ROC inflection | Numerical mixture inversion |
-| Exponential | Bounded at zero | Closed-form (power function) |
-
----
-
-## Simulation Design
-
-**Latin Hypercube Sampling** with maximin optimization provides space-filling coverage of parameter combinations with 3-5× fewer samples than random sampling.
-
-**Parameter ranges:**
-- AUC ∈ [0.55, 0.99]
-- Distribution-specific shape parameters (e.g., df ∈ [1.1, 30] for Student's t)
-
-**Sample sizes:** n ∈ {10, 30, 100, 300, 1000, 10000} per class, plus imbalanced designs (1%, 10%, 50% prevalence at n=1000).
-
-**Scale:** 6 DGPs × 8 sample configs × 1000 LHS combinations × 24 method variants = **1.15M evaluations** per confidence level.
-
----
-
-## Key Findings
-
-### 1. Binormal methods fail catastrophically on heavy-tailed data
-
-Working-Hotelling and Ellipse-Envelope drop to **near 0% coverage** at n=10,000 for Student's t and lognormal distributions. They converge to the wrong curve.
-
-![Working-Hotelling violations](figures/violation_locations_WorkingHotelling_n_gradient.png)
-
-### 2. Bootstrap methods with Wilson variance floor achieve robust coverage
-
-The Wilson floor prevents band collapse at upper tail, maintaining ~90% coverage across distributions (vs. 100% for KS, but with nearly half the width). However, lower tail still has pathologies (most remaining violations are below the lower bound in the lower tail).
-
-![Envelope-Wilson violations](figures/violation_locations_EnvelopeWilson_n_gradient.png)
-
-![Coverage by sample size](figures/coverage_by_n_panel_fourdist_twoalpha.png)
-
-- Bootstrap methods approach nominal coverage, still accrue violations in the lower tail as n increases, but more slowly than binormal methods. 
-- Bootstrap-calibrated Hsieh-Turnbull is catastrophic at low n but asymptotically ideal at high n (n > 300) across all distributions.
-
-### 3. Coverage-width tradeoffs
-
-![Pareto frontier](figures/pareto_frontier_panel_fourdist_twoalpha.png)
-
-- **Binormal-compatible data:** Working-Hotelling is optimal
-- **Heavy-tailed data:** Bootstrap+Wilson achieves valid coverage at ~half KS width
-- **Lognormal:** Binormal methods perform worse than pointwise intervals
-
----
-
-## Usage
+## Reproducing the figures
 
 ```bash
-uv run python scripts/run_simulation.py \
-  --dgp student_t \
-  --n_total 1000 \
-  --n_lhs 1000 \
-  --output_dir data/results \
-  --seed 42
+uv run python stats/paper_figures.py
 ```
 
-Results are saved as JSON with coverage rates, confidence intervals, band widths, and violation statistics.
+Figures are written to `figures/paper/`. The underlying simulation is driven by
+`scripts/run_simulation.py` over the data-generating processes in
+`src/studroc_paper/datagen/` and the methods in `src/studroc_paper/methods/`.
 
----
-
-## Repository Structure
+## Repository structure
 
 ```
 studroc_paper/
 ├── src/studroc_paper/
-│   ├── datagen/       # DGPs and true ROC derivation
-│   ├── methods/       # Confidence band implementations
+│   ├── datagen/       # DGPs and true-ROC derivation
+│   ├── methods/       # Confidence band implementations (envelope_boot.py, ...)
 │   ├── eval/          # Coverage and width metrics
-│   ├── sampling/      # Maximin LHS
+│   ├── sampling/      # Maximin Latin Hypercube Sampling
 │   └── viz/           # Diagnostic and aggregate plots
 ├── scripts/           # Simulation drivers
-├── data/results/      # Aggregated JSON results
+├── stats/             # Method spec, theory, and figure generation
+├── data/results/      # Aggregated simulation results
 └── figures/           # Visualization outputs
 ```
-
----
 
 ## Development
 
 ```bash
-uv run pytest              # Tests
-uv run ruff check --fix .  # Lint
-uv run ruff format .       # Format
+uv run pytest                  # Tests
+uv run ruff check --fix .      # Lint
+uv run ruff format .           # Format
 uv run mypy src/studroc_paper  # Type check
 ```
-
----
 
 ## Citation
 
 ```bibtex
 @misc{studroc2025,
-  author = {Delaney-Busch, Nathaniel},
-  title = {ROC Confidence Band Methods: A Comprehensive Simulation Study},
-  year = {2025},
+  author    = {Delaney-Busch, Nathaniel},
+  title     = {A Distribution-Free Confidence Band for the ROC Curve},
+  year      = {2025},
   publisher = {GitHub},
-  url = {https://github.com/ndelaneybusch/studroc}
+  url       = {https://github.com/ndelaneybusch/studroc_paper}
 }
 ```
