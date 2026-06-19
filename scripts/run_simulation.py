@@ -186,7 +186,7 @@ def get_sample_size_configs() -> list[dict]:
     configs = []
 
     # Balanced samples for most sizes
-    for n_total in [10, 30, 100, 300, 1000, 10000]:
+    for n_total in [10, 30, 100, 300, 1000, 3000, 10000]:
         if n_total != 1000:
             configs.append(
                 {
@@ -923,7 +923,7 @@ def main() -> None:
         "--confidence-levels",
         type=float,
         nargs="+",
-        default=[0.5, 0.05],
+        default=[0.5, 0.2, 0.05],
         help="Confidence levels (as alpha values, e.g., 0.05 for 95%% CI)",
     )
 

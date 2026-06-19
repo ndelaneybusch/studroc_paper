@@ -627,6 +627,7 @@ def envelope_band_suite(
     y_score: NDArray | Tensor,
     alphas: Sequence[float],
     tpr_method: TprMethod = "empirical",
+    include_pre_floor_arm: bool = False,
 ) -> dict[float, dict[str, tuple[NDArray, NDArray]]]:
     """Compute the envelope band and its ablation variants with shared work.
 
@@ -649,6 +650,13 @@ def envelope_band_suite(
       rectangle floor forced onto both FPR tail jurisdictions in addition
       to the variance-ratio gate; no Beta floor.
 
+    When include_pre_floor_arm is True, each alpha additionally carries
+    "envelope_pre_floor": the variance-floored KS-retention envelope before
+    the rectangle and Beta floors are applied. This is the bootstrap arm of
+    the full method, against which floor attribution can be measured
+    exactly (a final lower bound strictly below this arm was set by a
+    floor, not by the bootstrap).
+
     The expensive shared quantities (bootstrap deviations, variances,
     studentized statistics) are computed once across all variants and alphas.
 
@@ -659,6 +667,8 @@ def envelope_band_suite(
         y_score: Array of predicted scores from original data.
         alphas: Significance levels to evaluate.
         tpr_method: Method for computing the empirical ROC curve.
+        include_pre_floor_arm: Whether to include the "envelope_pre_floor"
+            diagnostic entry in the results.
 
     Returns:
         Mapping alpha -> variant name -> (lower_envelope, upper_envelope)
@@ -756,6 +766,8 @@ def envelope_band_suite(
             ),
             "envelope_wilson_both_tails": (lower_rect_tails, upper_rect_tails),
         }
+        if include_pre_floor_arm:
+            variants["envelope_pre_floor"] = (lower_flr, upper_flr)
 
         results[alpha] = {}
         for name, (lower_t, upper_t) in variants.items():

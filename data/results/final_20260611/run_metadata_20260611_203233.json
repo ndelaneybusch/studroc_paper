@@ -1,0 +1,38 @@
+{
+  "timestamp": "2026-06-11T20:32:33.721692",
+  "args": {
+    "n_lhs": "4000",
+    "n_sim": "1",
+    "bootstrap_size": "4000",
+    "confidence_levels": "[0.5, 0.2, 0.05]",
+    "dgps": "['all']",
+    "sample_sizes": "[10, 30, 100, 300, 1000, 3000, 10000]",
+    "output_dir": "data\\results\\final_20260611",
+    "seed": "42"
+  },
+  "git_hash": "ebb1a12dd739bba9f0797ef9257fff68c16a73fb",
+  "methods": [
+    "ks",
+    "working_hotelling",
+    "pointwise",
+    "pointwise_sidak",
+    "wilson_rectangle_sidak",
+    "wilson_rectangle_bonferroni",
+    "envelope",
+    "envelope_no_beta_floor",
+    "envelope_no_wilson_floor",
+    "envelope_no_floors",
+    "envelope_beta_both_tails",
+    "envelope_wilson_both_tails",
+    "envelope_no_bootstrap"
+  ],
+  "versions": {
+    "numpy": "2.3.5",
+    "scipy": "1.16.3",
+    "sklearn": "1.8.0",
+    "torch": "2.9.1+cu128",
+    "pandas": "2.3.3"
+  },
+  "cuda_available": true,
+  "device_name": "NVIDIA GeForce RTX 3080"
+}

@@ -267,6 +267,10 @@ def evaluate_single_band(
         statistics (covers_entirely, violation_above, violation_below) are
         computed only over the actual data range, excluding FPR=0 and FPR=1.
 
+        Band crossings smaller than 1e-6 TPR units do not count as violations:
+        they are below float32 representation resolution near TPR=1 and far
+        below any statistically meaningful band-width scale.
+
         All calculations are NaN-aware and will handle missing values appropriately.
 
     Examples:
@@ -290,9 +294,13 @@ def evaluate_single_band(
     n = len(fpr_grid)
     assert len(lower_band) == n and len(upper_band) == n and len(true_tpr) == n
 
-    # Pointwise coverage
-    # Use small tolerance for boundary comparisons due to floating point
-    tolerance = 1e-10
+    # Pointwise coverage. Crossings below this tolerance (in TPR units) are
+    # treated as covered: bands and true curves may pass through float32,
+    # whose spacing near TPR=1 is ~6e-8, so hairline crossings at that scale
+    # are representation noise rather than statistical violations. Parametric
+    # bands on the TPR plateau can be tighter than one float32 ulp, where a
+    # stricter tolerance manufactures phantom zero-magnitude violations.
+    tolerance = 1e-6
     above = (true_tpr - upper_band) > tolerance
     below = (lower_band - true_tpr) > tolerance
     pointwise_covered = ~(above | below)

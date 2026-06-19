@@ -1,0 +1,1599 @@
+{
+  "ks": {
+    "alpha_0.5": {
+      "n_simulations": 4000,
+      "nominal_alpha": 0.5,
+      "confidence_level": 0.5,
+      "coverage_rate": 0.988,
+      "coverage_se": 0.001721627137332588,
+      "coverage_ci_lower": 0.9841267397398308,
+      "coverage_ci_upper": 0.9909368436094206,
+      "violation_rate_above": 0.00775,
+      "violation_rate_below": 0.00425,
+      "direction_test_pvalue": 0.05946337525377034,
+      "mean_band_area": 0.13466126475376922,
+      "std_band_area": 0.023622162720764915,
+      "mean_band_width": 0.13433110114563127,
+      "width_percentiles": {
+        "p10": 0.09931099918299544,
+        "p50": 0.13755303893503332,
+        "p90": 0.16395141320986176
+      },
+      "width_by_fpr_region": {
+        "0-10": 0.4313008477991683,
+        "10-30": 0.16021870845574887,
+        "30-50": 0.1118180289663002,
+        "50-70": 0.08980021091233385,
+        "70-90": 0.07133334930792451,
+        "90-100": 0.05316345734983683
+      },
+      "violation_rate_by_region": {
+        "0-10": 0.0,
+        "10-30": 0.0055,
+        "30-50": 0.00775,
+        "50-70": 0.004,
+        "70-90": 0.00025,
+        "90-100": 0.0
+      },
+      "mean_max_violation": 0.0001318503383945061,
+      "percentile_95_max_violation": 0.0,
+      "mean_violation_area_above": 4.005982847861167e-06,
+      "mean_violation_area_below": 3.6625109782348834e-06
+    },
+    "alpha_0.2": {
+      "n_simulations": 4000,
+      "nominal_alpha": 0.2,
+      "confidence_level": 0.8,
+      "coverage_rate": 0.9985,
+      "coverage_se": 0.0006119129840099706,
+      "coverage_ci_lower": 0.9967310741465121,
+      "coverage_ci_upper": 0.9993123608936558,
+      "violation_rate_above": 0.00075,
+      "violation_rate_below": 0.00075,
+      "direction_test_pvalue": 1.0,
+      "mean_band_area": 0.16544563653087163,
+      "std_band_area": 0.029967437843517068,
+      "mean_band_width": 0.16512309190055585,
+      "width_percentiles": {
+        "p10": 0.12143332584348614,
+        "p50": 0.16842692987321464,
+        "p90": 0.20341753122379969
+      },
+      "width_by_fpr_region": {
+        "0-10": 0.5220510381965339,
+        "10-30": 0.20102846560565202,
+        "30-50": 0.13814877201575784,
+        "50-70": 0.11010709770459051,
+        "70-90": 0.0865202851705253,
+        "90-100": 0.06512184695214032
+      },
+      "violation_rate_by_region": {
+        "0-10": 0.0,
+        "10-30": 0.00025,
+        "30-50": 0.001,
+        "50-70": 0.00075,
+        "70-90": 0.0,
+        "90-100": 0.0
+      },
+      "mean_max_violation": 1.892825241509702e-05,
+      "percentile_95_max_violation": 0.0,
+      "mean_violation_area_above": 4.770604931609658e-08,
+      "mean_violation_area_below": 9.320340825547171e-07
+    },
+    "alpha_0.05": {
+      "n_simulations": 4000,
+      "nominal_alpha": 0.05,
+      "confidence_level": 0.95,
+      "coverage_rate": 0.99975,
+      "coverage_se": 0.00024996874804661704,
+      "coverage_ci_lower": 0.9985851689339011,
+      "coverage_ci_upper": 0.9999558674980424,
+      "violation_rate_above": 0.0,
+      "violation_rate_below": 0.00025,
+      "direction_test_pvalue": 1.0,
+      "mean_band_area": 0.19699460597664892,
+      "std_band_area": 0.03659664754682868,
+      "mean_band_width": 0.1966845365712084,
+      "width_percentiles": {
+        "p10": 0.14412244945346472,
+        "p50": 0.19972370316336055,
+        "p90": 0.24426970237349058
+      },
+      "width_by_fpr_region": {
+        "0-10": 0.6047342576587655,
+        "10-30": 0.24486015760404062,
+        "30-50": 0.16616335323169829,
+        "50-70": 0.1317841311738928,
+        "70-90": 0.1026934954445064,
+        "90-100": 0.07860822272330523
+      },
+      "violation_rate_by_region": {
+        "0-10": 0.0,
+        "10-30": 0.0,
+        "30-50": 0.00025,
+        "50-70": 0.00025,
+        "70-90": 0.0,
+        "90-100": 0.0
+      },
+      "mean_max_violation": 3.822124395778504e-06,
+      "percentile_95_max_violation": 0.0,
+      "mean_violation_area_above": 0.0,
+      "mean_violation_area_below": 1.2650867457010264e-07
+    }
+  },
+  "working_hotelling": {
+    "alpha_0.5": {
+      "n_simulations": 4000,
+      "nominal_alpha": 0.5,
+      "confidence_level": 0.5,
+      "coverage_rate": 0.244,
+      "coverage_se": 0.006790876232122037,
+      "coverage_ci_lower": 0.23093986402965141,
+      "coverage_ci_upper": 0.2575513709346757,
+      "violation_rate_above": 0.435,
+      "violation_rate_below": 0.50325,
+      "direction_test_pvalue": 8.920358521040864e-06,
+      "mean_band_area": 0.02446850698095539,
+      "std_band_area": 0.014649829233035943,
+      "mean_band_width": 0.024515379704955875,
+      "width_percentiles": {
+        "p10": 0.00486036825753405,
+        "p50": 0.024336309539889526,
+        "p90": 0.04448880333834158
+      },
+      "width_by_fpr_region": {
+        "0-10": 0.052647191284778794,
+        "10-30": 0.039339393953923135,
+        "30-50": 0.0272570350715518,
+        "50-70": 0.018178124376969175,
+        "70-90": 0.009701830530166626,
+        "90-100": 0.002743128426671028
+      },
+      "violation_rate_by_region": {
+        "0-10": 0.5245,
+        "10-30": 0.49275,
+        "30-50": 0.45625,
+        "50-70": 0.4025,
+        "70-90": 0.37925,
+        "90-100": 0.5685
+      },
+      "mean_max_violation": 0.01687138550043724,
+      "percentile_95_max_violation": 0.07913508262755854,
+      "mean_violation_area_above": 0.0004169669778326018,
+      "mean_violation_area_below": 0.002151996770112059
+    },
+    "alpha_0.2": {
+      "n_simulations": 4000,
+      "nominal_alpha": 0.2,
+      "confidence_level": 0.8,
+      "coverage_rate": 0.49975,
+      "coverage_se": 0.007905693162209118,
+      "coverage_ci_lower": 0.48426280099838626,
+      "coverage_ci_upper": 0.5152376787232587,
+      "violation_rate_above": 0.22075,
+      "violation_rate_below": 0.34675,
+      "direction_test_pvalue": 2.95005625671699e-26,
+      "mean_band_area": 0.037314955489359536,
+      "std_band_area": 0.02229805295985491,
+      "mean_band_width": 0.03738673042746585,
+      "width_percentiles": {
+        "p10": 0.0074590873264358615,
+        "p50": 0.03712481796323417,
+        "p90": 0.06778163830861672
+      },
+      "width_by_fpr_region": {
+        "0-10": 0.0801731619025274,
+        "10-30": 0.059939996180050074,
+        "30-50": 0.04156194591253996,
+        "50-70": 0.0277502842527805,
+        "70-90": 0.01485327379271388,
+        "90-100": 0.004240372100472451
+      },
+      "violation_rate_by_region": {
+        "0-10": 0.29375,
+        "10-30": 0.29275,
+        "30-50": 0.248,
+        "50-70": 0.1935,
+        "70-90": 0.152,
+        "90-100": 0.36975
+      },
+      "mean_max_violation": 0.009473583819880425,
+      "percentile_95_max_violation": 0.0571701026383915,
+      "mean_violation_area_above": 9.356612029034766e-05,
+      "mean_violation_area_below": 0.001060752981389666
+    },
+    "alpha_0.05": {
+      "n_simulations": 4000,
+      "nominal_alpha": 0.05,
+      "confidence_level": 0.95,
+      "coverage_rate": 0.7075,
+      "coverage_se": 0.007192769807243937,
+      "coverage_ci_lower": 0.6932087039480704,
+      "coverage_ci_upper": 0.7213931270867034,
+      "violation_rate_above": 0.097,
+      "violation_rate_below": 0.21925,
+      "direction_test_pvalue": 6.360364664526284e-44,
+      "mean_band_area": 0.0509723494389615,
+      "std_band_area": 0.030368346461775466,
+      "mean_band_width": 0.05107028574702874,
+      "width_percentiles": {
+        "p10": 0.010286433310929185,
+        "p50": 0.05073554635436119,
+        "p90": 0.09245486210300055
+      },
+      "width_by_fpr_region": {
+        "0-10": 0.10929212807781571,
+        "10-30": 0.08176686273775995,
+        "30-50": 0.05676141590654849,
+        "50-70": 0.037964801036337814,
+        "70-90": 0.020408651918768884,
+        "90-100": 0.005910649500489235
+      },
+      "violation_rate_by_region": {
+        "0-10": 0.163,
+        "10-30": 0.161,
+        "30-50": 0.12425,
+        "50-70": 0.08025,
+        "70-90": 0.04575,
+        "90-100": 0.20625
+      },
+      "mean_max_violation": 0.005278465902730074,
+      "percentile_95_max_violation": 0.037717795884900415,
+      "mean_violation_area_above": 1.531150206027673e-05,
+      "mean_violation_area_below": 0.0005168747086715329
+    }
+  },
+  "pointwise": {
+    "alpha_0.5": {
+      "n_simulations": 4000,
+      "nominal_alpha": 0.5,
+      "confidence_level": 0.5,
+      "coverage_rate": 0.0,
+      "coverage_se": 0.0,
+      "coverage_ci_lower": 5.421010862427522e-20,
+      "coverage_ci_upper": 0.0009594432897014865,
+      "violation_rate_above": 0.78075,
+      "violation_rate_below": 0.996,
+      "direction_test_pvalue": 1.72192032398709e-24,
+      "mean_band_area": 0.01980576121114388,
+      "std_band_area": 0.009574649149697207,
+      "mean_band_width": 0.019592177410291567,
+      "width_percentiles": {
+        "p10": 0.006133164462441195,
+        "p50": 0.01973797525008599,
+        "p90": 0.032744790160867995
+      },
+      "width_by_fpr_region": {
+        "0-10": 0.050690402385343336,
+        "10-30": 0.030179620530698444,
+        "30-50": 0.021221807447522875,
+        "50-70": 0.014288728505373001,
+        "70-90": 0.007856211572140455,
+        "90-100": 0.002516380223333835
+      },
+      "violation_rate_by_region": {
+        "0-10": 0.96875,
+        "10-30": 0.88025,
+        "30-50": 0.83975,
+        "50-70": 0.8835,
+        "70-90": 0.94475,
+        "90-100": 0.99775
+      },
+      "mean_max_violation": 0.04659550534767437,
+      "percentile_95_max_violation": 0.12164016625726679,
+      "mean_violation_area_above": 0.0017538165411583049,
+      "mean_violation_area_below": 0.002298172132371647
+    },
+    "alpha_0.2": {
+      "n_simulations": 4000,
+      "nominal_alpha": 0.2,
+      "confidence_level": 0.8,
+      "coverage_rate": 0.006,
+      "coverage_se": 0.001221065108829173,
+      "coverage_ci_lower": 0.004035366496863108,
+      "coverage_ci_upper": 0.00891256347336196,
+      "violation_rate_above": 0.4375,
+      "violation_rate_below": 0.97225,
+      "direction_test_pvalue": 8.800256015435368e-183,
+      "mean_band_area": 0.03726587668064436,
+      "std_band_area": 0.018458511472959585,
+      "mean_band_width": 0.03705139569047489,
+      "width_percentiles": {
+        "p10": 0.011300598058050766,
+        "p50": 0.03733867209755586,
+        "p90": 0.0621410385097558
+      },
+      "width_by_fpr_region": {
+        "0-10": 0.09170556472192284,
+        "10-30": 0.05729292256828396,
+        "30-50": 0.04021446018010378,
+        "50-70": 0.026995584862730883,
+        "70-90": 0.014791801990717647,
+        "90-100": 0.0047095884397625925
+      },
+      "violation_rate_by_region": {
+        "0-10": 0.66575,
+        "10-30": 0.462,
+        "30-50": 0.46625,
+        "50-70": 0.55625,
+        "70-90": 0.73175,
+        "90-100": 0.9605
+      },
+      "mean_max_violation": 0.025839770639006637,
+      "percentile_95_max_violation": 0.09546953686876723,
+      "mean_violation_area_above": 0.0004971050986552958,
+      "mean_violation_area_below": 0.0008161221143116333
+    },
+    "alpha_0.05": {
+      "n_simulations": 4000,
+      "nominal_alpha": 0.05,
+      "confidence_level": 0.95,
+      "coverage_rate": 0.062,
+      "coverage_se": 0.0038130040650384833,
+      "coverage_ci_lower": 0.05493865996420459,
+      "coverage_ci_upper": 0.06990181235757392,
+      "violation_rate_above": 0.12575,
+      "violation_rate_below": 0.9165,
+      "direction_test_pvalue": 0.0,
+      "mean_band_area": 0.05673153621187897,
+      "std_band_area": 0.02829122818123801,
+      "mean_band_width": 0.05651742513524147,
+      "width_percentiles": {
+        "p10": 0.01718596199710288,
+        "p50": 0.05702254806975564,
+        "p90": 0.09477712521544154
+      },
+      "width_by_fpr_region": {
+        "0-10": 0.1373150985456037,
+        "10-30": 0.08746245789212176,
+        "30-50": 0.06136154689356684,
+        "50-70": 0.041200602865824006,
+        "70-90": 0.02258067003101111,
+        "90-100": 0.00723715458214283
+      },
+      "violation_rate_by_region": {
+        "0-10": 0.33575,
+        "10-30": 0.13575,
+        "30-50": 0.19925,
+        "50-70": 0.32875,
+        "70-90": 0.543,
+        "90-100": 0.88925
+      },
+      "mean_max_violation": 0.013105399534843106,
+      "percentile_95_max_violation": 0.0694136150867438,
+      "mean_violation_area_above": 8.730479890732071e-05,
+      "mean_violation_area_below": 0.00024062288536956555
+    }
+  },
+  "pointwise_sidak": {
+    "alpha_0.5": {
+      "n_simulations": 4000,
+      "nominal_alpha": 0.5,
+      "confidence_level": 0.5,
+      "coverage_rate": 0.178,
+      "coverage_se": 0.006048057539408831,
+      "coverage_ci_lower": 0.16645662667171243,
+      "coverage_ci_upper": 0.19016125480685533,
+      "violation_rate_above": 0.0045,
+      "violation_rate_below": 0.8205,
+      "direction_test_pvalue": 0.0,
+      "mean_band_area": 0.09069290274383641,
+      "std_band_area": 0.045409727249359315,
+      "mean_band_width": 0.09048015240606276,
+      "width_percentiles": {
+        "p10": 0.028008617738444725,
+        "p50": 0.09162492649946996,
+        "p90": 0.15163286956062613
+      },
+      "width_by_fpr_region": {
+        "0-10": 0.2159507290167571,
+        "10-30": 0.14011259638136253,
+        "30-50": 0.0983206058064848,
+        "50-70": 0.06609252496469434,
+        "70-90": 0.036312457673251634,
+        "90-100": 0.011917183313071728
+      },
+      "violation_rate_by_region": {
+        "0-10": 0.13675,
+        "10-30": 0.01325,
+        "30-50": 0.0855,
+        "50-70": 0.224,
+        "70-90": 0.44625,
+        "90-100": 0.80775
+      },
+      "mean_max_violation": 0.005870819289709094,
+      "percentile_95_max_violation": 0.040967232319451104,
+      "mean_violation_area_above": 9.299413776360504e-07,
+      "mean_violation_area_below": 7.168296330113737e-05
+    },
+    "alpha_0.2": {
+      "n_simulations": 4000,
+      "nominal_alpha": 0.2,
+      "confidence_level": 0.8,
+      "coverage_rate": 0.2025,
+      "coverage_se": 0.006354009560899323,
+      "coverage_ci_lower": 0.19033450800548948,
+      "coverage_ci_upper": 0.21523636075188293,
+      "violation_rate_above": 0.00225,
+      "violation_rate_below": 0.7965,
+      "direction_test_pvalue": 0.0,
+      "mean_band_area": 0.09750162129895366,
+      "std_band_area": 0.04883965467100157,
+      "mean_band_width": 0.09728995221120569,
+      "width_percentiles": {
+        "p10": 0.03007334711436996,
+        "p50": 0.09840916627775392,
+        "p90": 0.1631089542307919
+      },
+      "width_by_fpr_region": {
+        "0-10": 0.23150746773342196,
+        "10-30": 0.15064889586057512,
+        "30-50": 0.10571533917125313,
+        "50-70": 0.07115343591932317,
+        "70-90": 0.03910017195880413,
+        "90-100": 0.012912479195296764
+      },
+      "violation_rate_by_region": {
+        "0-10": 0.118,
+        "10-30": 0.00975,
+        "30-50": 0.08125,
+        "50-70": 0.217,
+        "70-90": 0.43975,
+        "90-100": 0.785
+      },
+      "mean_max_violation": 0.005165307893140012,
+      "percentile_95_max_violation": 0.03566418028871697,
+      "mean_violation_area_above": 3.2612701179295157e-07,
+      "mean_violation_area_below": 6.388202472661624e-05
+    },
+    "alpha_0.05": {
+      "n_simulations": 4000,
+      "nominal_alpha": 0.05,
+      "confidence_level": 0.95,
+      "coverage_rate": 0.20525,
+      "coverage_se": 0.006385969728631666,
+      "coverage_ci_lower": 0.19301933509395652,
+      "coverage_ci_upper": 0.21804625672532252,
+      "violation_rate_above": 0.00175,
+      "violation_rate_below": 0.79375,
+      "direction_test_pvalue": 0.0,
+      "mean_band_area": 0.10254950233608738,
+      "std_band_area": 0.0513920676014252,
+      "mean_band_width": 0.1023387356848515,
+      "width_percentiles": {
+        "p10": 0.03166363078033279,
+        "p50": 0.10333191976697746,
+        "p90": 0.1714920027432534
+      },
+      "width_by_fpr_region": {
+        "0-10": 0.24298859514939244,
+        "10-30": 0.15843176302976905,
+        "30-50": 0.11122400557003916,
+        "50-70": 0.07490935935773473,
+        "70-90": 0.04117758085131644,
+        "90-100": 0.013677263145446776
+      },
+      "violation_rate_by_region": {
+        "0-10": 0.10725,
+        "10-30": 0.0075,
+        "30-50": 0.07825,
+        "50-70": 0.21425,
+        "70-90": 0.43625,
+        "90-100": 0.7835
+      },
+      "mean_max_violation": 0.004784857729806825,
+      "percentile_95_max_violation": 0.03262191170759747,
+      "mean_violation_area_above": 1.3226766352566687e-07,
+      "mean_violation_area_below": 5.9620308558332586e-05
+    }
+  },
+  "wilson_rectangle_sidak": {
+    "alpha_0.5": {
+      "n_simulations": 4000,
+      "nominal_alpha": 0.5,
+      "confidence_level": 0.5,
+      "coverage_rate": 0.04375,
+      "coverage_se": 0.0032340353082488137,
+      "coverage_ci_lower": 0.03783709004550936,
+      "coverage_ci_upper": 0.05053840195634326,
+      "violation_rate_above": 0.72625,
+      "violation_rate_below": 0.556,
+      "direction_test_pvalue": 1.928952547687644e-21,
+      "mean_band_area": 0.042720268379391156,
+      "std_band_area": 0.02023179928315162,
+      "mean_band_width": 0.04280145600407084,
+      "width_percentiles": {
+        "p10": 0.015544072569969421,
+        "p50": 0.04265099511349309,
+        "p90": 0.07056732081237971
+      },
+      "width_by_fpr_region": {
+        "0-10": 0.10173190527587612,
+        "10-30": 0.06516402484491468,
+        "30-50": 0.04555139930017292,
+        "50-70": 0.030810965113194276,
+        "70-90": 0.017475726376920943,
+        "90-100": 0.006894481099545955
+      },
+      "violation_rate_by_region": {
+        "0-10": 0.6325,
+        "10-30": 0.47125,
+        "30-50": 0.4505,
+        "50-70": 0.43475,
+        "70-90": 0.4225,
+        "90-100": 0.30375
+      },
+      "mean_max_violation": 0.020606548312281342,
+      "percentile_95_max_violation": 0.07141587081054895,
+      "mean_violation_area_above": 0.0005799628296065184,
+      "mean_violation_area_below": 0.00035347270215811043
+    },
+    "alpha_0.2": {
+      "n_simulations": 4000,
+      "nominal_alpha": 0.2,
+      "confidence_level": 0.8,
+      "coverage_rate": 0.52225,
+      "coverage_se": 0.007897862645994801,
+      "coverage_ci_lower": 0.5067565389645095,
+      "coverage_ci_upper": 0.5377007658090989,
+      "violation_rate_above": 0.365,
+      "violation_rate_below": 0.1345,
+      "direction_test_pvalue": 6.599085073739292e-98,
+      "mean_band_area": 0.06648201421451821,
+      "std_band_area": 0.030286696881198907,
+      "mean_band_width": 0.06660480135924567,
+      "width_percentiles": {
+        "p10": 0.025978791731631826,
+        "p50": 0.0660842894137891,
+        "p90": 0.10833788538329026
+      },
+      "width_by_fpr_region": {
+        "0-10": 0.159138892413069,
+        "10-30": 0.10035908381770366,
+        "30-50": 0.07035560532018542,
+        "50-70": 0.04791594872999899,
+        "70-90": 0.027793257712423806,
+        "90-100": 0.011979364622831343
+      },
+      "violation_rate_by_region": {
+        "0-10": 0.18425,
+        "10-30": 0.11525,
+        "30-50": 0.1185,
+        "50-70": 0.13325,
+        "70-90": 0.14,
+        "90-100": 0.09475
+      },
+      "mean_max_violation": 0.005093378689090923,
+      "percentile_95_max_violation": 0.028304699854467073,
+      "mean_violation_area_above": 9.47815007913637e-05,
+      "mean_violation_area_below": 3.8293452429985695e-05
+    },
+    "alpha_0.05": {
+      "n_simulations": 4000,
+      "nominal_alpha": 0.05,
+      "confidence_level": 0.95,
+      "coverage_rate": 0.56425,
+      "coverage_se": 0.007840152063257447,
+      "coverage_ci_lower": 0.5488291897570481,
+      "coverage_ci_upper": 0.5795475217802253,
+      "violation_rate_above": 0.4285,
+      "violation_rate_below": 0.00875,
+      "direction_test_pvalue": 0.0,
+      "mean_band_area": 0.09310458552750844,
+      "std_band_area": 0.04038247752607508,
+      "mean_band_width": 0.09327131892127978,
+      "width_percentiles": {
+        "p10": 0.03933180777079805,
+        "p50": 0.09223911486741507,
+        "p90": 0.14913281966994332
+      },
+      "width_by_fpr_region": {
+        "0-10": 0.22430079954240312,
+        "10-30": 0.1388974905970972,
+        "30-50": 0.09765055279634892,
+        "50-70": 0.06707205343467765,
+        "70-90": 0.039844042159467935,
+        "90-100": 0.01867342935562134
+      },
+      "violation_rate_by_region": {
+        "0-10": 0.03,
+        "10-30": 0.012,
+        "30-50": 0.0185,
+        "50-70": 0.0365,
+        "70-90": 0.03975,
+        "90-100": 0.40075
+      },
+      "mean_max_violation": 0.0007310596063662473,
+      "percentile_95_max_violation": 0.001375395468808248,
+      "mean_violation_area_above": 7.15645991605428e-06,
+      "mean_violation_area_below": 2.7007943294486557e-06
+    }
+  },
+  "wilson_rectangle_bonferroni": {
+    "alpha_0.5": {
+      "n_simulations": 4000,
+      "nominal_alpha": 0.5,
+      "confidence_level": 0.5,
+      "coverage_rate": 0.09425,
+      "coverage_se": 0.004619711503438283,
+      "coverage_ci_lower": 0.08558080167650642,
+      "coverage_ci_upper": 0.10369778655308634,
+      "violation_rate_above": 0.66325,
+      "violation_rate_below": 0.4685,
+      "direction_test_pvalue": 4.542795301802414e-31,
+      "mean_band_area": 0.046788933443630096,
+      "std_band_area": 0.0220533412838143,
+      "mean_band_width": 0.04687740897349403,
+      "width_percentiles": {
+        "p10": 0.01718579165778405,
+        "p50": 0.04669942418071357,
+        "p90": 0.07715622880012576
+      },
+      "width_by_fpr_region": {
+        "0-10": 0.11134268777916448,
+        "10-30": 0.07127926176816224,
+        "30-50": 0.0498486842316389,
+        "50-70": 0.03375921790309176,
+        "70-90": 0.019221337360143656,
+        "90-100": 0.007707251155972482
+      },
+      "violation_rate_by_region": {
+        "0-10": 0.543,
+        "10-30": 0.38875,
+        "30-50": 0.37025,
+        "50-70": 0.3605,
+        "70-90": 0.35275,
+        "90-100": 0.255
+      },
+      "mean_max_violation": 0.01683560712911441,
+      "percentile_95_max_violation": 0.06398927646585664,
+      "mean_violation_area_above": 0.00043451301924995176,
+      "mean_violation_area_below": 0.0002498779981183845
+    },
+    "alpha_0.2": {
+      "n_simulations": 4000,
+      "nominal_alpha": 0.2,
+      "confidence_level": 0.8,
+      "coverage_rate": 0.54825,
+      "coverage_se": 0.007868798153148929,
+      "coverage_ci_lower": 0.5327884766801675,
+      "coverage_ci_upper": 0.5636189370423764,
+      "violation_rate_above": 0.3475,
+      "violation_rate_below": 0.12175,
+      "direction_test_pvalue": 2.8319928786303736e-100,
+      "mean_band_area": 0.06760827489225882,
+      "std_band_area": 0.03073487606122951,
+      "mean_band_width": 0.06773297708927499,
+      "width_percentiles": {
+        "p10": 0.026509491869907285,
+        "p50": 0.06719717457666545,
+        "p90": 0.11008947646863423
+      },
+      "width_by_fpr_region": {
+        "0-10": 0.1619015191413905,
+        "10-30": 0.10200373397077435,
+        "30-50": 0.07151762459114193,
+        "50-70": 0.048724590028424074,
+        "70-90": 0.028291141996681698,
+        "90-100": 0.012240194988250732
+      },
+      "violation_rate_by_region": {
+        "0-10": 0.17175,
+        "10-30": 0.105,
+        "30-50": 0.10975,
+        "50-70": 0.1235,
+        "70-90": 0.134,
+        "90-100": 0.0905
+      },
+      "mean_max_violation": 0.004747060904430435,
+      "percentile_95_max_violation": 0.026997174911311938,
+      "mean_violation_area_above": 8.624250223462515e-05,
+      "mean_violation_area_below": 3.418859188786097e-05
+    },
+    "alpha_0.05": {
+      "n_simulations": 4000,
+      "nominal_alpha": 0.05,
+      "confidence_level": 0.95,
+      "coverage_rate": 0.565,
+      "coverage_se": 0.007838606381238952,
+      "coverage_ci_lower": 0.5495814952721356,
+      "coverage_ci_upper": 0.580293777100203,
+      "violation_rate_above": 0.42825,
+      "violation_rate_below": 0.00825,
+      "direction_test_pvalue": 0.0,
+      "mean_band_area": 0.09332065675158457,
+      "std_band_area": 0.040458487917991434,
+      "mean_band_width": 0.09348773658330929,
+      "width_percentiles": {
+        "p10": 0.03944661044739634,
+        "p50": 0.09245085286648191,
+        "p90": 0.14946048223827152
+      },
+      "width_by_fpr_region": {
+        "0-10": 0.22483828106178774,
+        "10-30": 0.13920534910262564,
+        "30-50": 0.09786912916876375,
+        "50-70": 0.06722684007683899,
+        "70-90": 0.03994405384600162,
+        "90-100": 0.018731961970329284
+      },
+      "violation_rate_by_region": {
+        "0-10": 0.02975,
+        "10-30": 0.01175,
+        "30-50": 0.018,
+        "50-70": 0.036,
+        "70-90": 0.03975,
+        "90-100": 0.4005
+      },
+      "mean_max_violation": 0.0007171347147361404,
+      "percentile_95_max_violation": 0.0013165712246396334,
+      "mean_violation_area_above": 6.984824909601058e-06,
+      "mean_violation_area_below": 2.6485516152058704e-06
+    }
+  },
+  "envelope": {
+    "alpha_0.5": {
+      "n_simulations": 4000,
+      "nominal_alpha": 0.5,
+      "confidence_level": 0.5,
+      "coverage_rate": 0.8825,
+      "coverage_se": 0.005091506407734357,
+      "coverage_ci_lower": 0.8721518831397853,
+      "coverage_ci_upper": 0.8921141427435929,
+      "violation_rate_above": 0.05675,
+      "violation_rate_below": 0.06275,
+      "direction_test_pvalue": 0.2927928496516056,
+      "mean_band_area": 0.0846155712894209,
+      "std_band_area": 0.026542957045701025,
+      "mean_band_width": 0.08454159721286358,
+      "width_percentiles": {
+        "p10": 0.0477034402992539,
+        "p50": 0.08580196075484844,
+        "p90": 0.11543449994646952
+      },
+      "width_by_fpr_region": {
+        "0-10": 0.2188969560737596,
+        "10-30": 0.12103833831114695,
+        "30-50": 0.0854363994034007,
+        "50-70": 0.06000944864963837,
+        "70-90": 0.03767876455277205,
+        "90-100": 0.020163239914774898
+      },
+      "violation_rate_by_region": {
+        "0-10": 0.038,
+        "10-30": 0.039,
+        "30-50": 0.0315,
+        "50-70": 0.02475,
+        "70-90": 0.02975,
+        "90-100": 0.0145
+      },
+      "mean_max_violation": 0.0010821130182277919,
+      "percentile_95_max_violation": 0.007269627153271041,
+      "mean_violation_area_above": 3.250359945064366e-05,
+      "mean_violation_area_below": 2.809539986382898e-05
+    },
+    "alpha_0.2": {
+      "n_simulations": 4000,
+      "nominal_alpha": 0.2,
+      "confidence_level": 0.8,
+      "coverage_rate": 0.97,
+      "coverage_se": 0.0026972207918522367,
+      "coverage_ci_lower": 0.9642459356773666,
+      "coverage_ci_upper": 0.9748521876303141,
+      "violation_rate_above": 0.013,
+      "violation_rate_below": 0.017,
+      "direction_test_pvalue": 0.1706452131303514,
+      "mean_band_area": 0.10001955614266592,
+      "std_band_area": 0.03192492059960543,
+      "mean_band_width": 0.09992725527474372,
+      "width_percentiles": {
+        "p10": 0.05558493549455861,
+        "p50": 0.10090903860361937,
+        "p90": 0.14067230581199539
+      },
+      "width_by_fpr_region": {
+        "0-10": 0.2518251356392671,
+        "10-30": 0.1414346112776268,
+        "30-50": 0.10182415699053557,
+        "50-70": 0.0724499588557104,
+        "70-90": 0.04630451704621315,
+        "90-100": 0.025816492551863197
+      },
+      "violation_rate_by_region": {
+        "0-10": 0.00775,
+        "10-30": 0.01125,
+        "30-50": 0.00825,
+        "50-70": 0.00625,
+        "70-90": 0.006,
+        "90-100": 0.00125
+      },
+      "mean_max_violation": 0.00025063094811408887,
+      "percentile_95_max_violation": 0.0,
+      "mean_violation_area_above": 4.94408603898351e-06,
+      "mean_violation_area_below": 7.290636429121143e-06
+    },
+    "alpha_0.05": {
+      "n_simulations": 4000,
+      "nominal_alpha": 0.05,
+      "confidence_level": 0.95,
+      "coverage_rate": 0.9915,
+      "coverage_se": 0.0014515293658758641,
+      "coverage_ci_lower": 0.9881460174434817,
+      "coverage_ci_upper": 0.9939108498027418,
+      "violation_rate_above": 0.003,
+      "violation_rate_below": 0.0055,
+      "direction_test_pvalue": 0.12144948495551944,
+      "mean_band_area": 0.11463119819993951,
+      "std_band_area": 0.03610001656356845,
+      "mean_band_width": 0.11451757865690085,
+      "width_percentiles": {
+        "p10": 0.06561389123509546,
+        "p50": 0.11429007433705735,
+        "p90": 0.16383725618999564
+      },
+      "width_by_fpr_region": {
+        "0-10": 0.28728587312900883,
+        "10-30": 0.1580948644112982,
+        "30-50": 0.11635666539534925,
+        "50-70": 0.08426600973322843,
+        "70-90": 0.05529186595782637,
+        "90-100": 0.03274852318704129
+      },
+      "violation_rate_by_region": {
+        "0-10": 0.0015,
+        "10-30": 0.00325,
+        "30-50": 0.00225,
+        "50-70": 0.003,
+        "70-90": 0.00025,
+        "90-100": 0.0
+      },
+      "mean_max_violation": 6.440000186425832e-05,
+      "percentile_95_max_violation": 0.0,
+      "mean_violation_area_above": 6.437607021168416e-07,
+      "mean_violation_area_below": 2.412011817912186e-06
+    }
+  },
+  "envelope_no_beta_floor": {
+    "alpha_0.5": {
+      "n_simulations": 4000,
+      "nominal_alpha": 0.5,
+      "confidence_level": 0.5,
+      "coverage_rate": 0.75825,
+      "coverage_se": 0.006769544620947557,
+      "coverage_ci_lower": 0.7447382121525249,
+      "coverage_ci_upper": 0.7712662353883443,
+      "violation_rate_above": 0.05675,
+      "violation_rate_below": 0.1875,
+      "direction_test_pvalue": 6.980471333044492e-66,
+      "mean_band_area": 0.08159792945160807,
+      "std_band_area": 0.028418943231681135,
+      "mean_band_width": 0.08151790796927123,
+      "width_percentiles": {
+        "p10": 0.04186179013194923,
+        "p50": 0.08319461156795163,
+        "p90": 0.11482424011793665
+      },
+      "width_by_fpr_region": {
+        "0-10": 0.188720537422708,
+        "10-30": 0.12103833831114695,
+        "30-50": 0.0854363994034007,
+        "50-70": 0.06000944864963837,
+        "70-90": 0.03767876455277205,
+        "90-100": 0.020163239914774898
+      },
+      "violation_rate_by_region": {
+        "0-10": 0.16625,
+        "10-30": 0.039,
+        "30-50": 0.0315,
+        "50-70": 0.02475,
+        "70-90": 0.02975,
+        "90-100": 0.0145
+      },
+      "mean_max_violation": 0.005714071949274273,
+      "percentile_95_max_violation": 0.038371063336758195,
+      "mean_violation_area_above": 3.250359945064366e-05,
+      "mean_violation_area_below": 4.361844481047104e-05
+    },
+    "alpha_0.2": {
+      "n_simulations": 4000,
+      "nominal_alpha": 0.2,
+      "confidence_level": 0.8,
+      "coverage_rate": 0.8545,
+      "coverage_se": 0.005575162553683973,
+      "coverage_ci_lower": 0.8432327081063598,
+      "coverage_ci_upper": 0.8650870466012419,
+      "violation_rate_above": 0.013,
+      "violation_rate_below": 0.1325,
+      "direction_test_pvalue": 9.897977100932021e-101,
+      "mean_band_area": 0.0961667519077905,
+      "std_band_area": 0.03442374481682469,
+      "mean_band_width": 0.09606672995455097,
+      "width_percentiles": {
+        "p10": 0.04812617882459102,
+        "p50": 0.09738330912584055,
+        "p90": 0.14008908929081187
+      },
+      "width_by_fpr_region": {
+        "0-10": 0.21329709294374333,
+        "10-30": 0.1414346112776268,
+        "30-50": 0.10182415699053557,
+        "50-70": 0.0724499588557104,
+        "70-90": 0.04630451704621315,
+        "90-100": 0.025816492551863197
+      },
+      "violation_rate_by_region": {
+        "0-10": 0.124,
+        "10-30": 0.01125,
+        "30-50": 0.00825,
+        "50-70": 0.00625,
+        "70-90": 0.006,
+        "90-100": 0.00125
+      },
+      "mean_max_violation": 0.004564305999500121,
+      "percentile_95_max_violation": 0.0337298795809294,
+      "mean_violation_area_above": 4.94408603898351e-06,
+      "mean_violation_area_below": 1.9301072707016565e-05
+    },
+    "alpha_0.05": {
+      "n_simulations": 4000,
+      "nominal_alpha": 0.05,
+      "confidence_level": 0.95,
+      "coverage_rate": 0.88025,
+      "coverage_se": 0.0051334670910603885,
+      "coverage_ci_lower": 0.8698219735444319,
+      "coverage_ci_upper": 0.88994836983375,
+      "violation_rate_above": 0.003,
+      "violation_rate_below": 0.11675,
+      "direction_test_pvalue": 3.485634792448982e-121,
+      "mean_band_area": 0.1090149832681932,
+      "std_band_area": 0.03956804628914356,
+      "mean_band_width": 0.10889010882439144,
+      "width_percentiles": {
+        "p10": 0.055107382973114814,
+        "p50": 0.10879957056296374,
+        "p90": 0.1629374586985463
+      },
+      "width_by_fpr_region": {
+        "0-10": 0.23112372420056496,
+        "10-30": 0.1580948644112982,
+        "30-50": 0.11635666539534925,
+        "50-70": 0.08426600973322843,
+        "70-90": 0.05529186595782637,
+        "90-100": 0.03274852318704129
+      },
+      "violation_rate_by_region": {
+        "0-10": 0.113,
+        "10-30": 0.00325,
+        "30-50": 0.00225,
+        "50-70": 0.003,
+        "70-90": 0.00025,
+        "90-100": 0.0
+      },
+      "mean_max_violation": 0.0042733153347911165,
+      "percentile_95_max_violation": 0.03263682173085548,
+      "mean_violation_area_above": 6.437607021168416e-07,
+      "mean_violation_area_below": 1.3393281660033101e-05
+    }
+  },
+  "envelope_no_wilson_floor": {
+    "alpha_0.5": {
+      "n_simulations": 4000,
+      "nominal_alpha": 0.5,
+      "confidence_level": 0.5,
+      "coverage_rate": 0.08375,
+      "coverage_se": 0.004379952553966766,
+      "coverage_ci_lower": 0.07555964910466925,
+      "coverage_ci_upper": 0.09273908743400724,
+      "violation_rate_above": 0.055,
+      "violation_rate_below": 0.90125,
+      "direction_test_pvalue": 0.0,
+      "mean_band_area": 0.07910858020907503,
+      "std_band_area": 0.0317443551344896,
+      "mean_band_width": 0.0790361079683104,
+      "width_percentiles": {
+        "p10": 0.033409538596331,
+        "p50": 0.08241545594108846,
+        "p90": 0.11526320668508158
+      },
+      "width_by_fpr_region": {
+        "0-10": 0.21903485276590368,
+        "10-30": 0.11961277424372732,
+        "30-50": 0.08123248582955452,
+        "50-70": 0.05323111637755491,
+        "70-90": 0.028322851213067768,
+        "90-100": 0.008493317319452763
+      },
+      "violation_rate_by_region": {
+        "0-10": 0.0365,
+        "10-30": 0.05325,
+        "30-50": 0.1305,
+        "50-70": 0.2725,
+        "70-90": 0.516,
+        "90-100": 0.89625
+      },
+      "mean_max_violation": 0.002144601547943086,
+      "percentile_95_max_violation": 0.008038990058278383,
+      "mean_violation_area_above": 3.2473373101910463e-05,
+      "mean_violation_area_below": 0.00010838330874553554
+    },
+    "alpha_0.2": {
+      "n_simulations": 4000,
+      "nominal_alpha": 0.2,
+      "confidence_level": 0.8,
+      "coverage_rate": 0.1165,
+      "coverage_se": 0.00507266571932352,
+      "coverage_ci_lower": 0.10692366554772496,
+      "coverage_ci_upper": 0.1268122274554761,
+      "violation_rate_above": 0.01175,
+      "violation_rate_below": 0.878,
+      "direction_test_pvalue": 0.0,
+      "mean_band_area": 0.09305663367413403,
+      "std_band_area": 0.03904862999421036,
+      "mean_band_width": 0.09296438696014593,
+      "width_percentiles": {
+        "p10": 0.037300070636497,
+        "p50": 0.09626155411581955,
+        "p90": 0.1411721497835248
+      },
+      "width_by_fpr_region": {
+        "0-10": 0.25307021314013417,
+        "10-30": 0.14009374962012283,
+        "30-50": 0.09659183582399043,
+        "50-70": 0.06374529882254872,
+        "70-90": 0.03401338458865881,
+        "90-100": 0.010114435292184355
+      },
+      "violation_rate_by_region": {
+        "0-10": 0.0075,
+        "10-30": 0.022,
+        "30-50": 0.09975,
+        "50-70": 0.24675,
+        "70-90": 0.48625,
+        "90-100": 0.8745
+      },
+      "mean_max_violation": 0.0013045839676652396,
+      "percentile_95_max_violation": 0.004285096521170625,
+      "mean_violation_area_above": 4.2432230367012954e-06,
+      "mean_violation_area_below": 7.941486627731259e-05
+    },
+    "alpha_0.05": {
+      "n_simulations": 4000,
+      "nominal_alpha": 0.05,
+      "confidence_level": 0.95,
+      "coverage_rate": 0.13875,
+      "coverage_se": 0.005465767043608793,
+      "coverage_ci_lower": 0.12838342453256452,
+      "coverage_ci_upper": 0.14980977324424483,
+      "violation_rate_above": 0.003,
+      "violation_rate_below": 0.86025,
+      "direction_test_pvalue": 0.0,
+      "mean_band_area": 0.10534474870598229,
+      "std_band_area": 0.04596484937205709,
+      "mean_band_width": 0.1052212987017975,
+      "width_percentiles": {
+        "p10": 0.04118855766399591,
+        "p50": 0.10676737170748576,
+        "p90": 0.16562250433575415
+      },
+      "width_by_fpr_region": {
+        "0-10": 0.2904135207555171,
+        "10-30": 0.1560703651826643,
+        "30-50": 0.10899039120070635,
+        "50-70": 0.07258122484120402,
+        "70-90": 0.03894087958663703,
+        "90-100": 0.011755544488728044
+      },
+      "violation_rate_by_region": {
+        "0-10": 0.00125,
+        "10-30": 0.01375,
+        "30-50": 0.091,
+        "50-70": 0.23625,
+        "70-90": 0.469,
+        "90-100": 0.8585
+      },
+      "mean_max_violation": 0.0010607174947170042,
+      "percentile_95_max_violation": 0.0036223256290354735,
+      "mean_violation_area_above": 2.333780566989543e-07,
+      "mean_violation_area_below": 6.845835933068661e-05
+    }
+  },
+  "envelope_no_floors": {
+    "alpha_0.5": {
+      "n_simulations": 4000,
+      "nominal_alpha": 0.5,
+      "confidence_level": 0.5,
+      "coverage_rate": 0.078,
+      "coverage_se": 0.004240165091125581,
+      "coverage_ci_lower": 0.07008844018232667,
+      "coverage_ci_upper": 0.08672132995418137,
+      "violation_rate_above": 0.055,
+      "violation_rate_below": 0.907,
+      "direction_test_pvalue": 0.0,
+      "mean_band_area": 0.07609557682040383,
+      "std_band_area": 0.033623182175021,
+      "mean_band_width": 0.07601706646927477,
+      "width_percentiles": {
+        "p10": 0.02769937997232219,
+        "p50": 0.07940880675055459,
+        "p90": 0.11466532218697405
+      },
+      "width_by_fpr_region": {
+        "0-10": 0.188904818605528,
+        "10-30": 0.11961277424372732,
+        "30-50": 0.08123248582955452,
+        "50-70": 0.05323111637755491,
+        "70-90": 0.028322851213067768,
+        "90-100": 0.008493317319452763
+      },
+      "violation_rate_by_region": {
+        "0-10": 0.1645,
+        "10-30": 0.05325,
+        "30-50": 0.1305,
+        "50-70": 0.2725,
+        "70-90": 0.516,
+        "90-100": 0.89625
+      },
+      "mean_max_violation": 0.006626277876258828,
+      "percentile_95_max_violation": 0.038371063336758195,
+      "mean_violation_area_above": 3.2473373101910463e-05,
+      "mean_violation_area_below": 0.00012388176340651387
+    },
+    "alpha_0.2": {
+      "n_simulations": 4000,
+      "nominal_alpha": 0.2,
+      "confidence_level": 0.8,
+      "coverage_rate": 0.11175,
+      "coverage_se": 0.004981514265261116,
+      "coverage_ci_lower": 0.10235649346501464,
+      "coverage_ci_upper": 0.12188851424943857,
+      "violation_rate_above": 0.01175,
+      "violation_rate_below": 0.88275,
+      "direction_test_pvalue": 0.0,
+      "mean_band_area": 0.08925222537713821,
+      "std_band_area": 0.041553627127345664,
+      "mean_band_width": 0.08915235456415066,
+      "width_percentiles": {
+        "p10": 0.02974508117160243,
+        "p50": 0.09254708575581261,
+        "p90": 0.14059359089337023
+      },
+      "width_by_fpr_region": {
+        "0-10": 0.21502612982810124,
+        "10-30": 0.14009374962012283,
+        "30-50": 0.09659183582399043,
+        "50-70": 0.06374529882254872,
+        "70-90": 0.03401338458865881,
+        "90-100": 0.010114435292184355
+      },
+      "violation_rate_by_region": {
+        "0-10": 0.123,
+        "10-30": 0.022,
+        "30-50": 0.09975,
+        "50-70": 0.24675,
+        "70-90": 0.48625,
+        "90-100": 0.8745
+      },
+      "mean_max_violation": 0.005481744898688299,
+      "percentile_95_max_violation": 0.0336947839014152,
+      "mean_violation_area_above": 4.2432230367012954e-06,
+      "mean_violation_area_below": 9.133043027394907e-05
+    },
+    "alpha_0.05": {
+      "n_simulations": 4000,
+      "nominal_alpha": 0.05,
+      "confidence_level": 0.95,
+      "coverage_rate": 0.13375,
+      "coverage_se": 0.005381935931892909,
+      "coverage_ci_lower": 0.12355220285392617,
+      "coverage_ci_upper": 0.1446505893557802,
+      "violation_rate_above": 0.003,
+      "violation_rate_below": 0.86525,
+      "direction_test_pvalue": 0.0,
+      "mean_band_area": 0.09984845065986378,
+      "std_band_area": 0.04942411711672523,
+      "mean_band_width": 0.0997139860688659,
+      "width_percentiles": {
+        "p10": 0.030896577376401974,
+        "p50": 0.10112023044317842,
+        "p90": 0.16466253063187025
+      },
+      "width_by_fpr_region": {
+        "0-10": 0.23545054067885965,
+        "10-30": 0.1560703651826643,
+        "30-50": 0.10899039120070635,
+        "50-70": 0.07258122484120402,
+        "70-90": 0.03894087958663703,
+        "90-100": 0.011755544488728044
+      },
+      "violation_rate_by_region": {
+        "0-10": 0.11025,
+        "10-30": 0.01375,
+        "30-50": 0.091,
+        "50-70": 0.23625,
+        "70-90": 0.469,
+        "90-100": 0.8585
+      },
+      "mean_max_violation": 0.005087595363313767,
+      "percentile_95_max_violation": 0.03250834452618501,
+      "mean_violation_area_above": 2.333780566989543e-07,
+      "mean_violation_area_below": 7.900840045791563e-05
+    }
+  },
+  "envelope_beta_both_tails": {
+    "alpha_0.5": {
+      "n_simulations": 4000,
+      "nominal_alpha": 0.5,
+      "confidence_level": 0.5,
+      "coverage_rate": 0.89575,
+      "coverage_se": 0.004831716503997311,
+      "coverage_ci_lower": 0.8858972414054721,
+      "coverage_ci_upper": 0.9048433592307293,
+      "violation_rate_above": 0.055,
+      "violation_rate_below": 0.0505,
+      "direction_test_pvalue": 0.40795655529392183,
+      "mean_band_area": 0.08276309868935579,
+      "std_band_area": 0.02988915359650636,
+      "mean_band_width": 0.08269794999509736,
+      "width_percentiles": {
+        "p10": 0.03945442471571103,
+        "p50": 0.08605301917301031,
+        "p90": 0.11626552655156291
+      },
+      "width_by_fpr_region": {
+        "0-10": 0.21908383011888044,
+        "10-30": 0.12052546585343778,
+        "30-50": 0.08345299209203567,
+        "50-70": 0.05724909650534391,
+        "70-90": 0.034881306398957965,
+        "90-100": 0.017489897419512273
+      },
+      "violation_rate_by_region": {
+        "0-10": 0.036,
+        "10-30": 0.03925,
+        "30-50": 0.03025,
+        "50-70": 0.02425,
+        "70-90": 0.021,
+        "90-100": 0.0045
+      },
+      "mean_max_violation": 0.0010227557870000083,
+      "percentile_95_max_violation": 0.006835317747855425,
+      "mean_violation_area_above": 3.2473373101910463e-05,
+      "mean_violation_area_below": 2.4549947035469056e-05
+    },
+    "alpha_0.2": {
+      "n_simulations": 4000,
+      "nominal_alpha": 0.2,
+      "confidence_level": 0.8,
+      "coverage_rate": 0.9735,
+      "coverage_se": 0.0025395742753461636,
+      "coverage_ci_lower": 0.9680499190449385,
+      "coverage_ci_upper": 0.9780414881597144,
+      "violation_rate_above": 0.01175,
+      "violation_rate_below": 0.01475,
+      "direction_test_pvalue": 0.28528442186565844,
+      "mean_band_area": 0.09735663247330063,
+      "std_band_area": 0.03667471655404713,
+      "mean_band_width": 0.09727300283162146,
+      "width_percentiles": {
+        "p10": 0.04481220140246924,
+        "p50": 0.10070481866538405,
+        "p90": 0.1422831888563972
+      },
+      "width_by_fpr_region": {
+        "0-10": 0.2531342568688434,
+        "10-30": 0.14140865382160064,
+        "30-50": 0.09937428720626981,
+        "50-70": 0.06844243581806964,
+        "70-90": 0.04146681610479951,
+        "90-100": 0.02046058703005314
+      },
+      "violation_rate_by_region": {
+        "0-10": 0.0075,
+        "10-30": 0.01,
+        "30-50": 0.008,
+        "50-70": 0.006,
+        "70-90": 0.00475,
+        "90-100": 0.00025
+      },
+      "mean_max_violation": 0.00022518291731016081,
+      "percentile_95_max_violation": 0.0,
+      "mean_violation_area_above": 4.2432230367012954e-06,
+      "mean_violation_area_below": 6.6562525201378875e-06
+    },
+    "alpha_0.05": {
+      "n_simulations": 4000,
+      "nominal_alpha": 0.05,
+      "confidence_level": 0.95,
+      "coverage_rate": 0.99225,
+      "coverage_se": 0.00138653682785565,
+      "coverage_ci_lower": 0.9890207024411035,
+      "coverage_ci_upper": 0.9945347256401853,
+      "violation_rate_above": 0.003,
+      "violation_rate_below": 0.00475,
+      "direction_test_pvalue": 0.28104151505976915,
+      "mean_band_area": 0.1110474809940475,
+      "std_band_area": 0.042547225367786046,
+      "mean_band_width": 0.11093545913775932,
+      "width_percentiles": {
+        "p10": 0.05178506393470841,
+        "p50": 0.11211084172069907,
+        "p90": 0.16679074927606435
+      },
+      "width_by_fpr_region": {
+        "0-10": 0.29048755962525574,
+        "10-30": 0.1583506552276574,
+        "30-50": 0.1132391846358031,
+        "50-70": 0.07888421326418325,
+        "70-90": 0.04822676301628351,
+        "90-100": 0.024346856335997584
+      },
+      "violation_rate_by_region": {
+        "0-10": 0.00125,
+        "10-30": 0.00325,
+        "30-50": 0.0025,
+        "50-70": 0.0025,
+        "70-90": 0.0005,
+        "90-100": 0.0
+      },
+      "mean_max_violation": 5.585528780847146e-05,
+      "percentile_95_max_violation": 0.0,
+      "mean_violation_area_above": 2.333780566989543e-07,
+      "mean_violation_area_below": 2.257299570666412e-06
+    }
+  },
+  "envelope_wilson_both_tails": {
+    "alpha_0.5": {
+      "n_simulations": 4000,
+      "nominal_alpha": 0.5,
+      "confidence_level": 0.5,
+      "coverage_rate": 0.9125,
+      "coverage_se": 0.004467766500165379,
+      "coverage_ci_lower": 0.9033428265397512,
+      "coverage_ci_upper": 0.920865632746245,
+      "violation_rate_above": 0.0375,
+      "violation_rate_below": 0.05,
+      "direction_test_pvalue": 0.008720036530555943,
+      "mean_band_area": 0.09367933612920042,
+      "std_band_area": 0.02397435150849199,
+      "mean_band_width": 0.09361906053201323,
+      "width_percentiles": {
+        "p10": 0.060792324868196954,
+        "p50": 0.09420618043026377,
+        "p90": 0.12187238455300835
+      },
+      "width_by_fpr_region": {
+        "0-10": 0.2973235167761698,
+        "10-30": 0.12115699167935176,
+        "30-50": 0.0857198269158974,
+        "50-70": 0.06060704638041778,
+        "70-90": 0.03926535073399544,
+        "90-100": 0.027234411294758322
+      },
+      "violation_rate_by_region": {
+        "0-10": 0.0135,
+        "10-30": 0.03875,
+        "30-50": 0.03125,
+        "50-70": 0.0245,
+        "70-90": 0.0245,
+        "90-100": 0.0025
+      },
+      "mean_max_violation": 0.000825495164710725,
+      "percentile_95_max_violation": 0.004782592705011713,
+      "mean_violation_area_above": 2.7990554228283396e-05,
+      "mean_violation_area_below": 2.6404504914569407e-05
+    },
+    "alpha_0.2": {
+      "n_simulations": 4000,
+      "nominal_alpha": 0.2,
+      "confidence_level": 0.8,
+      "coverage_rate": 0.977,
+      "coverage_se": 0.002370179318110764,
+      "coverage_ci_lower": 0.9718766089789791,
+      "coverage_ci_upper": 0.9812080821226458,
+      "violation_rate_above": 0.008,
+      "violation_rate_below": 0.015,
+      "direction_test_pvalue": 0.004609105461459271,
+      "mean_band_area": 0.1100236969512841,
+      "std_band_area": 0.028940170959829238,
+      "mean_band_width": 0.10994732284675178,
+      "width_percentiles": {
+        "p10": 0.0703970218857448,
+        "p50": 0.10982325389600528,
+        "p90": 0.14781008990719235
+      },
+      "width_by_fpr_region": {
+        "0-10": 0.33904991264362905,
+        "10-30": 0.14161827044823205,
+        "30-50": 0.10214948540363461,
+        "50-70": 0.07308446231971283,
+        "70-90": 0.04806564899235963,
+        "90-100": 0.032852319131791596
+      },
+      "violation_rate_by_region": {
+        "0-10": 0.00175,
+        "10-30": 0.011,
+        "30-50": 0.00825,
+        "50-70": 0.006,
+        "70-90": 0.00475,
+        "90-100": 0.0
+      },
+      "mean_max_violation": 0.00021380471937560146,
+      "percentile_95_max_violation": 0.0,
+      "mean_violation_area_above": 4.059961852876554e-06,
+      "mean_violation_area_below": 7.075679549685368e-06
+    },
+    "alpha_0.05": {
+      "n_simulations": 4000,
+      "nominal_alpha": 0.05,
+      "confidence_level": 0.95,
+      "coverage_rate": 0.9925,
+      "coverage_se": 0.0013641618305758258,
+      "coverage_ci_lower": 0.9893135956566655,
+      "coverage_ci_upper": 0.9947413527029786,
+      "violation_rate_above": 0.00225,
+      "violation_rate_below": 0.00525,
+      "direction_test_pvalue": 0.042773945257067694,
+      "mean_band_area": 0.1261585749808269,
+      "std_band_area": 0.032602569499894554,
+      "mean_band_width": 0.12606432844791476,
+      "width_percentiles": {
+        "p10": 0.08270838985999743,
+        "p50": 0.12463605133648625,
+        "p90": 0.17175250750650717
+      },
+      "width_by_fpr_region": {
+        "0-10": 0.38843256687757655,
+        "10-30": 0.15855637882510198,
+        "30-50": 0.11673455205023288,
+        "50-70": 0.08497744214844584,
+        "70-90": 0.05733594790264964,
+        "90-100": 0.039708740285634994
+      },
+      "violation_rate_by_region": {
+        "0-10": 0.0005,
+        "10-30": 0.00325,
+        "30-50": 0.00225,
+        "50-70": 0.00275,
+        "70-90": 0.00025,
+        "90-100": 0.0
+      },
+      "mean_max_violation": 5.863939207342553e-05,
+      "percentile_95_max_violation": 0.0,
+      "mean_violation_area_above": 4.23057956751341e-07,
+      "mean_violation_area_below": 2.367172174265762e-06
+    }
+  },
+  "envelope_no_bootstrap": {
+    "alpha_0.5": {
+      "n_simulations": 4000,
+      "nominal_alpha": 0.5,
+      "confidence_level": 0.5,
+      "coverage_rate": 0.6245,
+      "coverage_se": 0.007656692334161011,
+      "coverage_ci_lower": 0.6093804333095002,
+      "coverage_ci_upper": 0.6393806653113642,
+      "violation_rate_above": 0.3755,
+      "violation_rate_below": 0.0,
+      "direction_test_pvalue": 0.0,
+      "mean_band_area": 0.14459604159175635,
+      "std_band_area": 0.056738652051779796,
+      "mean_band_width": 0.14484074000971428,
+      "width_percentiles": {
+        "p10": 0.06963148276230137,
+        "p50": 0.1426262911371812,
+        "p90": 0.22384787280138632
+      },
+      "width_by_fpr_region": {
+        "0-10": 0.3499385509937655,
+        "10-30": 0.21152933483031117,
+        "30-50": 0.1493956851041317,
+        "50-70": 0.10433766598070021,
+        "70-90": 0.06466260830596089,
+        "90-100": 0.034534351042509084
+      },
+      "violation_rate_by_region": {
+        "0-10": 0.0,
+        "10-30": 0.0,
+        "30-50": 0.0005,
+        "50-70": 0.0045,
+        "70-90": 0.00975,
+        "90-100": 0.37525
+      },
+      "mean_max_violation": 1.0713447141073307e-06,
+      "percentile_95_max_violation": 5.959599113092295e-08,
+      "mean_violation_area_above": 2.8113950073875858e-08,
+      "mean_violation_area_below": 0.0
+    },
+    "alpha_0.2": {
+      "n_simulations": 4000,
+      "nominal_alpha": 0.2,
+      "confidence_level": 0.8,
+      "coverage_rate": 0.992,
+      "coverage_se": 0.0014085453489327212,
+      "coverage_ci_lower": 0.9887284951205216,
+      "coverage_ci_upper": 0.9943274126824121,
+      "violation_rate_above": 0.008,
+      "violation_rate_below": 0.0,
+      "direction_test_pvalue": 4.656612873077393e-10,
+      "mean_band_area": 0.15825185445982015,
+      "std_band_area": 0.06039936629013384,
+      "mean_band_width": 0.1585158437288787,
+      "width_percentiles": {
+        "p10": 0.078583612876808,
+        "p50": 0.15602510247401938,
+        "p90": 0.2427545151208901
+      },
+      "width_by_fpr_region": {
+        "0-10": 0.3829163292051151,
+        "10-30": 0.23048402844818305,
+        "30-50": 0.1629384002644941,
+        "50-70": 0.11427337520569561,
+        "70-90": 0.07157570885926484,
+        "90-100": 0.03930414519369602
+      },
+      "violation_rate_by_region": {
+        "0-10": 0.0,
+        "10-30": 0.0,
+        "30-50": 0.0,
+        "50-70": 0.0025,
+        "70-90": 0.005,
+        "90-100": 0.002
+      },
+      "mean_max_violation": 4.192440670764408e-07,
+      "percentile_95_max_violation": 0.0,
+      "mean_violation_area_above": 1.3771355976982138e-08,
+      "mean_violation_area_below": 0.0
+    },
+    "alpha_0.05": {
+      "n_simulations": 4000,
+      "nominal_alpha": 0.05,
+      "confidence_level": 0.95,
+      "coverage_rate": 0.99475,
+      "coverage_se": 0.0011426326509425479,
+      "coverage_ci_lower": 0.9919870938404499,
+      "coverage_ci_upper": 0.9965635370243905,
+      "violation_rate_above": 0.00525,
+      "violation_rate_below": 0.0,
+      "direction_test_pvalue": 9.5367431640625e-07,
+      "mean_band_area": 0.1747893151496884,
+      "std_band_area": 0.06447159205340164,
+      "mean_band_width": 0.17507596538955578,
+      "width_percentiles": {
+        "p10": 0.08992661067614993,
+        "p50": 0.17235431212181587,
+        "p90": 0.26516413320853155
+      },
+      "width_by_fpr_region": {
+        "0-10": 0.42251450281533964,
+        "10-30": 0.2533315259262686,
+        "30-50": 0.17923752612125127,
+        "50-70": 0.12634387572161337,
+        "70-90": 0.08012464442357421,
+        "90-100": 0.045411639566421504
+      },
+      "violation_rate_by_region": {
+        "0-10": 0.0,
+        "10-30": 0.0,
+        "30-50": 0.0,
+        "50-70": 0.00075,
+        "70-90": 0.00425,
+        "90-100": 0.00075
+      },
+      "mean_max_violation": 2.1087421982166067e-07,
+      "percentile_95_max_violation": 0.0,
+      "mean_violation_area_above": 6.745571960012337e-09,
+      "mean_violation_area_below": 0.0
+    }
+  },
+  "metadata": {
+    "dgp_type": "beta_opposing",
+    "n_total": 1000,
+    "n_pos": 500,
+    "n_neg": 500,
+    "prevalence": 0.5,
+    "bootstrap_replicates": 4000,
+    "timestamp": "20260612",
+    "n_lhs_combinations": 4000,
+    "n_simulations_per_lhs": 1
+  }
+}

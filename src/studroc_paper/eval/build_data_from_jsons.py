@@ -1,17 +1,32 @@
 """
-Module for ingesting aggregated simulation result JSON files into pandas DataFrames.
+Module for ingesting simulation result files into pandas DataFrames.
 
-Produces two types of DataFrames per alpha level:
-- "standard": One row per model result per file, with flattened scalar metrics
-- "curve": One row per FPR region per model result per file, with region-specific metrics
+Two ingestion paths are provided:
+
+1. Aggregated JSON files ("*_aggregated.json"), which produce two types of
+   DataFrames per alpha level:
+   - "standard": One row per model result per file, with flattened scalar
+     metrics (coverage_rate, coverage_se, coverage_ci_lower/upper,
+     violation_rate_above/below, direction_test_pvalue, mean_band_area,
+     std_band_area, mean_band_width, flattened width percentiles,
+     mean_max_violation, percentile_95_max_violation, and
+     mean_violation_area_above/below)
+   - "curve": One row per FPR region per model result per file, with
+     region-specific width and violation-rate metrics
+
+2. Trial-level feather files ("*_individual.feather") via
+   load_individual_results, which concatenates per-simulation rows across
+   DGPs and sample-size configurations with memory-efficient dtypes.
 """
 
 import json
+import os
 import pickle
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
 
 
@@ -256,6 +271,90 @@ def process_folder(
             result[key] = pd.concat(df_list, ignore_index=True)
 
     return result
+
+
+def _optimize_trial_dtypes(df: pd.DataFrame) -> pd.DataFrame:
+    """Downcast a trial-level DataFrame for memory-efficient concatenation.
+
+    String identifier columns become categoricals and float64 metric columns
+    become float32. Object columns (e.g., per-row parameter arrays for mixture
+    DGPs) and boolean columns are left untouched.
+
+    Args:
+        df: Trial-level DataFrame from a single "*_individual.feather" file.
+
+    Returns:
+        The same DataFrame with optimized dtypes (modified in place).
+    """
+    for col in df.columns:
+        if pd.api.types.is_object_dtype(df[col]):
+            first_valid = df[col].dropna()
+            if len(first_valid) and isinstance(first_valid.iloc[0], str):
+                df[col] = df[col].astype("category")
+        elif df[col].dtype == np.float64:
+            df[col] = df[col].astype(np.float32)
+    return df
+
+
+def load_individual_results(
+    folder_path: os.PathLike | str,
+    *,
+    pattern: str = "*_individual.feather",
+    columns: Sequence[str] | None = None,
+    optimize_dtypes: bool = True,
+) -> pd.DataFrame:
+    """Load and concatenate trial-level simulation results from feather files.
+
+    Each feather file holds one row per (method, alpha, LHS combination,
+    simulation repeat) for a single DGP and sample-size configuration. Files
+    may have DGP-specific parameter columns (e.g., "dgp_df" for student_t);
+    the concatenated result takes the union of columns with NaN elsewhere.
+
+    Two derived columns are added when their inputs are present:
+    - "max_violation": elementwise max of max_violation_above/below
+    - "violation_area": sum of violation_area_above/below
+
+    Args:
+        folder_path: Folder containing the feather files.
+        pattern: Glob pattern selecting trial-level files.
+        columns: Optional subset of columns to load from each file. Derived
+            columns are only added if their inputs are included.
+        optimize_dtypes: Whether to downcast strings to categoricals and
+            float64 to float32 to reduce memory (roughly halves footprint).
+
+    Returns:
+        Concatenated trial-level DataFrame across all matching files.
+
+    Raises:
+        FileNotFoundError: If no files matching the pattern are found.
+
+    Examples:
+        >>> df = load_individual_results("data/results/final_20260611")
+        >>> df.groupby(["dgp_type", "n_total"]).size()
+    """
+    folder_path = Path(folder_path)
+    files = sorted(folder_path.glob(pattern))
+    if not files:
+        raise FileNotFoundError(f"No files matching '{pattern}' found in {folder_path}")
+
+    frames = []
+    for fp in files:
+        df = pd.read_feather(fp, columns=list(columns) if columns else None)
+        if optimize_dtypes:
+            df = _optimize_trial_dtypes(df)
+        frames.append(df)
+
+    out = pd.concat(frames, ignore_index=True)
+
+    if {"max_violation_above", "max_violation_below"}.issubset(out.columns):
+        out["max_violation"] = np.maximum(
+            out["max_violation_above"], out["max_violation_below"]
+        )
+    if {"violation_area_above", "violation_area_below"}.issubset(out.columns):
+        out["violation_area"] = (
+            out["violation_area_above"] + out["violation_area_below"]
+        )
+    return out
 
 
 def get_available_keys(dataframes: Mapping[str, pd.DataFrame]) -> dict[str, list[str]]:
