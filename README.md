@@ -56,19 +56,13 @@ Binormality is the exception, not the rule, for modern classifiers:
   parametric bands are most fragile.
 - **Skew and bounded support.** Probability outputs live in `[0, 1]` and pile up
   near the boundaries; risk scores are often right-skewed. Neither is Gaussian on
-  any scale.
+  any scale. Experienced practitioners will use classifier logits instead of 
+  probabilities, but it can be easy to miss because the choice doesn't impact
+  the ROC curve, but it profoundly impacts the WH confidence band around that curve.
 - **Multimodality.** When a population mixes subgroups — easy vs. hard cases,
   multiple disease subtypes, distinct fraud patterns — the negative or positive
   score distribution is multimodal, producing genuine inflections in the ROC that
   no binormal model can represent.
-
-A clarifying non-example: choosing to build the band on **logit** scores rather
-than **probability** scores is *not* a reason to worry about distributional
-assumptions. The ROC curve is invariant to any monotone rescaling of the score,
-so the probability-vs-logit choice does not move the curve at all and cannot, by
-itself, motivate a distribution-free method. The motivation is the genuine shape
-of the underlying class-conditional distributions — heavy tails, skew,
-multimodality — not the coordinate system you happen to plot them in.
 
 ---
 
