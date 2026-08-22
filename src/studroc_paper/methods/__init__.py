@@ -7,6 +7,7 @@ from .envelope_boot import (
     envelope_bootstrap_band,
     wilson_beta_band,
 )
+from .fiducial_band import fiducial_band
 from .hsieh_turnbull_band import hsieh_turnbull_band
 from .ks_band import fixed_width_ks_band
 from .max_modulus_boot import logit_bootstrap_band
@@ -23,6 +24,7 @@ __all__ = [
     "envelope_band_suite",
     "envelope_bootstrap_band",
     "wilson_beta_band",
+    "fiducial_band",
     "fixed_width_ks_band",
     "hsieh_turnbull_band",
     "logit_bootstrap_band",
