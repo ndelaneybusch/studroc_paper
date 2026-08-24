@@ -24,12 +24,13 @@ conservative bracket endpoint, so each class band has simultaneous level at
 least ``1 - alpha_class`` and within the bisection tolerance of it; no
 Monte Carlo and no safety shading enters.
 
-The two class bands compose into an ROC band by monotonicity: with ``F`` the
-negative and ``G`` the positive class CDF (rank-space convention),
-``R(t) <= G_hi((F_lo)^{-1}(t))`` and ``R(t) >= G_lo((F_hi)^{-1}(t))``.
-Written on the merged label sequence, both edges are pure index gathers, so
-a band costs O(n) once the two ``gamma`` values are calibrated (cached per
-``(n, alpha_class)``).
+The two class bands compose into an ROC band by monotonicity. In descending
+score order, the exact pivots are the original class survival probabilities
+``A(X_[i])`` and ``B(Y_[j])``; this remains valid even when the placement
+distribution, and hence the ROC, has jumps because the negative distribution
+has support gaps. Written on the merged label sequence, both edges are pure
+index gathers, so a band costs O(n) once the two ``gamma`` values are
+calibrated (cached per ``(n, alpha_class)``).
 
 The class levels multiply (independent samples): ``alpha_class`` per class is
 set by ``(1 - alpha_F)(1 - alpha_G) = 1 - alpha`` with the split ratio
@@ -210,10 +211,10 @@ def m3_band_rs(
     b1lo = beta_dist.ppf(g1, i1, n1 + 1.0 - i1)
     b1hi = beta_dist.ppf(1.0 - g1, i1, n1 + 1.0 - i1)
 
-    # Composition index maps on the native grid t_j = j / n0 (1-based order
-    # statistics of the negatives): iup(t) = min{i : b0lo[i] >= t} composes
-    # the G-upper band with the F-lower band; ilo(t) = min{i : b0hi[i] >= t}
-    # the G-lower band with the F-upper band.
+    # Composition index maps on the native grid t_j = j / n0. In descending
+    # score order, iup(t) = min{i : b0lo[i] >= t} composes the positive
+    # survival upper band with the negative survival lower band;
+    # ilo(t) = min{i : b0hi[i] >= t} composes the opposite pair.
     grid = np.arange(n0 + 1) / n0
     iup = np.searchsorted(b0lo, grid, side="left") + 1
     sent = iup > n0  # no such order statistic: the upper edge is vacuous (1)

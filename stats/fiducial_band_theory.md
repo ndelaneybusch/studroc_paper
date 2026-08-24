@@ -26,15 +26,17 @@ key antecedent literature (§14).*
 
 Negatives $X_1,\dots,X_{n_0} \sim F$ iid, positives $Y_1,\dots,Y_{n_1} \sim G$
 iid, classes independent, $F, G$ continuous. The ROC curve is
-$R(t) = 1 - G\big(F^{-1}(1-t)\big) = S_G\big(S_F^{-1}(t)\big)$, a
-non-decreasing map $[0,1]\to[0,1]$, with the quantile convention
-$F^{-1}(u) = \inf\{x : F(x) \ge u\}$ extended by $F^{-1}(0) = -\infty$ and
-$F^{-1}(1) = +\infty$. The extension matters at the endpoints: it makes
-$R(1) = 1$ hold for every $(F, G)$ — without it, when $G$ has mass below
-the support of $F$ (e.g. $F = \mathrm{Unif}(0,1)$, $G = \mathrm{Unif}(-1,1)$)
-the unextended display gives $R(1) = 1 - G(\inf \mathrm{supp}\,F) < 1$,
-the interior composition rather than the completed curve. $R(0) \ge 0$, and
-$R(0) > 0$ is possible (Corollary 9.3). The target is a
+$R(t) = 1 - G\big(Q_F(1-t)\big) = S_G\big(S_F^{-1}(t)\big)$, a
+non-decreasing map $[0,1]\to[0,1]$, where
+$Q_F(u)=\inf\{x:F(x)\ge u\}$ for $u\in(0,1]$ and only the missing lower
+endpoint is completed by $Q_F(0)=-\infty$. Thus $Q_F(1)$ is the finite
+upper support endpoint when $F$ attains 1 at a finite point, and is
+$+\infty$ otherwise. This convention makes $R(1)=1$ for every $(F,G)$
+while retaining $R(0)=1-G(Q_F(1))$, which can be positive when the positive
+distribution extends beyond a bounded negative support (Corollary 9.3).
+Extending $Q_F(1)$ artificially to $+\infty$ would instead force $R(0)=0$
+and would contradict both the placement-value identity and that
+separated-support case. The target is a
 band $[L, U]$ with $P\big(\forall t: L(t) \le R(t) \le U(t)\big) \ge 1-\alpha$.
 
 The construction (recipe in `next_method_ideas.md` §1): merged label sequence
@@ -71,11 +73,14 @@ antecedent we have found.
 
 **Proposition 1 (rank space). [Exact]** Let $U_i = 1 - F(X_i)$ and
 $W_j = 1 - F(Y_j)$. Then $U_i \sim \mathrm{Uniform}(0,1)$ iid, and
-$P(W_j \le t) = 1 - G(F^{-1}(1-t)) = R(t)$: the positives' transformed values
-have CDF exactly the ROC curve. The transform $s \mapsto 1 - F(s)$ is
-strictly *decreasing* on the support of the scores, so it reverses the
-order: descending score order becomes ascending placement-value order, and
-the merged rank structure is preserved up to that fixed reversal.
+$P(W_j \le t) = 1 - G(Q_F(1-t)) = R(t)$: the positives' transformed values
+have CDF exactly the ROC curve, including at both endpoints. The transform
+$s \mapsto 1-F(s)$ is non-increasing and reverses the relevant order:
+descending score order becomes ascending placement-value order. If $F$ has
+a flat interval, no negative observation falls in its interior with positive
+probability; positives in that interval form a placement-value tie block
+between the same neighboring negatives. Refining that block arbitrarily
+therefore leaves the merged *class-label* sequence unchanged.
 
 *Proof.* Probability integral transform for $U_i$; direct computation for
 $W_j$. $\square$
@@ -147,9 +152,10 @@ anchor this choice:
   probabilities for quantiles). It is **not** Rubin's (1981) Bayesian
   bootstrap, and the difference is load-bearing: the BB puts $n$
   Dirichlet$(1,\dots,1)$ weights on the observed atoms, so
-  $F_{\mathrm{BB}}(Z_{(j)}) \sim \mathrm{Beta}(j,\, n-j)$ with
-  $F_{\mathrm{BB}}(Z_{(n)}) = 1$ identically — no mass between or beyond
-  observations — and it is the BB, not the spacings law, that arises as
+  $F_{\mathrm{BB}}(Z_{(j)}) \sim \mathrm{Beta}(j,\, n-j)$ for
+  $j=1,\dots,n-1$, with $F_{\mathrm{BB}}(Z_{(n)}) = 1$ identically — no
+  mass between or beyond observations — and it is the BB, not the spacings
+  law, that arises as
   the noninformative limit of the Dirichlet-process posterior. The two are
   coupled to $O_p(1/n)$ uniformly: writing the spacings partial sums as
   normalized exponentials $S_j = T_j / T_{n+1}$ and the BB partial sums as
@@ -213,20 +219,42 @@ statistics).
    the G-convention is free to move within its own gap — so the anchor
    heights are convention-dependent and only their brackets
    $[\tilde G(Y_{(j)}), \tilde G(Y_{(j+1)})]$ are convention-free.
-3. **[Sketch]** Under the conditions of Theorem 7 (compact
-   $[\varepsilon, 1-\varepsilon]$, $0 < R' < \infty$ there), the bound in
-   (2) is $O_p(\log n / n) = o_p(n^{-1/2})$ uniformly over grid points in
-   the compact: interior F-gaps have width $O_p(\log n_0/n_0)$, the
-   bounded slope caps the (fiducial) positive mass per gap at the same
-   order, and the two extra G-spacings are $O_p(\log n_1/n_1)$. Every
-   convention therefore yields the *same first-order limit*
-   (§6), and the convention cannot affect asymptotic coverage.
-4. **Where the bound fails.** At a steep corner a single F-gap can carry a
-   non-vanishing fraction of the positive mass; the bound in (2) is then
-   *not* $o(n^{-1/2})$, and the convention is a live suspect for the
-   measured steep-corner width slack (§10). This localizes the
-   approximation's possible cost exactly where the width problem is
-   observed.
+3. **[Sketch, with an explicit modulus rate]** Let
+   $I=[\varepsilon,1-\varepsilon]$, enlarge it by a fixed small margin,
+   and write
+
+   $$\omega_R(\delta;I)
+     =\sup\{|R(s)-R(t)|:s,t\text{ in the enlargement of }I,
+                         |s-t|\le\delta\}.$$
+
+   If $n_1/n_0$ stays bounded above and below, the diameter over all
+   conventions, uniformly at grid points in $I$, is
+
+   $$O_p\!\left[
+       \omega_R\!\left(C\frac{\log n_0}{n_0};I\right)
+       +\frac{\log(n_0+n_1)}{n_1}\right]$$
+
+   for any fixed sufficiently large $C$. In particular, if $R$ is locally
+   Hölder-$\beta$ on $I$,
+   $|R(s)-R(t)|\le H|s-t|^\beta$, the diameter is
+
+   $$O_p\!\left[
+       \left(\frac{\log n_0}{n_0}\right)^\beta
+       +\frac{\log(n_0+n_1)}{n_1}\right].$$
+
+   It is therefore $o_p(n^{-1/2})$ for comparable sample sizes whenever
+   $\beta>1/2$. Theorem 7 assumes $C^1$ smoothness, hence $\beta=1$ and
+   recovers the earlier $O_p(\log n/n)$ statement.
+4. **The actual boundary.** Continuity alone makes the convention diameter
+   vanish on a fixed compact, but need not make it first-order negligible.
+   A Hölder-$1/2$ cusp gives the borderline
+   $O_p(\sqrt{\log n/n})$ rate, and rougher cusps can be larger. If $R$
+   has a jump, which is possible even for continuous score CDFs when $F$
+   has a support gap containing positive mass, one negative placement gap
+   can carry asymptotically the whole jump and the diameter can be
+   $O_p(1)$. Thus “steep” is not the mathematical dividing line:
+   the dividing line for first-order equivalence is a local modulus
+   $o(\sqrt\delta)$, up to logarithms.
 
 *Proof of (1)–(2).* (1) is the inverse-image structure (Cui & Hannig 2019,
 eq. 2.3): consecutive completions differ by at most the spacing they
@@ -241,6 +269,38 @@ curve between the anchors then confines its value at $t_k$ to
 $[\tilde G(Y_{(j)}), \tilde G(Y_{(j'+1)})]$, whose fiducial mass is the
 stated bound. $\square$
 
+*Proof of the rate in (3).* In rank space the negative placements are
+uniform, whose maximal spacing over the enlarged compact is
+$D_{0,n}=O_p(\log n_0/n_0)$. Conditional on those gaps, the positive counts
+form a multinomial vector with cell probabilities at most
+$\omega_R(D_{0,n};I)$ (apart from the two irrelevant boundary cells).
+A union bound over the $O(n_0)$ cells plus the binomial Bernstein inequality
+gives
+
+$$\max_g \frac{N_{1,g}}{n_1}
+  =O_p\!\left(\omega_R(D_{0,n};I)
+               +\frac{\log(n_0+n_1)}{n_1}\right);$$
+
+the square-root Bernstein term is absorbed by
+$2\sqrt{ab}\le a+b$. A block spanning $m$ consecutive positive anchors
+has fiducial Dirichlet mass equal to a normalized sum of $m+O(1)$ unit
+exponentials. Uniform exponential concentration over the same cells adds
+only $O_p(\log(n_0+n_1)/n_1)$. Proposition 3b(2) and the two endpoint
+spacings then give the display. Under the Hölder condition substitute
+$\omega_R(\delta;I)\le H\delta^\beta$. $\square$
+
+**Lemma 3c (the implemented completion is measurable). [Exact]** Fix a
+deterministic rule for zero-probability ordering ties. Given the merged
+label sequence and the finite vectors of auxiliary exponential and uniform
+draws, the construction obtains spacing partial sums, sorted within-gap
+fractions, and polyline values by finitely many comparisons and arithmetic
+operations. It is therefore a Borel-measurable random curve in
+$C[0,1]$. Per class it agrees with the sampled GFD anchor values and lies
+between the two GFD step completions, so it is a measurable selection from
+the product of the two classes' inverse images. This closes the measurable-
+selection bookkeeping in Theorem 7; it does not assert that this particular
+selection is uniquely fiducial.
+
 **Measured corroboration. [Empirical]** Coverage is insensitive to the
 convention (random vs even spreading indistinguishable; ties red-team), as
 (3) predicts on the interior.
@@ -254,9 +314,10 @@ band contains the band of every selection convention (that is what is "by
 construction" here — containment of the conventions, not frequentist
 validity, which rests on the same §6–§7 calibration story as everything
 else), inherits content control from Lemma 6b below, and costs at most the
-Proposition 3b(2) bracket in width — $O_p(\log n/n)$ on the interior and
-possibly material at steep corners, which is exactly where one might
-*want* the extra width (§10). A cheap derisk candidate.
+Proposition 3b(2) bracket in width — $O_p(\log n/n)$ under the smooth
+interior assumptions, the explicit modulus rate otherwise, and possibly
+material at rough or discontinuous regions where one might *want* the extra
+width (§10). A cheap derisk candidate.
 
 ---
 
@@ -414,55 +475,117 @@ exact Lemma 5 duality. Untried here; flagged in §12.
 
 ## 6. First-order theory: asymptotic calibration on the interior
 
+**Lemma 7a (Gaussian form of the ELL region). [Exact]** Let $Z$ be a
+centered, sample-continuous Gaussian process on a compact interval $I$, with
+$\sigma^2(t)=\operatorname{Var}Z(t)$ continuous and bounded away from zero.
+For a deterministic path $z$, its population two-sided pointwise depth and
+minimum depth are
+
+$$d_t(z)=\min\{P(Z(t)\le z(t)),P(Z(t)\ge z(t))\}
+          =\Phi\!\left(-\frac{|z(t)|}{\sigma(t)}\right),$$
+$$D(z)=\inf_{t\in I}d_t(z)
+      =\Phi\!\left(-\left\|z/\sigma\right\|_\infty\right).$$
+
+Consequently every ELL central region of this law is exactly
+$\{z:\|z/\sigma\|_\infty\le w\}$ for some $w$. If
+$T=\|Z/\sigma\|_\infty$ and $w_a$ is its $(1-a)$ quantile, the region
+has probability $1-a$. The distribution of $T$ is continuous by the
+standard anti-concentration theorem for suprema of separable Gaussian
+processes; hence $w_a$ is unique whenever its CDF is strictly increasing at
+level $1-a$. This last local strictness, weaker than global strict
+monotonicity, is the only cutoff regularity used below.
+
+**Lemma 7b (finite-cloud approximation on a growing grid). [Exact
+conditional bound + asymptotic consequence]** Let $Q_n$ be the conditional
+law of a cloud draw and $F_{n,k}$ its marginal CDF at grid point $t_k$.
+For $M$ conditionally iid draws, let $\widehat F_{M,k}$ be the corresponding
+empirical marginal CDF. Then, conditionally on the data,
+
+$$P\!\left(\max_{k\le K}\sup_x
+  |\widehat F_{M,k}(x)-F_{n,k}(x)|>\eta\ \middle|\ \mathcal D_n\right)
+  \le 2K e^{-2M\eta^2}.$$
+
+This is Dvoretzky–Kiefer–Wolfowitz at each column plus a union bound; using
+each draw in its own rank changes its empirical tail probabilities by at
+most $1/M$. Thus all pointwise ranks and all minimum depths differ from
+their $Q_n$-population versions by
+$O_p(\sqrt{\log K/M}+1/M)$. If $Q_n\Rightarrow Q$ in probability in
+$C(I)$, the marginal laws converge uniformly, the grid mesh tends to zero,
+and the limiting depth cutoff has the regularity in Lemma 7a, the empirical
+ELL cutoff and tube converge to their $Q$-population counterparts whenever
+
+$$\frac{M_n}{\log K_n}\longrightarrow\infty.$$
+
+Within this fixed-interior regime, no stronger coupling of $M_n$ to the
+statistical sample size is needed. For the native ROC grid restricted to
+$I$, $K_{n,I}\le n_0+1$, so $M_n/\log n_0\to\infty$ is enough. This
+condition is interior-specific: Lemma 7a gives the non-vanishing limiting
+local level $\ell_I=\Phi(-w_a)>0$, whereas §9's practical budget rule is
+governed by corner strips outside Theorem 7, where the local level continues
+to shrink and absolute DKW accuracy alone does not characterize tail
+resolution.
+
 **Theorem 7 (conditional equivalence and asymptotic coverage). [Sketch;
-marginals now anchored in the literature]** Assume $R$ is continuously
-differentiable with $0 < R' < \infty$ on $[\varepsilon, 1-\varepsilon]$, and
-$n_0, n_1 \to \infty$ with $n_1/n_0 \to \lambda \in (0,\infty)$; let
-$n = n_1$. Then:
+the construction-specific steps made explicit]** Let
+$I=[\varepsilon,1-\varepsilon]$. Assume $R$ is continuously differentiable
+with $0<R'<\infty$ on a neighborhood of $I$, and
+$n_0,n_1\to\infty$ with $n_1/n_0\to\lambda\in(0,\infty)$; put
+$n=n_1$. Let the grid mesh tend to zero with $K_n=O(n_0)$, and take
+$M_n/\log K_n\to\infty$. Then:
 
-1. $\sqrt{n}\,(\hat R - R) \rightsquigarrow Z$ in
-   $\ell^\infty[\varepsilon, 1-\varepsilon]$, where
-   $Z(t) = B_G(R(t)) + \sqrt{\lambda}\, R'(t)\, B_F(t)$ with independent
-   Brownian bridges $B_F, B_G$ (the Hsieh–Turnbull limit, stated in rank
-   space where $F$ is the identity).
-2. Conditionally on the data, $\sqrt{n}\,(\tilde R - \hat R)
-   \rightsquigarrow \tilde Z$ with $\tilde Z \stackrel{d}{=} Z$, in
-   probability. Route, per class: the $n$-weight Bayesian bootstrap is an
-   exchangeably weighted bootstrap covered by Praestgaard–Wellner (1993),
-   and the spacings-GFD draw differs from it by $O_p(1/n)$ uniformly (the
-   coupling in §3), so it inherits the same conditional limit;
-   equivalently, the uncensored special case of Cui & Hannig's (2019)
-   functional Bernstein–von Mises theorem (their Thm. 3.2 with no
-   censoring) states the conditional limit for the spacings cloud
-   directly — **the one-sample marginal of this step is a published
-   theorem [Lit]**. The within-gap convention perturbs each class process
-   by at most the Proposition 3b(2) bracket,
-   $O_p(\log n/n) = o(n^{-1/2})$ on the compact
-   (Proposition 3b, parts 2–3), so every convention has the same limit. The
-   composition map $(F, G) \mapsto S_G \circ S_F^{-1}$ is Hadamard
-   differentiable at $(F,G)$ under the stated slope condition (van der
-   Vaart & Wellner 1996, §3.9; Hsieh & Turnbull 1996); apply the functional
-   delta method for the bootstrap, with independence across classes giving
-   the two-channel limit. The cloud's centering differs from $\hat R$ by
-   $O(1/n)$, also negligible.
-3. Consequently, for the tube built from the cloud at fiducial content
-   $1-a$ (any fixed $a$), restricted to $[\varepsilon, 1-\varepsilon]$:
+1. $\sqrt n(\hat R-R)\rightsquigarrow Z$ in $C(I)$, where
 
-   $$P\big(\forall t \in [\varepsilon,1-\varepsilon]:\ L(t) \le R(t) \le U(t)\big)
-   \ \longrightarrow\ 1 - a .$$
+   $$Z(t)=B_G(R(t))-\sqrt\lambda\,R'(t)B_F(t),$$
 
-   (Route: in the limit the tube is the equal-local-levels central region of
-   $\mathrm{law}(\tilde Z)$ with content $1-a$ — by Narisetty & Nair (2016,
-   Cor. 1) a region of the form $\{|z(t)| \le w\,\sigma_Z(t)\}$ in the
-   Gaussian limit; the coverage event is $\{-Z \in \text{tube}\}$;
-   $\tilde Z \stackrel{d}{=} Z \stackrel{d}{=} -Z$ by Gaussian symmetry;
-   sup-functionals of the nondegenerate Gaussian limit have continuous
-   distribution, so empirical tube quantiles converge and $M \to \infty$
-   removes the Monte Carlo layer. Cui & Hannig's Corollary 3.1 is the
-   same content-to-coverage step in the one-sample problem, for curvewise
-   sets generated by a symmetric, scale-homogeneous functional with a
-   continuous limiting law and unique quantile — conditions the ELL region
-   must be shown to satisfy, item (iii) of the gap list below.)
+   with independent Brownian bridges $B_F,B_G$. Replacing $B_F$ by
+   $-B_F$ gives the equivalent plus-sign form commonly used for the
+   Hsieh–Turnbull limit.
+2. Conditionally on the data,
+   $\sqrt n(\tilde R-\hat R)\rightsquigarrow Z$ in probability in $C(I)$.
+3. For the ELL tube with cloud content $1-a$, any fixed $a\in(0,1)$ whose
+   Gaussian cutoff satisfies Lemma 7a's local strictness,
+
+   $$P\big(\forall t\in I:L(t)\le R(t)\le U(t)\big)
+     \longrightarrow 1-a.$$
+
+*Proof of (2), conditional composition step.* Work in rank coordinates and
+write $\Psi(A,B)=B\circ A^{-1}$. At $(A,B)=(\mathrm{id},R)$, for continuous
+tangent directions on $I$,
+
+$$\dot\Psi_{(\mathrm{id},R)}(h_A,h_B)(t)
+  =h_B(t)-R'(t)h_A(t).$$
+
+Indeed
+$(\mathrm{id}+s h_A)^{-1}(t)=t-s h_A(t)+o(s)$ uniformly, followed by a
+first-order expansion of $R+s h_B$. This is the needed Hadamard derivative,
+not merely an analogy to the one-sample result. Per class, Dirichlet
+Bayesian-bootstrap weights satisfy the Praestgaard–Wellner exchangeable-
+weight conditions (exchangeability, unit mean, asymptotic unit variance,
+and maximal weight $o_p(\sqrt n)$), yielding the conditional empirical
+bridge. Proposition 3's exponential coupling transfers that limit to the
+$(n+1)$-spacing GFD. Independence of the two spacing vectors gives
+independent bridges. Applying the conditional functional delta method to
+the displayed derivative gives
+$B_G(R)-\sqrt\lambda R'B_F$. Proposition 3b with $\beta=1$ makes every
+within-gap selection differ by $O_p(\log n/n)=o_p(n^{-1/2})$ on $I$, and
+Lemma 3c supplies measurability. The same bound absorbs the difference
+between the empirical-ROC and cloud centerings. This proves (2) from the
+published one-sample weighted-bootstrap/GFD limit.
+
+*Proof of (3).* Here
+
+$$\sigma^2(t)=R(t)(1-R(t))
+       +\lambda R'(t)^2t(1-t),$$
+
+which is continuous and bounded away from zero on $I$. Lemma 7a identifies
+the limiting content-$1-a$ tube as
+$\{z:\|z/\sigma\|_\infty\le w_a\}$. Lemma 7b transfers the
+conditional cloud tube to this region under the stated finite-$M$ regime.
+The truth is in the data-centered tube exactly when
+$\sqrt n(R-\hat R)$ is in its centered version. Its limit is $-Z$, and
+$-Z\stackrel d=Z$ by Gaussian symmetry, so the limiting coverage is the
+region's probability $1-a$. The monotone step extension in §1 transfers
+native-grid coverage to the continuum. $\square$
 
 *In words:* on any interior sub-interval, the raw fiducial credible band
 (trim exponent $C=1$) is asymptotically **calibrated**: its limiting
@@ -475,23 +598,18 @@ finite-sample devices of §8, and the moving-boundary strip between them
 on the exact Beta structure of the cloud's tail marginals (Prop. 3–4) plus
 simulation evidence.
 
-**What a complete proof still requires (the honest gap list).** (i) A
-formalization of the construction as a *measurable selection* from the
-product of the two classes' GFD inverse images — Prop. 3b(1) gives the
-per-class sandwich and the polyline is an explicit function of the data and
-auxiliary uniforms, so this is bookkeeping, but it must be written. (ii)
-The conditional functional delta method for the two-sample *composition*,
-with the independence structure and the Hadamard-differentiability
-conditions made explicit (the cited results are one-sample or
-unconditional). (iii) Continuity of the equal-local-levels central region
-as a functional of the cloud's law at the Gaussian limit, plus
-anti-concentration and uniqueness of the limiting cutoff, so that empirical
-tube quantiles converge to a unique target. (iv) A joint regime
-$M = M_n \to \infty$ tying the Monte Carlo layer to the sample sizes,
-with error bounds for the random depth cutoff. (v) The grid-to-continuum
-step — free given the §1 step-extension convention. None of these look
-deep; none are written; until they are, the theorem is a [Sketch] whose
-one-sample marginals are published theorems.
+**What remains before calling this a full proof.** The former construction-
+specific gaps are now reduced: Lemma 3c handles measurable selection, the
+displayed derivative and conditional delta argument handle composition,
+Lemma 7a handles the Gaussian ELL functional, Lemma 7b gives the joint
+$M_n,K_n$ regime, and §1 handles grid-to-continuum extension. What still
+deserves line-by-line appendix treatment is verification that the chosen
+function-space versions of the cited Praestgaard–Wellner or Cui–Hannig
+one-sample theorem deliver the stated *conditional-in-probability*
+$C(I)$ convergence, including the routine uniform-marginal consequence
+used in Lemma 7b. The result remains tagged [Sketch] because that external-
+theorem bookkeeping has not been written, not because a method-specific
+probabilistic step is still missing.
 
 **A consequence worth stating plainly.** Theorem 7 fixes the asymptotic
 meaning of the trim level: coverage tends to $1-\alpha_{\mathrm{eff}}$, i.e.
@@ -831,17 +949,19 @@ $K^{-0.27}$ conflates two effects that the Gaussian limit separates. On a
 *fixed interior compact*, the limiting standardized process is continuous
 with variance bounded away from zero, so as the grid refines the discrete
 supremum converges to a finite continuum supremum and the required local
-level converges to a **positive constant** — it cannot keep shrinking. Any
-continuing decay must come from the *corner strips*, where the process
-degenerates and the effective number of looks keeps growing with $n$ — the
-regime of equal-precision band constants (Nair 1984's $\sqrt{\log\log}$
-critical-value growth; Gontscharuk–Landwehr–Finner's one-sample ELL
-local-level asymptotics). In the experiments $K = n_0 + 1$ is tied to the
-sample size and the grid includes the corners, so both effects are mixed in
-the fit. Treat $K^{-0.27}$ as an empirical compression over the tested
-range ($K \le 5001$), not a law, and do not extrapolate it. The budget rule
-is self-diagnosing regardless: $j^\*$ is computed anyway and the
-implementation warns at $j^\* < 3$.
+level converges to the **positive constant**
+$\ell_I=\Phi(-w_a)>0$ from Lemma 7a — it cannot keep shrinking. Lemma 7b's
+$M_n/\log K_n\to\infty$ condition governs this interior discretization,
+not the full-grid practical budget. Any continuing decay must come from the
+*corner strips*, where the process degenerates and the effective number of
+looks keeps growing with $n$ — the regime of equal-precision band constants
+(Nair 1984's $\sqrt{\log\log}$ critical-value growth;
+Gontscharuk–Landwehr–Finner's one-sample ELL local-level asymptotics). In the
+experiments $K = n_0 + 1$ is tied to the sample size and the grid includes
+the corners, so both effects are mixed in the fit. Treat $K^{-0.27}$ as an
+empirical compression over the tested range ($K \le 5001$), not a law, and
+do not extrapolate it. The budget rule is self-diagnosing regardless:
+$j^\*$ is computed anyway and the implementation warns at $j^\* < 3$.
 
 **The ERL alternative.** §5.1: trimming by extreme rank length removes the
 saturation failure mode (strict ordering at any $M$, given randomized
@@ -878,27 +998,27 @@ One candidate repair is excluded: intersecting with the exact-Beta corner
 edges of M3 never binds — M3's edges are 1.7–4.6× *wider* than the fiducial
 band's on $k = 1..25$ at any level carrying a guarantee. The slack is
 internal to the cloud/trim; the two live mechanisms are (i) the within-gap
-interpolation convention — Proposition 3b(4) shows the steep corner is
-precisely where the convention's effect is *not* asymptotically negligible,
-making this suspect concrete — and (ii) the global ELL budget interacting
-with the huge local dispersion of the cloud where the curve is nearly
-vertical. Unseparated; this is the main open *width* problem (§12),
-distinct from all coverage questions.
+interpolation convention — Proposition 3b's modulus bound permits a large
+finite-$n$ effect where the local rise across a negative spacing is large,
+even though $C^1$ smoothness makes it first-order negligible eventually —
+and (ii) the global ELL budget interacting with the huge local dispersion
+of the cloud where the curve is nearly vertical. Unseparated; this is the
+main open *width* problem (§12), distinct from all coverage questions.
 
 ---
 
 ## 11. Behavior over n, AUC, and shape — assembled
 
-- **Flatness in $n$** is over-determined: no step of the construction uses
-  an asymptotic approximation (Prop. 3 is exact at every $n$); the corner
-  devices are finite-sample constructions at the forced scale (§8);
-  Theorem 7 anchors large $n$; and no tuning constant
-  encodes a sample-size regime. Measured: $\alpha=.05$ coverage
+- **Broad stability in $n$ has structural support, but is not a theorem.**
+  The cloud pivots are exact at every $n$ (Prop. 3), the corner devices are
+  finite-sample constructions at the forced scale (§8), and Theorem 7
+  anchors the raw $C=1$ band at large $n$. Measured: $\alpha=.05$ coverage
   $.967$–$.993$ from $n=25$ to $5000$. The envelope's drift
   ($1.00 \to 0.83$) came precisely from asymptotics-based components whose
-  regimes shifted with $n$; there is no analogous component here. The one
-  $n$-dependent caveat is §7: the finite-sample exponent $C^\*(n)$ drifts,
-  so *central-$\alpha$* calibration under fixed $C=2$ is regime-dependent.
+  regimes shifted with $n$. The important counterweight is §7:
+  $C^\*(n)$ demonstrably drifts, so central-$\alpha$ calibration under fixed
+  $C=2$ is itself sample-size dependent and cannot be inferred from the
+  exact marginal pivots.
 - **AUC / early slope.** The envelope's AUC-degradation channel (threshold
   location at the first grid points × steep slope) is carried here by the
   F-side fiducial tail, whose marginals are the exact Beta laws
@@ -925,8 +1045,8 @@ distinct from all coverage questions.
    $R = $ CDF of $W$; the F-side fiducial is replaced by the identity, the
    remaining construction is a one-sample Dirichlet band whose asymptotic
    calibration follows from Cui & Hannig's (2019) uncensored theorem
-   modulo the same ELL-region continuity step as Theorem 7 (gap (iii)), the
-   exact marginals sharpen, and exact test-inversion is tractable (the
+   together with Lemmas 7a–7b, the exact marginals sharpen, and exact
+   test-inversion is tractable (the
    one-sample ELL machinery of `qqconf`, Weine et al. 2023, computes exact
    simultaneous levels here). **[Sketch + Lit]**
 2. **Pointwise, one-sided, at anchors.** At the order-statistic operating
@@ -980,14 +1100,17 @@ distinct from all coverage questions.
    harness `m3_experiments.py` retains the earlier MC-calibrated variant).
    M3 is the theorem-carrying layer next to the tighter fiducial band.
 
-   **Proposition 12 (M3 coverage theorem). [Exact]** In rank space, let
+   **Proposition 12 (M3 coverage theorem). [Exact]** Write the negative and
+   positive scores in descending order as $X_{[1]}\ge\cdots\ge X_{[n_0]}$
+   and $Y_{[1]}\ge\cdots\ge Y_{[n_1]}$, and let
+   $A(x)=1-F(x)$ and $B(x)=1-G(x)$ be their survival functions. Let
    $b^{lo}_0, b^{hi}_0$ be the two-sided equal-local-levels bounds for the
-   negatives at local level $\gamma_0$ ($b^{lo}_0[i] =
+   pivots $A(X_{[i]})$ at local level $\gamma_0$ ($b^{lo}_0[i] =
    \mathrm{BetaInv}(\gamma_0; i, n_0{+}1{-}i)$, $b^{hi}_0[i] =
    \mathrm{BetaInv}(1{-}\gamma_0; \cdot)$), and $b^{lo}_1, b^{hi}_1$ the
-   same for the positives at $\gamma_1$. Let $p_i$ = the number of
-   positives ranked above the $i$-th ranked negative (descending scores),
-   and define on the grid $t \in \{k/n_0\}$:
+   corresponding bounds for $B(Y_{[j]})$ at $\gamma_1$. Let $p_i$ be the
+   number of positives ranked above the $i$-th ranked negative (descending
+   scores), and define on the grid $t \in \{k/n_0\}$:
 
    $$U(t) = b^{hi}_1\big[\,p_{i_{up}(t)} + 1\,\big],\quad
      i_{up}(t) = \min\{i : b^{lo}_0[i] \ge t\}\ \ (U = 1 \text{ if none});$$
@@ -995,16 +1118,14 @@ distinct from all coverage questions.
      i_{lo}(t) = \min\{i : b^{hi}_0[i] \ge t\},$$
 
    with $b^{lo}_1[0] = 0$, $b^{hi}_1[n_1{+}1] = 1$, and $L(1) = U(1) = 1$.
-   (Orientation: throughout this proposition $F, G$ denote the rank-space
-   class CDFs after the Prop. 1 reduction — $F = \mathrm{id}$,
-   $G = R$ — so $R = G \circ F^{-1}$ with both CDFs increasing; "$Y$ below
-   $X_{(i)}$ in rank space" is "ranked above the $i$-th negative in score
-   order".) Let $E_F$ = the event that the negative class's ELL band
-   covers ($b^{lo}_0[i] \le X_{(i)} \le b^{hi}_0[i]$ for all $i$), $E_G$
-   the same for the positives' $G$-values. Then on
-   $E_F \cap E_G$, $L(t) \le R(t) \le U(t)$ for all $t$, hence
+   If the upper-edge minimum does not exist set $U=1$; if the lower-edge
+   minimum does not exist set $i_{lo}=n_0+1$. Let $E_A$ be the
+   event that all
+   $b^{lo}_0[i]\le A(X_{[i]})\le b^{hi}_0[i]$, and $E_B$ the analogous
+   event for $B(Y_{[j]})$. Then on $E_A\cap E_B$,
+   $L(t)\le R(t)\le U(t)$ for all $t$, hence
 
-   $$P(\forall t: L \le R \le U) \ \ge\ P(E_F)\,P(E_G)
+   $$P(\forall t: L \le R \le U) \ \ge\ P(E_A)\,P(E_B)
      \ \ge\ (1-\alpha_F)(1-\alpha_G) \ =\ 1-\alpha$$
 
    with the split $(1-\alpha_F) = (1-\alpha)^{\rho}$, $(1-\alpha_G) =
@@ -1014,21 +1135,32 @@ distinct from all coverage questions.
    $P(E) \ge 1-\alpha_c$ per class — the middle inequality is an equality
    up to the calibration's bisection tolerance).
 
-   *Proof.* Upper edge: on $E_F$, $F(c) \ge b^{lo}_0[i]$ for every
-   $c \ge X_{(i)}$, so $F^{-1}(t) \le X_{(i_{up})}$; hence
-   $R(t) = G(F^{-1}(t)) \le G(X_{(i_{up})})$. With $m = p_{i_{up}}$
-   positives below $X_{(i_{up})}$ in rank space, the next positive
-   satisfies $Y_{(m+1)} \ge X_{(i_{up})}$, so
-   $G(X_{(i_{up})}) \le G(Y_{(m+1)}) \le b^{hi}_1[m+1]$ on $E_G$ (with the
-   degenerate value 1 when $m = n_1$ or no $i_{up}$ exists). Lower edge:
-   for $i_{lo} = 1$ the claim is vacuous ($L = b^{lo}_1[p_0] =
-   b^{lo}_1[0] = 0$); for $i_{lo} \ge 2$, on $E_F$,
-   $F(X_{(i_{lo}-1)}) \le b^{hi}_0[i_{lo}-1] < t$ by minimality,
-   so $F^{-1}(t) \ge X_{(i_{lo}-1)}$ ($F$ continuous), and with
-   $m' = p_{i_{lo}-1}$ positives below it in rank space,
-   $R(t) \ge G(X_{(i_{lo}-1)}) \ge G(Y_{(m')}) \ge b^{lo}_1[m']$ on $E_G$.
-   $L(1)=U(1)=1$ is exact because $R(1)=1$ for every continuous DGP under
-   the §1 extended-quantile (completed-ROC) convention; under
+   *Proof.* The probability-integral transform gives
+   $A(X_{[i]})\sim\mathrm{Beta}(i,n_0+1-i)$ jointly as uniform order
+   statistics, and likewise for $B(Y_{[j]})$. This use of the original
+   continuous class CDFs is essential: the placement CDF $R$ itself can
+   have jumps when $F$ has support gaps, so applying a continuous-CDF pivot
+   directly to $R(W_{(j)})$ would be invalid.
+
+   Put $q_t=Q_F(1-t)$, so $R(t)=B(q_t)$. For the upper edge, on $E_A$,
+   $A(X_{[i_{up}]})\ge b^{lo}_0[i_{up}]\ge t$, hence
+   $q_t\ge X_{[i_{up}]}$ almost surely and
+   $R(t)\le B(X_{[i_{up}]})$. If
+   $m=p_{i_{up}}$ positives exceed $X_{[i_{up}]}$, then
+   $B(X_{[i_{up}]})\le B(Y_{[m+1]})\le b^{hi}_1[m+1]$ on $E_B$,
+   with value 1 when $m=n_1$ or the negative index does not exist.
+   For the lower edge, $i_{lo}=1$ gives the vacuous bound 0. If
+   $i_{lo}\ge2$, minimality and $E_A$ give
+   $A(X_{[i_{lo}-1]})\le b^{hi}_0[i_{lo}-1]<t$, hence
+   $q_t\le X_{[i_{lo}-1]}$ and
+   $R(t)\ge B(X_{[i_{lo}-1]})$. With
+   $m'=p_{i_{lo}-1}$ positives above that score,
+   if $m'=0$ the lower bound is vacuous, while otherwise
+   $B(X_{[i_{lo}-1]})\ge B(Y_{[m']})\ge b^{lo}_1[m']$ on $E_B$.
+   The statements hold almost surely; equality ambiguities have probability
+   zero under continuity and the generalized inverses give the same weak
+   inequalities. Independence of the samples makes $E_A,E_B$ independent.
+   Finally $L(1)=U(1)=1$ because $Q_F(0)=-\infty$ and $R(1)=1$; under
    ties with random tie-breaking, Theorem 10 applies verbatim with the
    trapezoidal estimand. $\square$
 
@@ -1136,9 +1268,10 @@ distinct from all coverage questions.
    the conservative interval-valued variant of §3.1 (which is *widest*
    exactly at the corner, possibly closing the honesty gap from the safe
    side), or a locally reweighted trim can close the 2–3× gap to the
-   oracle ceiling without touching validity. Proposition 3b(4) says the
-   interpolation suspect is concentrated at the corner; a corner-only
-   experiment separating mechanisms (i) and (ii) of §10 is cheap.
+   oracle ceiling without touching validity. A corner-only experiment
+   separating mechanisms (i) and (ii) of §10 is cheap; Proposition 3b's
+   modulus rate supplies the natural design coordinate, the true rise
+   across a typical maximal negative spacing.
 5. **Sharper corner constants** — Lemma 9 gives scales via two-point
    sketches; the exact Beta computations give constants for specific
    events; a clean minimax theorem (explicit continuous perturbation pairs,
@@ -1165,7 +1298,7 @@ is, at the price of conservatism).
 | Rank-only inputs | Coverage depends on (shape, $n_0$, $n_1$) only; family invariance is a theorem; exact simulability per shape | [Exact] |
 | Dirichlet spacings per class | Exact Beta pivots at every order statistic, every $n$; = the nonparametric spacings-GFD ($(n{+}1)$ spacings — distinct from the $n$-weight Bayesian bootstrap, which pins the extremes) | [Exact + Lit] |
 | Fiducial mass beyond extremes | Two-sided corner uncertainty; the bootstrap's one-sided support collapse cannot occur; old Beta floor subsumed | [Exact] |
-| Within-gap convention | Bounded by one gap mass (Prop. 3b); first-order irrelevant on the interior; suspect only at steep corners | [Exact bound; Sketch rate] |
+| Within-gap convention | Bounded by one gap mass (Prop. 3b); first-order irrelevant under local Hölder exponent $>1/2$ (up to logs); potentially material at rough regions or jumps | [Exact bound; Sketch rate] |
 | Curve-valued draws (not pointwise intervals) | Monotone, $[0,1]$-respecting, correctly correlated bands; both HT variance channels carried without density estimation | [Sketch] |
 | Min-p / equal-local-levels trim | Simultaneity without a variance estimate (= the correctly-studentized region in the Gaussian limit, Narisetty–Nair Cor. 1); balanced miss directions; spread miss locations; graze-type misses | [Exact structure; balance asymptotic] |
 | Trim level from the cloud's own quantile | Finite-$M$ content control for *any* trim score (Lemma 6b); conservative failure mode under saturation; self-diagnosing budget ($j^\*$) | [Exact] |
@@ -1321,9 +1454,11 @@ two independent clouds through a nonlinear map into a band (Cui–Hannig's
 two-sample work uses the *difference*, not a composition; nothing found for
 compositions) — and absence from a targeted search is evidence, not proof.
 Second, the method is currently more novel than any single theorem proved
-about it: the strongest available upgrade is to finish Theorem 7 (gap list
-in §6) on the corrected cloud identification (§3), with the $C^\*$ study
-presented as its empirical companion rather than as a result.
+about it. Theorem 7's construction-specific gaps are now reduced to
+explicit lemmas; the strongest available upgrade is a line-by-line
+verification of the cited conditional process theorem in the chosen
+function space, with the $C^\*$ study presented as its empirical companion
+rather than as a result.
 
 ### 14.4 Still to verify at full text
 

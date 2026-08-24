@@ -150,6 +150,56 @@ def test_upper_edge_at_origin_is_honest_by_default():
     assert hi_pin[0] == 0.0
 
 
+def test_composition_covers_jump_roc_on_joint_pivotal_event():
+    """The exact composition implication survives an atomic placement law.
+
+    The negative CDF is continuous but has a gap on (1, 2), while every
+    positive score lies in that gap. The placement distribution is therefore
+    a point mass and the ROC jumps from zero to one at FPR 1/2. This directly
+    checks the survival-pivot proof behind Proposition 12.
+    """
+    rng = np.random.default_rng(187)
+    n = 24
+    alpha = 0.3
+    alpha_class = 1.0 - np.sqrt(1.0 - alpha)
+    gamma = _ell_gamma(fiducial_core, n, alpha_class)
+    i = np.arange(1, n + 1, dtype=float)
+    lower = beta_dist.ppf(gamma, i, n + 1.0 - i)
+    upper = beta_dist.ppf(1.0 - gamma, i, n + 1.0 - i)
+    grid = np.arange(n + 1) / n
+    true_roc = (grid >= 0.5).astype(float)
+
+    joint_event_count = 0
+    for _ in range(200):
+        component = rng.integers(0, 2, size=n)
+        negative = rng.random(n) + 2.0 * component
+        positive = 1.25 + 0.5 * rng.random(n)
+
+        negative_desc = np.sort(negative)[::-1]
+        f_at_negative = np.where(
+            negative_desc <= 1.0, 0.5 * negative_desc, 0.5 + 0.5 * (negative_desc - 2.0)
+        )
+        a_pivots = 1.0 - f_at_negative
+        positive_desc = np.sort(positive)[::-1]
+        b_pivots = 1.0 - (positive_desc - 1.25) / 0.5
+        joint_event = np.all((lower <= a_pivots) & (a_pivots <= upper)) and np.all(
+            (lower <= b_pivots) & (b_pivots <= upper)
+        )
+        if not joint_event:
+            continue
+
+        joint_event_count += 1
+        y_true = np.repeat([0, 1], n)
+        y_score = np.concatenate([negative, positive])
+        _, band_lower, band_upper = m3_band_rs(
+            y_true, y_score, alpha=alpha, random_state=rng
+        )
+        assert np.all(band_lower <= true_roc)
+        assert np.all(true_roc <= band_upper)
+
+    assert joint_event_count >= 100
+
+
 def test_split_ratio_shifts_width_between_classes(gaussian_data):
     y_true, y_score = gaussian_data
     bands = {
