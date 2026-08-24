@@ -1,11 +1,18 @@
 # Trim-exponent calibration study — runbook
 
-Infrastructure for the one-shot offline calibration of the fiducial band's
+Infrastructure for deciding whether, then calibrating, the fiducial band's
 `trim_exponent="auto"` map. Spec: `stats/c_calibration_spec.md`. Theory:
 `stats/fiducial_band_theory.md` §7/§7.1.
 
-Design decisions fixed at kickoff (2026-08-24): reps are **2× the spec
-baseline** (2,000 fitting / 4,000 confirmation); the kink truth is the
+The full factorial campaign is deliberately conditional. Run the 27-cell
+Stage S screen first. It tests whether a useful alpha=.05 margin survives the
+shape envelope, whether the large-n taper is visible, and whether imbalance
+is plausibly reducible. It does not fit a map or make a coverage claim.
+
+Design decisions fixed at kickoff (2026-08-24): the screen starts at 500
+reps and tops up only cells failing the alpha=.05 precision gate; a justified
+full campaign uses **2× the original spec baseline** (2,000 fitting / 4,000
+confirmation); the kink truth is the
 **fixed shape** `t_kink = 0.004` (the m2 choice), not the n-dependent
 `2/n0`; the pipeline **pauses between stages** for human review of the fit;
 production `trim_exponent="auto"` wiring lands only after the acceptance
@@ -23,32 +30,39 @@ cargo test --release --manifest-path rust/Cargo.toml
 ## Run order
 
 ```bash
-# 0. Inspect the design + cost/memory estimates (no computation).
-uv run python scripts/c_calibration/run.py --stage A --dry-run
+# 0. Inspect the stop/go screen (no computation).
+uv run python scripts/c_calibration/run.py --stage S --dry-run
 
-# 1. Parity gate (REQUIRED before any Stage A cell; spec §5.6.2).
+# 1. Validate the implementation before any simulation cell.
 uv run python scripts/c_calibration/parity_gate.py
 
-# 2. Stage A (fitting arms: core grid, large-n, imbalance).
+# 2. Run the screen, then read screening_report.md.
+uv run python scripts/c_calibration/run.py --stage S
+uv run python scripts/c_calibration/check_screen.py
+
+# 3. Stop unless the report says the useful margin warrants map fitting.
+
+# 4. Stage A (fitting arms: core grid, large-n, imbalance), reduced according
+#    to the screen report.
 #    Resumable: completed cells are skipped, partial cells extended.
 uv run python scripts/c_calibration/run.py --stage A
 
-# 2b. If any cells are flagged saturated at the end, re-run them at 2x M:
+# 4b. If any cells are flagged saturated at the end, re-run them at 2x M:
 uv run python scripts/c_calibration/run.py --stage A --rerun-saturated
 
-# 3. Fit: mechanical D1-D6 decisions, proposed frozen map + report.
+# 5. Fit: mechanical D1-D6 decisions, proposed frozen map + report.
 uv run python scripts/c_calibration/fit_stage_a.py
 
-# 4. HUMAN REVIEW of data/results/c_calibration/stage_a_fit_report.md.
-#    Adjust/bless frozen_map.json; deviations from the mechanical rules
-#    must be justified in stats/c_calibration_report.md.
+# 6. HUMAN REVIEW of data/results/c_calibration/stage_a_fit_report.md.
+#    If blockers exist, the fitter writes candidate_map.json rather than
+#    frozen_map.json. Resolve and justify them in stats/c_calibration_report.md.
 
-# 5. Stage B (confirmation: held-out shapes, large-n, imbalance, ties),
+# 7. Stage B (confirmation: held-out shapes, large-n, imbalance, ties),
 #    against the frozen map, fresh seeds.
 uv run python scripts/c_calibration/run.py --stage B \
     --map data/results/c_calibration/frozen_map.json
 
-# 6. Acceptance criteria A1-A3 (A4 is human judgment).
+# 8. Acceptance criteria A1-A3 (A4 is human judgment).
 uv run python scripts/c_calibration/acceptance_check.py
 ```
 
@@ -66,13 +80,18 @@ Sharding across machines: `--arms core`, `--arms large_n imbalance`, or
 `--select <substring>` partition the cell list; outputs merge by simply
 copying the `stageA/` JSONs into one directory.
 
-Priority order if compute runs short (spec §9): core grid at n ≤ 5000 →
-α = .05 large-n arm → confirmation arm → imbalance arm → central-α large-n
-confirmation rows → α = .01 rows (drop by `--select`/`--arms`).
+Do not begin Stage A merely because compute is available. If Stage S says to
+proceed, use its taper, shape, and imbalance tables to remove cells that no
+longer answer a live decision. The checked-in Stage A remains the conservative
+full design, not the default execution plan.
 
 ## Outputs (all under `data/results/c_calibration/`)
 
 - `parity_gate.json` — gate results (record in the study report).
+- `stageS/<cell>.json.gz` and `.summary.json` — raw and summarized stop/go
+  evidence.
+- `screening_check.json` / `screening_report.md` — the resource-allocation
+  verdict; explicitly not a coverage guarantee.
 - `stageA/<cell>.json.gz` — raw per-rep ladder profiles (refit-able under
   any aggregation without re-simulation).
 - `stageA/<cell>.summary.json` — per-cell aggregates: cov(j), per-α
@@ -80,6 +99,8 @@ confirmation rows → α = .01 rows (drop by `--select`/`--arms`).
   attribution, reference-map (C=1 / C=2 / provisional-auto) coverage+area.
 - `frozen_map.json` — the proposed map artifact
   (`c-calibration-map/v1`, see `map_eval.py`).
+- `candidate_map.json` — written instead of `frozen_map.json` when D2, D4,
+  or the floor check leaves a blocker; Stage B rejects it.
 - `stage_a_fit_report.md` — mechanical D1-D6 evidence.
 - `stageB/…` — confirmation cells (same formats; auto arm = frozen map).
 - `acceptance_check.json` — A1-A3 verdict.

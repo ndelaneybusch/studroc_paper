@@ -4,15 +4,14 @@ Consumes the Stage A cell summaries produced by ``run.py --stage A`` and
 mechanically applies the decision rules of ``stats/c_calibration_spec.md``
 sections 2 and 6:
 
-- **D1 (coordinate):** among C*, alpha_eff*, and ell*, pick the coordinate
-  with the smallest relative dispersion across fitting shapes at fixed
-  (n, alpha) and the smoothest n-trend.
-- **D2 (imbalance reduction):** min(n0, n1) vs harmonic mean, accepted if
-  the implied coverage error at alpha = .05 stays within 1pp across the
-  imbalance cells (via the section 7.1 erosion law); otherwise flag a 2-D
-  map.
-- **D3 (taper family):** pure power vs power+plateau vs log-decay on the
-  per-shape surpluses, selected by leave-one-n-out prediction error.
+- **D1 (coordinate):** C is fixed as the production coordinate; dispersion
+  of alpha_eff and ell is descriptive because coordinate rankings are not
+  invariant to reparameterization.
+- **D2 (imbalance reduction):** min(n0, n1) vs harmonic mean, checked by
+  direct overprediction of the measured C* threshold rather than the
+  heuristic erosion law; otherwise flag a 2-D map.
+- **D3 (taper family):** the power-to-C=1 family is fixed by Theorem 7;
+  alternatives are reported as misspecification diagnostics.
 - **D4 (alpha drift):** separable delta0(alpha) * f(n) accepted if the
   joint-fit residuals stay within the bootstrap noise floor.
 - **D5 (envelope):** pointwise minimum over fitting shapes minus one
@@ -22,10 +21,9 @@ sections 2 and 6:
 - **D6 (degenerate cells):** saturated / infeasible / never-dipping cells
   are excluded from every fit and reported separately.
 
-Outputs a *proposed* frozen map (``frozen_map.json``) and a markdown report
-(``stage_a_fit_report.md``). Nothing here launches Stage B: the proposal is
-reviewed by a human first (deviations from the mechanical rules must be
-justified in ``stats/c_calibration_report.md``).
+Outputs ``frozen_map.json`` when no decision is blocked, otherwise
+``candidate_map.json``, plus a markdown report (``stage_a_fit_report.md``).
+Nothing here launches Stage B: the result is reviewed by a human first.
 """
 
 import argparse
@@ -43,7 +41,6 @@ from design import CORE_N, CORE_SHAPES, PROVISIONAL_C_MAX  # noqa: E402
 from map_eval import SCHEMA_ID, validate_artifact  # noqa: E402
 from runner import provenance  # noqa: E402
 
-D2_COVERAGE_TOL_PP = 1.0  # acceptance rule for a 1-D n_eff reduction
 ENVELOPE_ALPHAS = (0.5, 0.2, 0.1, 0.05, 0.02, 0.01)
 
 
@@ -134,8 +131,7 @@ def d1_coordinate(rows: list[dict]) -> dict:
                 if abs(med) > 1e-9:
                     dispersion[name].append(
                         float(
-                            (np.quantile(vals, 0.9) - np.quantile(vals, 0.1))
-                            / abs(med)
+                            (np.quantile(vals, 0.9) - np.quantile(vals, 0.1)) / abs(med)
                         )
                     )
                 medians[name][(n, alpha)] = med
@@ -169,11 +165,20 @@ def d1_coordinate(rows: list[dict]) -> dict:
             table[k]["n_trend_curvature"],
         ),
     )
-    return {"table": table, "winner": ranked[0], "ranking": ranked}
+    return {
+        "table": table,
+        "winner": "C",
+        "descriptive_ranking": ranked,
+        "reason": (
+            "C is the production control and has the asymptote C=1. "
+            "Relative dispersion is not invariant to reparameterization; "
+            "alpha_eff and local level are retained as diagnostics only."
+        ),
+    }
 
 
 # ---------------------------------------------------------------------------
-# surpluses in the winning coordinate
+# surpluses in the production coordinate
 # ---------------------------------------------------------------------------
 
 
@@ -272,8 +277,18 @@ def d3_taper(rows: list[dict], coordinate: str) -> dict:
         }
         for family, v in loo.items()
     }
-    winner = min(table, key=lambda f: table[f]["mean_loo_scaled_sqerr"])
-    return {"table": table, "winner": winner, "series_fitted": fits_used}
+    empirical_winner = min(table, key=lambda f: table[f]["mean_loo_scaled_sqerr"])
+    return {
+        "table": table,
+        "winner": "power",
+        "empirical_winner": empirical_winner,
+        "series_fitted": fits_used,
+        "reason": (
+            "Theorem 7 fixes the asymptote at C=1. Candidate families are "
+            "reported as a misspecification diagnostic, not used to select "
+            "a plateau or a scale-dependent shipping rule."
+        ),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -283,7 +298,13 @@ def d3_taper(rows: list[dict], coordinate: str) -> dict:
 
 def d5_envelope(rows: list[dict], coordinate: str) -> dict:
     """Pointwise envelope over fitting shapes at each (n, alpha)."""
-    core = [r for r in _core_rows(rows) if r["c_star"] is not None]
+    core = [
+        r
+        for r in rows
+        if r["arm"] in ("core", "large_n")
+        and not r["excluded"]
+        and r["c_star"] is not None
+    ]
     points = []
     dominance: dict[str, int] = {}
     floor_violations = []
@@ -305,6 +326,7 @@ def d5_envelope(rows: list[dict], coordinate: str) -> dict:
                     "envelope_min_minus_se": env_min_se,
                     "envelope_q10_minus_se": env_q10,
                     "min_shape": grp[i_min]["shape"],
+                    "min_shape_se": float(ses[i_min]),
                     "n_shapes": len(grp),
                 }
             )
@@ -323,9 +345,15 @@ def d5_envelope(rows: list[dict], coordinate: str) -> dict:
 def fit_envelope_taper(
     envelope: dict, family: str
 ) -> tuple[dict[str, float], float, dict[str, float]]:
-    """Fit the selected taper family per alpha on the envelope points with a
-    shared decay parameter (D4 separable form), returning
-    (delta0_by_alpha, shared_gamma_or_b, c_max_by_alpha)."""
+    """Fit a power taper with shared decay below every observed envelope.
+
+    The decay is estimated from the envelope trend. At each alpha, the
+    amplitude is the largest value whose curve does not exceed any
+    min-minus-SE envelope point, rather than an unconstrained least-squares
+    fit that can cross the empirical safety boundary.
+    """
+    if family != "power":
+        raise ValueError("The shipping taper is constrained to the power family")
     pts = envelope["points"]
     alphas = sorted({p["alpha"] for p in pts})
     # Stage 1: per-alpha independent fits to seed the shared parameter.
@@ -352,22 +380,13 @@ def fit_envelope_taper(
         sub = [p for p in pts if p["alpha"] == alpha]
         n = np.array([p["n"] for p in sub], dtype=np.float64)
         y = np.maximum(np.array([p["envelope_min_minus_se"] for p in sub]), 1e-4)
-        if family == "power":
-            basis = (n / 500.0) ** (-shared_decay)
-            d0 = float(np.sum(basis * y) / np.sum(basis**2))
-            delta0_by_alpha[f"{alpha:g}"] = d0
-            small_n = float(np.min(n))
-            c_max_by_alpha[f"{alpha:g}"] = float(
-                min(1.0 + d0 * (small_n / 500.0) ** (-shared_decay), PROVISIONAL_C_MAX)
-            )
-        else:
-            popt = per_alpha_fits.get(alpha)
-            if popt is None:
-                continue
-            delta0_by_alpha[f"{alpha:g}"] = float(popt[-2])
-            c_max_by_alpha[f"{alpha:g}"] = float(
-                min(1.0 + fn(np.min(n), *popt), PROVISIONAL_C_MAX)
-            )
+        basis = (n / 500.0) ** (-shared_decay)
+        d0 = float(np.min(y / basis))
+        delta0_by_alpha[f"{alpha:g}"] = d0
+        small_n = float(np.min(n))
+        c_max_by_alpha[f"{alpha:g}"] = float(
+            min(1.0 + d0 * (small_n / 500.0) ** (-shared_decay), PROVISIONAL_C_MAX)
+        )
     return delta0_by_alpha, shared_decay, c_max_by_alpha
 
 
@@ -377,8 +396,15 @@ def fit_envelope_taper(
 
 
 def d2_reduction(rows: list[dict], coordinate: str) -> dict:
-    """Test min vs harmonic n_eff against the imbalance arm via the erosion
-    law: predicted coverage error at alpha = .05 must stay within 1pp."""
+    """Test min vs harmonic n_eff by direct C* overprediction margins.
+
+    A proposed exponent is unsafe for a cell when it exceeds that cell's
+    estimated maximal calibrated exponent. This comparison uses the
+    estimand the study actually measures and avoids translating through the
+    heuristic erosion law.
+    """
+    if coordinate != "C":
+        raise ValueError("The imbalance reduction is defined on the C coordinate")
     core = [r for r in _core_rows(rows) if r["c_star"] is not None]
     imb = [
         r
@@ -390,7 +416,7 @@ def d2_reduction(rows: list[dict], coordinate: str) -> dict:
     ]
     results = {}
     for reduction, key in (("min", "n_min"), ("harmonic", "n_harm")):
-        errors = []
+        margins = []
         for r in imb:
             ref = sorted(
                 (c for c in core if c["shape"] == r["shape"] and c["alpha"] == 0.05),
@@ -400,36 +426,32 @@ def d2_reduction(rows: list[dict], coordinate: str) -> dict:
                 continue
             xs = np.log([c["n_min"] for c in ref])
             ys = [surplus_of(c, coordinate) for c in ref]
-            pred_surplus = float(np.interp(np.log(r[key]), xs, ys))
-            c_pred = 1.0 + pred_surplus if coordinate == "C" else None
-            if coordinate == "alpha_eff":
-                aeff = r["alpha"] + pred_surplus
-                c_pred = float(np.log1p(-aeff) / np.log1p(-r["alpha"]))
-            if c_pred is None:
-                continue  # local_level: no erosion-law mapping; 2-D check only
-            # Erosion law: coverage(C) = (1 - alpha)^(C / C*_cell).
-            cov_pred = (1.0 - r["alpha"]) ** (c_pred / r["c_star"])
-            errors.append(
+            c_pred = 1.0 + float(np.interp(np.log(r[key]), xs, ys))
+            margin = float(r["c_star"] - c_pred)
+            se = float(r["c_se"] or 0.0)
+            margins.append(
                 {
                     "cell": r["cell"],
-                    "coverage_error_pp": 100.0 * (cov_pred - (1.0 - r["alpha"])),
+                    "c_pred": c_pred,
+                    "c_star": r["c_star"],
+                    "margin": margin,
+                    "margin_minus_1se": margin - se,
                 }
             )
-        if errors:
-            worst = max(abs(e["coverage_error_pp"]) for e in errors)
-            # Only a coverage *deficit* (negative error) violates validity.
-            worst_deficit = max(
-                (-e["coverage_error_pp"] for e in errors), default=0.0
-            )
+        if margins:
+            worst_overprediction = max(-m["margin"] for m in margins)
+            worst_overprediction_1se = max(-m["margin_minus_1se"] for m in margins)
             results[reduction] = {
-                "cells": errors,
-                "worst_abs_error_pp": worst,
-                "worst_deficit_pp": worst_deficit,
-                "accepted": worst_deficit <= D2_COVERAGE_TOL_PP,
+                "cells": margins,
+                "worst_c_overprediction": worst_overprediction,
+                "worst_c_overprediction_at_1se": worst_overprediction_1se,
+                "accepted": worst_overprediction_1se <= 0.0,
             }
     accepted = [k for k, v in results.items() if v.get("accepted")]
     if accepted:
-        winner = min(accepted, key=lambda k: results[k]["worst_deficit_pp"])
+        winner = min(
+            accepted, key=lambda k: results[k]["worst_c_overprediction_at_1se"]
+        )
     else:
         winner = "table2d"
     return {"table": results, "winner": winner}
@@ -445,8 +467,8 @@ def d4_separability(
 ) -> dict:
     """Residuals of the separable fit against the envelope points, in units
     of a nominal noise floor (the bootstrap-SE scale used in the envelope)."""
-    fn, _, _ = _taper_models()[family]
     resid = []
+    ses = []
     for p in envelope["points"]:
         key = f"{p['alpha']:g}"
         if key not in delta0_by_alpha:
@@ -460,16 +482,20 @@ def d4_separability(
         else:
             continue
         resid.append(p["envelope_min_minus_se"] - pred)
+        ses.append(max(p.get("min_shape_se", 0.0), 1e-6))
     resid = np.asarray(resid)
-    noise_floor = 0.1  # C-scale bootstrap-SE target of spec section 4
+    ses = np.asarray(ses)
+    noise_floor = float(np.sqrt(np.mean(ses**2))) if ses.size else None
+    rms = float(np.sqrt(np.mean(resid**2))) if resid.size else None
     return {
         "n_points": int(resid.size),
-        "rms_residual": float(np.sqrt(np.mean(resid**2))) if resid.size else None,
+        "rms_residual": rms,
         "max_abs_residual": float(np.max(np.abs(resid))) if resid.size else None,
         "noise_floor": noise_floor,
-        "separable_accepted": bool(
-            resid.size and np.sqrt(np.mean(resid**2)) <= noise_floor
+        "rms_standardized_residual": (
+            float(np.sqrt(np.mean((resid / ses) ** 2))) if resid.size else None
         ),
+        "separable_accepted": bool(resid.size and rms <= noise_floor),
     }
 
 
@@ -479,9 +505,34 @@ def d4_separability(
 
 
 def freeze(
-    d1: dict, d2: dict, d3: dict, d5: dict, delta0_by_alpha: dict,
-    shared_decay: float, c_max_by_alpha: dict, stage_a_dir: Path,
+    d1: dict,
+    d2: dict,
+    d3: dict,
+    d4: dict,
+    d5: dict,
+    delta0_by_alpha: dict,
+    shared_decay: float,
+    c_max_by_alpha: dict,
+    stage_a_dir: Path,
 ) -> dict:
+    """Build a candidate map and attach every unresolved fit blocker.
+
+    Args:
+        d1: Coordinate decision and diagnostics.
+        d2: Imbalance-reduction decision and diagnostics.
+        d3: Taper-family decision and diagnostics.
+        d4: Alpha-separability decision and diagnostics.
+        d5: Shape-envelope decision and diagnostics.
+        delta0_by_alpha: Constrained power amplitudes by alpha.
+        shared_decay: Shared power-law decay exponent.
+        c_max_by_alpha: Small-sample caps by alpha.
+        stage_a_dir: Source directory for provenance.
+
+    Returns:
+        Candidate frozen-map artifact. A nonempty provenance.blockers field
+        means the artifact requires a documented human resolution before
+        Stage B.
+    """
     coordinate = d1["winner"]
     taper: dict = {
         "family": d3["winner"],
@@ -507,18 +558,21 @@ def freeze(
             **provenance(),
             "stage_a_dir": str(stage_a_dir),
             "spec": "stats/c_calibration_spec.md",
-            "decisions": {
-                "D1": d1["winner"],
-                "D2": d2["winner"],
-                "D3": d3["winner"],
-            },
+            "decisions": {"D1": d1["winner"], "D2": d2["winner"], "D3": d3["winner"]},
         },
     }
     blockers = {}
     if d2["winner"] == "table2d":
         blockers["d2_table2d"] = (
-            "no 1-D n_eff reduction met the 1pp rule; a 2-D interpolation "
-            "table is needed (schema extension + human decision)"
+            "no 1-D n_eff reduction avoided direct C* overprediction at "
+            "the one-SE margin; a 2-D interpolation table is needed "
+            "(schema extension + human decision)"
+        )
+    if not d4["separable_accepted"]:
+        blockers["d4_nonseparable"] = (
+            "the shared-decay surface missed its measured bootstrap noise "
+            "floor; fit a constrained joint (n, alpha) surface or document "
+            "why the conservative separable candidate is retained"
         )
     if d5["floor_violations"]:
         blockers["floor_violations"] = d5["floor_violations"]
@@ -562,9 +616,7 @@ def main(argv=None) -> int:
         type=Path,
         default=Path("data/results/c_calibration/stageA"),
     )
-    parser.add_argument(
-        "--out", type=Path, default=Path("data/results/c_calibration")
-    )
+    parser.add_argument("--out", type=Path, default=Path("data/results/c_calibration"))
     args = parser.parse_args(argv)
 
     summaries = load_summaries(args.stage_a_dir)
@@ -586,21 +638,37 @@ def main(argv=None) -> int:
             "C* < 1 measured — ship C = 1 and escalate (A4)."
         )
 
-    delta0_by_alpha, shared_decay, c_max_by_alpha = fit_envelope_taper(d5, d3["winner"])
-    d4 = d4_separability(d5, d3["winner"], delta0_by_alpha, shared_decay)
+    delta0_by_alpha, shared_decay, c_max_by_alpha = fit_envelope_taper(
+        envelope=d5, family=d3["winner"]
+    )
+    d4 = d4_separability(
+        envelope=d5,
+        family=d3["winner"],
+        delta0_by_alpha=delta0_by_alpha,
+        shared_decay=shared_decay,
+    )
     print(f"D4 separable accepted: {d4['separable_accepted']}")
 
     d2 = d2_reduction(rows, coordinate)
     print(f"D2 reduction winner: {d2['winner']}")
 
     artifact = freeze(
-        d1, d2, d3, d5, delta0_by_alpha, shared_decay, c_max_by_alpha, args.stage_a_dir
+        d1=d1,
+        d2=d2,
+        d3=d3,
+        d4=d4,
+        d5=d5,
+        delta0_by_alpha=delta0_by_alpha,
+        shared_decay=shared_decay,
+        c_max_by_alpha=c_max_by_alpha,
+        stage_a_dir=args.stage_a_dir,
     )
     validate_artifact(artifact)
-    for key, val in artifact["provenance"].get("blockers", {}).items():
+    blockers = artifact["provenance"].get("blockers", {})
+    for key, val in blockers.items():
         print(f"BLOCKER [{key}]: {val}")
     args.out.mkdir(parents=True, exist_ok=True)
-    map_path = args.out / "frozen_map.json"
+    map_path = args.out / ("candidate_map.json" if blockers else "frozen_map.json")
     map_path.write_text(json.dumps(artifact, indent=1))
     write_report(
         args.out / "stage_a_fit_report.md",
@@ -611,16 +679,22 @@ def main(argv=None) -> int:
             "D3 taper family": d3,
             "D4 separability": d4,
             "D5 envelope": d5,
-            "Proposed frozen map": artifact,
+            "Candidate map": artifact,
         },
     )
-    print(f"Proposed frozen map -> {map_path}")
+    print(f"Candidate map -> {map_path}")
     print(f"Fit report -> {args.out / 'stage_a_fit_report.md'}")
-    print(
-        "\nNEXT: review the report, adjust/bless the map, then run\n"
-        "  uv run python scripts/c_calibration/run.py --stage B "
-        f"--map {map_path}"
-    )
+    if blockers:
+        print(
+            "\nSTOP: resolve and document every blocker. Stage B accepts only "
+            "an unblocked frozen_map.json."
+        )
+    else:
+        print(
+            "\nNEXT: review the report, bless the map, then run\n"
+            "  uv run python scripts/c_calibration/run.py --stage B "
+            f"--map {map_path}"
+        )
     return 0
 
 

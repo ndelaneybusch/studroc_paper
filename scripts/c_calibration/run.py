@@ -1,16 +1,20 @@
 """CLI driver of the trim-exponent calibration study.
 
-Stage A (fitting arms) runs against the pre-registered design; Stage B
-(confirmation) requires a frozen map artifact produced by ``fit_stage_a.py``
-and reviewed by a human first. Cells run sequentially; replicates within a
-cell run concurrently.
+Stage S is a low-cost stop/go screen. Stage A (fitting arms) should run only
+if that screen shows a useful calibration margin; Stage B (confirmation)
+requires a frozen map artifact produced by ``fit_stage_a.py`` and reviewed by
+a human first. Cells run sequentially; replicates within a cell run
+concurrently.
 
 Examples (from the project root)::
 
-    # Inspect the design and cost estimates without running anything.
-    uv run python scripts/c_calibration/run.py --stage A --dry-run
+    # Inspect the decision-first screen, run the parity gate, then run it.
+    uv run python scripts/c_calibration/run.py --stage S --dry-run
+    uv run python scripts/c_calibration/parity_gate.py
+    uv run python scripts/c_calibration/run.py --stage S
+    uv run python scripts/c_calibration/check_screen.py
 
-    # Run the parity gate first (see parity_gate.py), then Stage A.
+    # After a positive screen, run the selected Stage A arms.
     uv run python scripts/c_calibration/run.py --stage A
 
     # Shard: only the large-n arm, or a name filter.
@@ -33,7 +37,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from design import Cell, stage_a_cells, stage_b_cells, summarize  # noqa: E402
+from design import (  # noqa: E402
+    Cell,
+    screening_cells,
+    stage_a_cells,
+    stage_b_cells,
+    summarize,
+)
 from runner import cell_paths, run_cell, se_gate_needs_topup  # noqa: E402
 
 DEFAULT_OUT = Path("data/results/c_calibration")
@@ -41,7 +51,7 @@ DEFAULT_OUT = Path("data/results/c_calibration")
 
 def parse_args(argv=None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--stage", choices=("A", "B"), required=True)
+    parser.add_argument("--stage", choices=("S", "A", "B"), required=True)
     parser.add_argument(
         "--out", type=Path, default=DEFAULT_OUT, help="Output root directory"
     )
@@ -98,7 +108,12 @@ def parse_args(argv=None) -> argparse.Namespace:
 
 
 def select_cells(args: argparse.Namespace) -> list[Cell]:
-    cells = stage_a_cells() if args.stage == "A" else stage_b_cells()
+    if args.stage == "S":
+        cells = screening_cells()
+    elif args.stage == "A":
+        cells = stage_a_cells()
+    else:
+        cells = stage_b_cells()
     if args.arms:
         cells = [c for c in cells if c.arm in set(args.arms)]
     if args.select:
@@ -150,7 +165,7 @@ def saturated_cells(cells: list[Cell], out_dir: Path) -> list[Cell]:
 def main(argv=None) -> int:
     args = parse_args(argv)
     cells = select_cells(args)
-    out_dir = args.out / ("stageA" if args.stage == "A" else "stageB")
+    out_dir = args.out / f"stage{args.stage}"
 
     if args.dry_run:
         summary = summarize(cells)
@@ -172,9 +187,10 @@ def main(argv=None) -> int:
         if args.map is None:
             print("Stage B requires --map <frozen_map.json>", file=sys.stderr)
             return 2
-        from map_eval import load_artifact, resolve_exponent
+        from map_eval import load_artifact, require_confirmation_ready, resolve_exponent
 
         artifact = load_artifact(args.map)
+        require_confirmation_ready(artifact)
 
         def auto_fn(n0, n1, alpha):
             return resolve_exponent(artifact, n0=n0, n1=n1, alpha=alpha)

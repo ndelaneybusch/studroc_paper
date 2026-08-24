@@ -7,6 +7,23 @@ one-time study that fixes `trim_exponent="auto"` in
 parametrization is not yet known, collects enough to decide it rather than
 assume it.*
 
+**Decision-first amendment (2026-08-24).** The full Stage A/Stage B design
+below is a maximum design, not the first experiment to run. A 27-cell Stage S
+screen (500 reps initially, adaptive alpha=.05 top-up to 2,000) first asks the
+narrower questions that determine whether an auto map is worth fitting at all:
+
+1. At alpha=.05, is the one-SE lower shape envelope at n=500 at least
+   C*=1.15, with at least 4% approximate oracle area gain over C=1?
+2. Is a taper toward C=1 visible on three mechanism-distinct shapes over
+   n in {100, 500, 5000, 50000}?
+3. At fixed minority-class size 500, how strongly do direction and majority
+   size change C* on two representative shapes?
+
+The screen shares one cloud across alpha in {.50, .20, .10, .05}, but alpha=.05
+is its primary estimand. A negative verdict ends the auto-map effort and keeps
+a documented fixed/default rule. A positive verdict justifies a *reduced*
+Stage A tailored to the observed failure modes; it is not evidence of coverage.
+
 ---
 
 ## 1. Objective and non-objectives
@@ -20,10 +37,10 @@ $(n_0, n_1, \alpha)$ to the trim level of the fiducial band, such that:
 - (Efficiency) it recovers a meaningful fraction of the width the identity
   map ($C=1$) leaves on the table (target: ≥ half of the 9–13% area gap at
   $\alpha=.05$ where the gap exists);
-- (Posterity) the study simultaneously settles the open scientific
-  questions entangled with the map: the natural coordinate for
-  transfer, the imbalance reduction, the $C^\*(n)$ asymptote (H1 vs H2 of
-  the theory doc §7), and the $\alpha$-drift.
+- (Posterity) the study sharpens the open scientific questions entangled
+  with the map: the finite-range taper rate, imbalance reduction, and
+  $\alpha$-drift. The production coordinate and asymptote are fixed by
+  Theorem 7 rather than selected by simulation.
 
 **Non-objectives.** Per-dataset (shape-adaptive) calibration — ruled out by
 the measured plug-in bias (`m2_report.md` §1c); fixing the residual
@@ -72,35 +89,40 @@ the study's git hash. Behavior contracts:
 
 **Open parametrization questions the study must decide (not assume):**
 
-- **D1 (coordinate).** Is the transfer-stable coordinate the exponent $C$
-  ($\alpha_{\mathrm{eff}} = 1-(1-\alpha)^C$), the level
-  $\alpha_{\mathrm{eff}}$ itself, or the realized local level
-  $\ell = j/(M+1)$ (which P4 of `m2_report.md` found stable in $M$ and
-  smoothly varying in $K$)? Decision rule: compute all three at calibration
-  for every cell; the coordinate with the smallest relative dispersion
-  across shapes at fixed $(n, \alpha)$ and the smoothest $n$-trend wins,
-  and the shipped map is expressed in it (the formula above is rewritten
-  accordingly if $C$ loses).
+- **D1 (coordinate, resolved by design).** Ship and fit $C$. It is the
+  production control, and Theorem 7 fixes its asymptote at 1. Continue to
+  report $\alpha_{\mathrm{eff}}$ and realized local level $\ell$ as
+  diagnostics. Ranking these coordinates by relative dispersion is not a
+  legitimate selection rule because that ranking changes under nonlinear
+  reparameterization; moreover $\ell$ depends on the finite-cloud budget.
 - **D2 (imbalance reduction).** Is `n_eff` $\min(n_0,n_1)$, the harmonic
   mean, or is a genuinely 2-D map needed? Decision rule: fit each candidate
-  on the prevalence arm (§5.2); accept a 1-D reduction if it leaves
-  residual coverage error ≤ 1pp at $\alpha=.05$ across the imbalance cells;
-  otherwise ship a 2-D interpolation table.
-- **D3 (asymptote) — partially answered before this study ran** (round 3,
+  on the prevalence arm (§5.2). Compare the exponent predicted from balanced
+  cells directly with each imbalance cell's measured $C^*$ threshold; accept
+  a 1-D reduction only if it does not overpredict any threshold after a
+  one-bootstrap-SE margin. Otherwise a 2-D interpolation table is an explicit
+  blocker, not an artifact the current resolver can silently ship.
+- **D3 (finite-range taper) — asymptote resolved before this study ran**
+  (round 3,
   `m3m4_report.md` §6): at central $\alpha$ the decay is real and
   power-like, $C^\*(n)-1 \approx 1.26\,(n/500)^{-0.32}$ measured to
   $n = 20{,}000$ at fixed shape; H1's plateau at 2 is excluded by 4.2 SE.
   What this study must still settle: the **$\alpha = .05$ arm at
   $n \ge 10^4$** (never measured; needs $M \approx 10$–12k), whether
-  $\gamma$ is shared across $\alpha$ and shape, and the functional-form
-  selection {pure power, power + plateau, log-decay} on the fuller grid.
+  $\gamma$ is shared across $\alpha$ and shape, and how pure-power,
+  power-plus-plateau, and log-decay diagnostics compare on the fuller grid.
   The large-n extension of §5.2 is therefore re-prioritized: the
   $\alpha=.05$ rows are its main payload, the central-$\alpha$ rows are
-  confirmation.
+  confirmation. The shipping family must tend to C=1. Plateau and log-decay
+  fits are misspecification diagnostics, not candidates with incompatible
+  asymptotes; compare their finite-range prediction errors without allowing
+  that comparison to override the limit.
 - **D4 ($\alpha$-drift).** Is a separable form
   $\delta_0(\alpha)\cdot f(n)$ adequate, or does the $(n,\alpha)$ surface
-  need a joint fit? Decision rule: separable accepted if residuals ≤ the
-  Monte Carlo noise floor on the held-out grid points.
+  need a joint fit? Decision rule: separable is accepted if its RMS residual
+  is no larger than the RMS bootstrap SE of the shape setting the envelope.
+  Rejection blocks freezing until a constrained joint surface is specified or
+  the conservative loss is explicitly accepted.
 - **D5 (shape aggregation and the floor conjecture).** Which quantile of
   the shape library defines the envelope (min, or 10th percentile minus an
   SE margin), and does any legitimately rough truth (trapezoid estimand)
@@ -210,8 +232,8 @@ bias in the hand-picked library).
   {12500, 25000, 50000} × 3 envelope-relevant shapes only
   (binormal .95, t(2) .95, kink), $\alpha \ge .05$ arm only.
 - Imbalance arm (for D2): $n_0{:}n_1$ ∈ {9:1, 3:1, 1:3, 1:9} at
-  $n_{\mathrm{total}}$ ∈ {1000, 5000} × 3 shapes (binormal .90, t(2) .95,
-  bimodal .90).
+  $n_{\mathrm{total}}$ ∈ {1000, 5000, 20000} × 3 shapes (binormal .90,
+  t(2) .95, bimodal .90).
 
 ### 5.3 Grid, M, and the production trim-grid rule
 
@@ -255,7 +277,7 @@ n₀ = 5,000, M = 10,000), wrapped by
 statistical envelope (tie-breaking, khat counts, CP allowances, output
 grid) in Python and identical to `fiducial_band`.
 
-Prerequisites before any calibration cell runs:
+Prerequisites before any Stage S or Stage A calibration cell runs:
 
 1. **Ladder export.** `fiducial_core` currently exposes only the trimmed
    tube. The study needs a `ladder_profile` entry point: given the label
@@ -267,7 +289,7 @@ Prerequisites before any calibration cell runs:
    M × K cloud crossing the FFI boundary; at n = 50,000, M ≈ 15k the
    cloud is ~3 GB in f32 and must not be materialized in Python).
 2. **Parity gate.** The Rust and Python paths use different RNGs, so
-   equivalence is *statistical, not bitwise*: before Stage A, reproduce
+   equivalence is *statistical, not bitwise*: before Stage S, reproduce
    the round-2 validation cell (binormal .95, n = 500/500, 150+ reps)
    with the Rust path at both trim exponents and both α ∈ {.05, .5};
    coverage and area must agree with the published Python-path numbers
@@ -282,25 +304,24 @@ Prerequisites before any calibration cell runs:
 
 ## 6. Fitting protocol (Stage A)
 
-1. Estimate the calibration surface on the fitting shapes: the winning
-   coordinate (D1) as a function of $(n_{\mathrm{eff}}, \alpha)$, with the
-   imbalance reduction chosen by D2.
-2. Fit candidate taper families to the per-shape surpluses
-   $\delta(n) = C^\*(n) - 1$ (or the equivalent in the winning
-   coordinate): pure power $\delta_0 (n/500)^{-\gamma}$; power + plateau
-   $\delta_\infty + \delta_0 (n/500)^{-\gamma}$; log-decay
-   $\delta_0 / (1 + b\log(n/500))$. Model selection by leave-one-$n$-out
-   prediction error, decided per D3.
+1. Estimate $C^*(n_{\mathrm{eff}}, \alpha)$ on the fitting shapes, with the
+   imbalance reduction checked by D2. Other coordinate summaries are
+   descriptive only.
+2. Fit the power-to-C=1 taper to the per-shape surpluses
+   $\delta(n) = C^*(n) - 1$. Report plateau and log-decay fits only as
+   finite-range misspecification diagnostics.
 3. **Aggregate across shapes to the envelope** (D5): default = the
    pointwise minimum over fitting shapes of the calibrated coordinate,
    minus one bootstrap SE; D6-degenerate cells excluded. If the minimum is
    dominated everywhere by a single shape (expected: t(2) or trapezoid),
    report that and consider whether the library needs an even rougher
    member before freezing.
-4. Freeze: constants, coordinate, reduction, taper family, and the
+4. Fit amplitudes so the shipping curve lies at or below every observed
+   min-minus-SE envelope point, including the large-n arm. Then freeze the
+   constants, reduction, and
    fallback boundaries ($C_{\max}(\alpha)$ from the small-$n$ end of the
-   envelope; $\alpha$-range guards). Write the frozen map to a versioned
-   JSON artifact.
+   envelope; $\alpha$-range guards). D2 or D4 rejection and any $C^*<1$
+   finding are blockers carried in the candidate artifact and fit report.
 
 ## 7. Confirmation protocol (Stage B — frozen map, fresh seeds)
 
@@ -326,10 +347,9 @@ Auto mode ships as the default iff, on the confirmation runs:
 - **A3 (no regret):** no confirmation cell where auto is *both* wider and
   lower-coverage than $C=2$ (would indicate a fitting artifact).
 - **A4 (sanity of the science):** the D1–D6 decisions are internally
-  consistent (e.g. if D3 selects a plateau, the taper must not be
-  extrapolated to 1; if D5 finds $C^\* < 1$ anywhere, ship C=1 as default
-  and escalate — the floor conjecture is falsified and the theory doc
-  needs revision).
+  consistent and the candidate has no unresolved D2/D4 blocker. If D5 finds
+  $C^\* < 1$ anywhere, ship C=1 as default and escalate — the floor conjecture
+  is falsified and the theory doc needs revision.
 
 If A1 fails only at cells traceable to a specific library gap, extend the
 library and refit (one iteration allowed, documented); if A2 fails, auto
@@ -339,23 +359,21 @@ measured-safe fallback.
 
 ## 9. Compute budget and stop rules
 
-Rough per-cell costs, revised for the Rust core (measured 12–17× over the
-Python path; the ladder profile costs ≈ one band per rep): core grid
-≈ 10 shapes × 8 n × 1,000 reps ≈ **4–8 laptop-hours**; large-$n$
-extension **including the α = .05 arm at n ∈ {12500, 25000, 50000}** —
-previously unaffordable, now ≈ half a day at M per the §5.3 rule
-(≈ 15–20 s/band at n = 50,000) — this arm is the single most important
-unmeasured cell in the program (the C\*(n) taper at tail α; round 3/4
-measured it at central α only) and is **promoted from droppable to
-core**; imbalance and confirmation arms ≈ hours. Revised priority order
-if compute runs short (drop from the bottom): core grid at $n \le 5000$ →
-α = .05 large-$n$ arm → confirmation arm → imbalance arm (extended in n
-per the round-4 note below) → central-α large-$n$ confirmation rows →
-$\alpha = .01$ rows. The map may ship without the large-$n$ extension
-only if D3's tail arm is left explicitly open and extrapolation beyond
-$n = 5000$ is clamped to the fitted value at 5000 (safe direction:
-smaller C, wider band — but then A2's claim is restricted to the
-calibrated range).
+The executable dry-run is the budget authority. As of 2026-08-24 it reports:
+Stage S, 27 cells / 13,500 initial reps / about 6 idealized core-saturated
+hours; full Stage A, 125 cells / 250,000 baseline reps / about 181 such hours;
+Stage B, 24 cells / 88,000 reps / about 89 such hours. Adaptive top-ups can
+increase these totals. The former 4–8 laptop-hour estimate was not consistent
+with the checked-in 2,000-rep design or the $\alpha=.01$ cloud budgets and is
+retired.
+
+Therefore Stage S is mandatory and the full Stage A grid is only a maximum
+design. After a positive screen, retain only arms tied to unresolved routing
+decisions in `screening_report.md`. If the large-n screen finds no useful
+margin, validate a C=1 clamp rather than estimating a dense tail surface. If
+imbalance has a resolved directional effect, retain that arm and plan a 2-D
+rule; otherwise test the min-size reduction first. Expand the full $\alpha$
+grid only after the primary $\alpha=.05$ usefulness gate passes.
 
 **Round-4 note on D2 (imbalance).** M3's worst-case-level probe
 (`r4_report.md` §4) found class imbalance, not shape, to be the binding
@@ -379,9 +397,9 @@ to sweep $n_{\mathrm{total}} \in \{1000, 5000, 20000\}$ at ratios
    `fiducial_band_rs` (`trim_exponent="auto"`), with unit tests: correct
    constant lookup, clamping, warning behavior, and a golden-value test
    against the frozen artifact.
-4. Updates: `fiducial_band_theory.md` §7/§7.1 (the D3 verdict — H1 vs H2 —
-   and the measured $\gamma$); `next_method_ideas.md` §5 (uncertainty
-   items 1–2 resolved or sharpened).
+4. Updates: `fiducial_band_theory.md` §7/§7.1 (the finite-range D3 evidence
+   and measured $\gamma$); `next_method_ideas.md` §5 (uncertainty items 1–2
+   resolved or sharpened).
 
 ## 11. Risks and their mitigations (dotted Is)
 
@@ -392,5 +410,5 @@ to sweep $n_{\mathrm{total}} \in \{1000, 5000, 20000\}$ at ratios
 | Shape library misses a lower-envelope shape | Adversarial members (t(2), kink, trapezoid) + LHS held-outs + one documented refit iteration allowed |
 | Calibrating a different procedure than ships | Production trim-grid rule fixed in §5.3 and adopted in code in the same commit as the map |
 | Degenerate plateau shapes distorting the envelope | D6 exclusion rule; allowance-attribution logged |
-| Over-fitting the taper family | Leave-one-$n$-out selection; held-out-shape confirmation; A3 no-regret check |
+| Misspecifying the finite-range taper | Leave-one-$n$-out diagnostics; fit constrained below observed envelope; held-out-shape confirmation; A3 no-regret check |
 | Study results misread as guarantees | Report language fixed in advance: the map is *empirically calibrated over a shape library*; the provable fallback remains C=1 (asymptotic) / M3 (finite-sample), per the theory doc |

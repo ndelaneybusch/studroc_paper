@@ -72,6 +72,24 @@ def load_artifact(path: Path | str) -> dict:
     return artifact
 
 
+def require_confirmation_ready(artifact: dict) -> None:
+    """Reject a candidate artifact with unresolved scientific decisions.
+
+    Args:
+        artifact: Validated calibration-map artifact.
+
+    Raises:
+        ValueError: If Stage A recorded unresolved blockers.
+    """
+    blockers = artifact.get("provenance", {}).get("blockers", {})
+    if blockers:
+        labels = ", ".join(sorted(blockers))
+        raise ValueError(
+            f"Calibration map has unresolved blockers ({labels}); "
+            "resolve and document them before Stage B"
+        )
+
+
 def _interp_by_alpha(table: dict[str, float], alpha: float) -> float:
     """Interpolate an alpha-keyed constant table linearly in log(alpha)."""
     keys = np.array(sorted(float(k) for k in table))
@@ -92,7 +110,7 @@ def _n_eff(artifact: dict, n0: int, n1: int) -> float:
 
 
 def _taper_surplus(taper: dict, alpha: float, n_eff: float) -> float:
-    """The fitted surplus delta(n, alpha) of the winning coordinate above
+    """The fitted surplus delta(n, alpha) of the production coordinate above
     its asymptote."""
     n_ref = taper.get("n_ref", 500.0)
     delta0 = _interp_by_alpha(taper["delta0_by_alpha"], alpha)

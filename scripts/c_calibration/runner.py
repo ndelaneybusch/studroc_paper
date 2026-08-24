@@ -340,9 +340,19 @@ def aggregate(
 
 
 def se_gate_needs_topup(cell: Cell, agg: dict) -> bool:
-    """Spec section 4: SE(C*) <= 0.15 for every fitted alpha <= 0.2."""
+    """Apply the stage-specific precision gate for adaptive top-up.
+
+    Stage S tops up only for its primary alpha=.05 decision. Stage A retains
+    the full spec-section-4 gate, SE(C*) <= 0.15 at every fitted alpha <=.2.
+    """
     for key, est in agg["per_alpha"].items():
-        if float(key) > CSTAR_SE_ALPHA_MAX or est["infeasible"] or est["saturated"]:
+        alpha = float(key)
+        if (
+            (cell.stage == "S" and alpha != 0.05)
+            or alpha > CSTAR_SE_ALPHA_MAX
+            or est["infeasible"]
+            or est["saturated"]
+        ):
             continue
         se = est["c_star_ci"]["se"]
         if se is not None and se > CSTAR_SE_TARGET:
@@ -480,7 +490,7 @@ def run_cell(
     extend_to(cell.reps)
     agg = aggregate(cell, records, ladder, arms)
     while (
-        cell.stage == "A"
+        cell.stage in ("S", "A")
         and se_gate_needs_topup(cell, agg)
         and len(records) < cell.reps_max
     ):

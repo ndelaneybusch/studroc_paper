@@ -18,7 +18,9 @@ sys.path.insert(
 )
 
 import design  # noqa: E402
+import fit_stage_a  # noqa: E402
 import map_eval  # noqa: E402
+import runner  # noqa: E402
 import shapes  # noqa: E402
 
 # ---------------------------------------------------------------------------
@@ -104,20 +106,84 @@ def test_lhs_heldout_shapes_are_deterministic_and_disjoint():
 
 
 def test_cell_tables_are_unique_and_stage_consistent():
+    s_cells = design.screening_cells()
     a_cells = design.stage_a_cells()
     b_cells = design.stage_b_cells()
-    names = [c.name for c in a_cells + b_cells]
+    names = [c.name for c in s_cells + a_cells + b_cells]
     assert len(names) == len(set(names))
+    assert all(c.stage == "S" for c in s_cells)
     assert all(c.stage == "A" for c in a_cells)
     assert all(c.stage == "B" for c in b_cells)
     registry = shapes.shape_registry()
-    for cell in a_cells + b_cells:
+    for cell in s_cells + a_cells + b_cells:
         assert cell.shape in registry, cell.name
         assert cell.m_draws >= 2000
         assert cell.reps_max >= cell.reps
     # Stage A fits only fitting shapes; held-out shapes appear only in B.
     for cell in a_cells:
         assert registry[cell.shape].role == "fitting", cell.name
+
+
+def test_screen_targets_the_three_stop_go_questions_at_low_initial_cost():
+    """The screen must span shape, taper, and directional-imbalance risks."""
+    cells = design.screening_cells()
+    by_arm = {
+        arm: [cell for cell in cells if cell.arm == arm]
+        for arm in {cell.arm for cell in cells}
+    }
+    assert {arm: len(group) for arm, group in by_arm.items()} == {
+        "screen_taper": 12,
+        "screen_shape": 7,
+        "screen_imbalance": 8,
+    }
+    shape_cells = by_arm["screen_shape"] + [
+        cell for cell in by_arm["screen_taper"] if cell.n0 == cell.n1 == 500
+    ]
+    assert {cell.shape for cell in shape_cells} == set(design.CORE_SHAPES)
+    assert all(cell.reps == 500 and cell.alpha_min == 0.05 for cell in cells)
+    assert sum(cell.reps for cell in cells) == 13_500
+    assert max(cell.m_draws for cell in cells) < 15_000
+
+
+def test_screen_seeds_are_distinct_from_stage_a_for_same_design_point():
+    """Screen reuse must not contaminate a later fitting-stage sample."""
+    screen = next(
+        cell
+        for cell in design.screening_cells()
+        if cell.shape == "t2_95" and cell.n0 == cell.n1 == 500
+    )
+    stage_a = next(
+        cell
+        for cell in design.stage_a_cells()
+        if cell.shape == "t2_95" and cell.n0 == cell.n1 == 500
+    )
+    screen_draw = np.random.default_rng(design.rep_seed_sequence(screen, 0)).random(4)
+    stage_a_draw = np.random.default_rng(design.rep_seed_sequence(stage_a, 0)).random(4)
+    assert not np.array_equal(screen_draw, stage_a_draw)
+
+
+def test_screen_topup_precision_is_driven_only_by_primary_alpha():
+    """Secondary shared-alpha diagnostics must not multiply screen cost."""
+    cell = design.screening_cells()[0]
+
+    def estimate(se: float) -> dict:
+        """Build the subset of a coordinate estimate used by the SE gate."""
+        return {
+            "infeasible": False,
+            "saturated": False,
+            "c_star_ci": {"se": se},
+        }
+
+    aggregate = {
+        "per_alpha": {
+            "0.2": estimate(0.5),
+            "0.1": estimate(0.5),
+            "0.05": estimate(0.1),
+        }
+    }
+    assert not runner.se_gate_needs_topup(cell, aggregate)
+    aggregate["per_alpha"]["0.05"] = estimate(0.2)
+    assert runner.se_gate_needs_topup(cell, aggregate)
 
 
 def test_m_budget_resolves_the_deepest_fitted_trim():
@@ -178,6 +244,46 @@ def test_provisional_auto_exponent_tapers_and_floors():
     assert c_mid == pytest.approx(1.8)
 
 
+def test_fitted_taper_never_crosses_the_empirical_safety_envelope():
+    """The shipping curve must stay below every min-minus-SE fit point."""
+    ns = np.array([100, 500, 5_000, 50_000], dtype=float)
+    envelope = {
+        "points": [
+            {
+                "n": int(n),
+                "alpha": 0.05,
+                "envelope_min_minus_se": float(
+                    0.8 * (n / 500.0) ** -0.3 * (0.82 if n == 5_000 else 1.0)
+                ),
+                "min_shape_se": 0.05,
+            }
+            for n in ns
+        ]
+    }
+    amplitudes, gamma, _ = fit_stage_a.fit_envelope_taper(
+        envelope=envelope, family="power"
+    )
+    for point in envelope["points"]:
+        fitted = amplitudes["0.05"] * (point["n"] / 500.0) ** -gamma
+        assert fitted <= point["envelope_min_minus_se"] + 1e-12
+
+
+def test_nonseparable_fit_is_carried_as_a_freeze_blocker(tmp_path):
+    """A rejected D4 decision must not disappear from the map artifact."""
+    artifact = fit_stage_a.freeze(
+        d1={"winner": "C"},
+        d2={"winner": "min"},
+        d3={"winner": "power"},
+        d4={"separable_accepted": False},
+        d5={"points": [{"n": 500}], "floor_violations": []},
+        delta0_by_alpha={"0.05": 0.5},
+        shared_decay=0.3,
+        c_max_by_alpha={"0.05": 1.5},
+        stage_a_dir=tmp_path,
+    )
+    assert "d4_nonseparable" in artifact["provenance"]["blockers"]
+
+
 # ---------------------------------------------------------------------------
 # frozen-map resolver
 # ---------------------------------------------------------------------------
@@ -221,3 +327,11 @@ def test_map_validation_rejects_malformed_artifacts():
     bad_taper = {**good, "taper": {**good["taper"], "family": "spline"}}
     with pytest.raises(ValueError):
         map_eval.validate_artifact(bad_taper)
+
+
+def test_confirmation_rejects_an_artifact_with_unresolved_blockers():
+    """Stage B must not treat a diagnostic candidate as a frozen map."""
+    artifact = map_eval.placeholder_artifact()
+    artifact["provenance"]["blockers"] = {"d4_nonseparable": "unresolved"}
+    with pytest.raises(ValueError, match="d4_nonseparable"):
+        map_eval.require_confirmation_ready(artifact)

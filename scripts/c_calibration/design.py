@@ -6,8 +6,8 @@ factor), the alpha grids, the reference maps recorded per cell, and the
 deterministic per-(cell, rep) seeding. Rep counts are 2x the spec baseline
 (decided at kickoff: single-shot study, mid-desktop compute).
 
-Everything here is deterministic and cheap to construct; the runner
-(`runner.py`) consumes :func:`stage_a_cells` / :func:`stage_b_cells`.
+Everything here is deterministic and cheap to construct; the runner consumes
+:func:`screening_cells`, :func:`stage_a_cells`, and :func:`stage_b_cells`.
 """
 
 import hashlib
@@ -24,6 +24,8 @@ from studroc_paper.methods.fiducial_band import production_trim_rows
 
 STUDY_SEED = 20260822
 
+REPS_SCREEN = 500
+REPS_SCREEN_MAX = 2_000
 REPS_FITTING = 2_000  # 2x spec baseline (1,000)
 REPS_FITTING_MAX = 4_000  # top-up ceiling for the SE gate (spec section 4)
 REPS_CONFIRM = 4_000  # 2x spec baseline (2,000 at alpha = .05)
@@ -31,6 +33,7 @@ REPS_CONFIRM_LARGE_N = 2_000  # large-n confirmation rows (cost-bounded)
 
 ALPHAS_CORE = (0.50, 0.30, 0.20, 0.10, 0.05, 0.02, 0.01)
 ALPHAS_LARGE = (0.50, 0.20, 0.10, 0.05)
+ALPHAS_SCREEN = (0.50, 0.20, 0.10, 0.05)
 
 # Bootstrap SE gate on C* for the top-up rule (spec section 4).
 CSTAR_SE_TARGET = 0.15
@@ -69,6 +72,11 @@ HELDOUT_SHAPES = (
     "lhs2",
 )
 CONFIRM_N = (100, 1_000, 5_000)
+
+SCREEN_TAPER_SHAPES = ("binormal_95", "t2_95", "kink_80")
+SCREEN_TAPER_N = (100, 500, 5_000, 50_000)
+SCREEN_IMBALANCE_SHAPES = ("binormal_90", "t2_95")
+SCREEN_IMBALANCE_PAIRS = ((4_500, 500), (1_500, 500), (500, 1_500), (500, 4_500))
 
 
 # ---------------------------------------------------------------------------
@@ -178,7 +186,8 @@ class Cell:
 
     Attributes:
         name: Unique, filesystem-safe cell identifier.
-        stage: ``"A"`` (fitting) or ``"B"`` (confirmation).
+        stage: ``"S"`` (screening), ``"A"`` (fitting), or ``"B"``
+            (confirmation).
         arm: Study arm (``core``, ``large_n``, ``imbalance``,
             ``confirm_heldout``, ``confirm_large_n``, ``confirm_imbalance``,
             ``confirm_ties``).
@@ -300,6 +309,74 @@ def stage_a_cells() -> list[Cell]:
     return cells
 
 
+def screening_cells() -> list[Cell]:
+    """Decision-first cells run before the full Stage A campaign.
+
+    The screen estimates the alpha=.05 taper on three mechanism-distinct
+    shapes, the shape spread at n=500, and directional imbalance at fixed
+    minority-class size. Its purpose is to decide whether a universal auto
+    map is useful and learnable before spending on the full factorial grid.
+    """
+    keyed: dict[str, Cell] = {}
+
+    def add(cell: Cell) -> None:
+        """Add a screen cell, deduplicated by its stable name."""
+        keyed[cell.name] = cell
+
+    for shape in SCREEN_TAPER_SHAPES:
+        for n in SCREEN_TAPER_N:
+            add(
+                _mk_cell(
+                    name=f"screen_taper--{shape}--n{n}",
+                    stage="S",
+                    arm="screen_taper",
+                    shape=shape,
+                    n0=n,
+                    n1=n,
+                    alphas=ALPHAS_SCREEN,
+                    reps=REPS_SCREEN,
+                    reps_max=REPS_SCREEN_MAX,
+                    notes="stop/go screen: alpha=.05 taper is the primary payload",
+                )
+            )
+    for shape in CORE_SHAPES:
+        if shape in SCREEN_TAPER_SHAPES:
+            continue
+        add(
+            _mk_cell(
+                name=f"screen_shape--{shape}--n500",
+                stage="S",
+                arm="screen_shape",
+                shape=shape,
+                n0=500,
+                n1=500,
+                alphas=ALPHAS_SCREEN,
+                reps=REPS_SCREEN,
+                reps_max=REPS_SCREEN_MAX,
+                notes="stop/go screen: cross-shape lower envelope",
+            )
+        )
+    for shape in SCREEN_IMBALANCE_SHAPES:
+        for n0, n1 in SCREEN_IMBALANCE_PAIRS:
+            add(
+                _mk_cell(
+                    name=f"screen_imbalance--{shape}--n{n0}x{n1}",
+                    stage="S",
+                    arm="screen_imbalance",
+                    shape=shape,
+                    n0=n0,
+                    n1=n1,
+                    alphas=ALPHAS_SCREEN,
+                    reps=REPS_SCREEN,
+                    reps_max=REPS_SCREEN_MAX,
+                    notes=(
+                        "stop/go screen: orientation at fixed minority-class size n=500"
+                    ),
+                )
+            )
+    return list(keyed.values())
+
+
 def stage_b_cells() -> list[Cell]:
     """All Stage B (confirmation) cells, run only against a frozen map."""
     cells: list[Cell] = []
@@ -387,7 +464,7 @@ def rep_seed_sequence(cell: Cell, rep: int) -> np.random.SeedSequence:
     stage, the cell name, and the rep index. Top-up reps continue the same
     indexing, so extending a cell never re-draws earlier reps.
     """
-    stage_num = {"A": 1, "B": 2}[cell.stage]
+    stage_num = {"S": 0, "A": 1, "B": 2}[cell.stage]
     return np.random.SeedSequence(
         entropy=(STUDY_SEED, stage_num, _name_hash(cell.name), rep)
     )
