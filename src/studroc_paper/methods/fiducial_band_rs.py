@@ -25,7 +25,7 @@ from numpy.typing import NDArray
 from scipy.stats import beta as beta_dist
 from torch import Tensor
 
-from .fiducial_band import TieBreak, _auto_n_draws, _merged_labels
+from .fiducial_band import TieBreak, _auto_n_draws, _merged_labels, production_trim_rows
 from .method_utils import torch_to_numpy
 
 
@@ -58,11 +58,12 @@ def fiducial_band_rs(
     Drop-in accelerated equivalent of
     :func:`studroc_paper.methods.fiducial_band`: same construction (fiducial
     cloud from Dirichlet spacings, equal-local-levels min-p trim at
-    ``1 - (1 - alpha)**trim_exponent``, pointwise envelope of the retained
-    depth, Clopper-Pearson-form upper allowance and zero lower allowance at
-    the degenerate corners), same defaults, same output convention. Results
-    match the reference implementation in distribution but not bit-wise
-    (independent RNG streams).
+    ``1 - (1 - alpha)**trim_exponent`` — over the production thinned
+    trim-grid on grids larger than 2001 points — pointwise envelope of the
+    retained depth, Clopper-Pearson-form upper allowance and zero lower
+    allowance at the degenerate corners), same defaults, same output
+    convention. Results match the reference implementation in distribution
+    but not bit-wise (independent RNG streams).
 
     Args:
         y_true: Binary class labels (0 = negative, 1 = positive). Accepts
@@ -149,8 +150,14 @@ def fiducial_band_rs(
     khat = np.concatenate([cpos[neg_idx], [n1]]).astype(np.int64)
 
     seed = int(rng.integers(0, 2**64, dtype=np.uint64))
+    trim_rows = production_trim_rows(len(grid))
     lower, upper, j = core.fiducial_trimmed_tube(
-        lab_s.astype(np.uint8), n_draws, alpha_eff, seed, n_threads
+        lab_s.astype(np.uint8),
+        n_draws,
+        alpha_eff,
+        seed,
+        n_threads,
+        None if trim_rows is None else trim_rows.astype(np.uint64),
     )
     if j < 3:
         warnings.warn(

@@ -7,8 +7,14 @@ from .envelope_boot import (
     envelope_bootstrap_band,
     wilson_beta_band,
 )
-from .fiducial_band import fiducial_band
+from .fiducial_band import fiducial_band, production_trim_rows
 from .fiducial_band_rs import fiducial_band_rs
+from .fiducial_ladder import (
+    LadderProfile,
+    khat_from_labels,
+    ladder_profile,
+    make_ladder,
+)
 from .hsieh_turnbull_band import hsieh_turnbull_band
 from .ks_band import fixed_width_ks_band
 from .m3_band_rs import m3_band_rs
@@ -29,6 +35,11 @@ __all__ = [
     "fiducial_band",
     "fiducial_band_rs",
     "fixed_width_ks_band",
+    "khat_from_labels",
+    "ladder_profile",
+    "LadderProfile",
+    "make_ladder",
+    "production_trim_rows",
     "hsieh_turnbull_band",
     "logit_bootstrap_band",
     "m3_band_rs",

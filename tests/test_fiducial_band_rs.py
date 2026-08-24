@@ -11,7 +11,11 @@ import pytest
 
 pytest.importorskip("fiducial_core")
 
-from studroc_paper.methods import fiducial_band, fiducial_band_rs  # noqa: E402
+from studroc_paper.methods import (  # noqa: E402
+    fiducial_band,
+    fiducial_band_rs,
+    production_trim_rows,
+)
 
 
 @pytest.fixture(scope="module")
@@ -157,6 +161,45 @@ def test_small_draws_warns():
     y_score = np.concatenate([rng.normal(0, 1, n), rng.normal(1, 1, n)])
     with pytest.warns(UserWarning, match="trim depth"):
         fiducial_band_rs(y_true, y_score, alpha=0.02, n_draws=150, random_state=0)
+
+
+def test_production_trim_rows_rule():
+    """The section-5.3 thinning rule: full grid through 2001 points, then
+    every ceil(K/1000)-th point plus 50 edge points at each end."""
+    assert production_trim_rows(101) is None
+    assert production_trim_rows(2001) is None
+    rows = production_trim_rows(5001)
+    assert rows is not None
+    assert rows[0] == 0 and rows[-1] == 5000
+    assert np.all(np.diff(rows) > 0)
+    step = int(np.ceil(5001 / 1000))
+    expected = sorted(
+        set(range(0, 5001, step)) | set(range(50)) | set(range(5001 - 50, 5001))
+    )
+    assert np.array_equal(rows, expected)
+    # Edge blocks are contiguous single steps.
+    assert np.all(np.diff(rows[:50]) == 1)
+    assert np.all(np.diff(rows[-50:]) == 1)
+
+
+def test_thinned_trim_grid_band_is_valid_and_deterministic():
+    """K > 2001 routes the trim through the thinned grid; the band must keep
+    every structural invariant and stay seed-deterministic."""
+    rng = np.random.default_rng(5)
+    n0, n1 = 2200, 300
+    y_true = np.concatenate([np.zeros(n0), np.ones(n1)])
+    y_score = np.concatenate([rng.normal(0, 1, n0), rng.normal(1.2, 1, n1)])
+    fpr, lo, hi = fiducial_band_rs(
+        y_true, y_score, alpha=0.05, n_draws=2000, random_state=1
+    )
+    assert fpr.shape == (n0 + 1,)
+    assert np.all((0.0 <= lo) & (lo <= hi) & (hi <= 1.0))
+    assert lo[0] == 0.0 and hi[-1] == 1.0
+    assert np.all(np.diff(hi) >= -1e-12)
+    _, lo2, hi2 = fiducial_band_rs(
+        y_true, y_score, alpha=0.05, n_draws=2000, random_state=1
+    )
+    assert np.array_equal(lo, lo2) and np.array_equal(hi, hi2)
 
 
 def test_invalid_inputs():

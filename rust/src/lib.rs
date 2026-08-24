@@ -33,11 +33,14 @@
 use numpy::{IntoPyArray, PyArray1, PyReadonlyArray1};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use pyo3::types::PyDict;
 use rayon::prelude::*;
 
 pub mod ell;
+pub mod incbeta;
+pub mod ladder;
 
-const CHUNK_COLS: usize = 128; // grid-column chunk for the rank passes
+pub(crate) const CHUNK_COLS: usize = 128; // grid-column chunk for the rank passes
 
 #[inline(always)]
 fn splitmix64(state: &mut u64) -> u64 {
@@ -251,16 +254,33 @@ fn gather_block(cloud: &[f32], n_draws: usize, n_grid: usize, lo: usize, block: 
     }
 }
 
-/// Min-p depth of each draw: the minimum over grid points of its
-/// tie-inclusive rank from either end of the cloud (`min(#{<= v}, #{>= v})`).
-pub fn minp_depths(cloud: &[f32], n_draws: usize, n_grid: usize) -> Vec<u32> {
-    let starts: Vec<usize> = (0..n_grid).step_by(CHUNK_COLS).collect();
-    starts
-        .par_iter()
-        .map(|&lo| {
-            let width = CHUNK_COLS.min(n_grid - lo);
+/// As [`gather_block`], for an arbitrary (sorted) set of grid columns.
+pub(crate) fn gather_block_cols(
+    cloud: &[f32],
+    n_draws: usize,
+    n_grid: usize,
+    cols: &[usize],
+    block: &mut [f32],
+) {
+    for m in 0..n_draws {
+        let row = &cloud[m * n_grid..(m + 1) * n_grid];
+        for (c, &k) in cols.iter().enumerate() {
+            block[c * n_draws + m] = row[k];
+        }
+    }
+}
+
+/// Min-p depth of each draw over an arbitrary subset of grid columns: the
+/// minimum over the given columns of its tie-inclusive rank from either end
+/// of the cloud (`min(#{<= v}, #{>= v})`). Passing all columns reproduces
+/// [`minp_depths`]; a strict subset implements the production thinned
+/// trim-grid rule (the band is still built and evaluated on the full grid).
+pub fn minp_depths_cols(cloud: &[f32], n_draws: usize, n_grid: usize, cols: &[usize]) -> Vec<u32> {
+    cols.par_chunks(CHUNK_COLS)
+        .map(|chunk| {
+            let width = chunk.len();
             let mut block = vec![0.0f32; width * n_draws];
-            gather_block(cloud, n_draws, n_grid, lo, &mut block);
+            gather_block_cols(cloud, n_draws, n_grid, chunk, &mut block);
             let mut depths = vec![n_draws as u32; n_draws];
             let mut pairs: Vec<(f32, u32)> = Vec::with_capacity(n_draws);
             for c in 0..width {
@@ -302,6 +322,12 @@ pub fn minp_depths(cloud: &[f32], n_draws: usize, n_grid: usize) -> Vec<u32> {
         )
 }
 
+/// Min-p depth of each draw over the full grid.
+pub fn minp_depths(cloud: &[f32], n_draws: usize, n_grid: usize) -> Vec<u32> {
+    let cols: Vec<usize> = (0..n_grid).collect();
+    minp_depths_cols(cloud, n_draws, n_grid, &cols)
+}
+
 /// A column chunk's start offset plus its lower/upper order-stat values.
 type ChunkEdges = (usize, Vec<f64>, Vec<f64>);
 
@@ -340,23 +366,13 @@ pub fn pointwise_order_stats(
     (lower, upper)
 }
 
-/// The trimmed fiducial tube on the native grid `t_k = k / n0`.
-///
-/// Returns `(lower, upper, j)`: the pointwise `j`-th smallest / largest
-/// fiducial draws, where `j` is the `alpha_eff`-quantile of the min-p depths
-/// clamped to `[1, n_draws / 2]`. Corner allowances are the caller's job.
+/// Validate the merged label sequence and return `(n0, n1)`.
 ///
 /// # Errors
 ///
-/// Returns a message when `labels` is empty or contains values other than
-/// 0/1, either class is absent, `n_draws < 2`, or `alpha_eff` is outside
-/// `(0, 1)`.
-pub fn trimmed_tube_vec(
-    labels: &[u8],
-    n_draws: usize,
-    alpha_eff: f64,
-    seed: u64,
-) -> Result<(Vec<f64>, Vec<f64>, usize), String> {
+/// Returns a message when `labels` contains values other than 0/1 or either
+/// class is absent.
+pub(crate) fn parse_labels(labels: &[u8]) -> Result<(usize, usize), String> {
     if labels.iter().any(|&l| l > 1) {
         return Err("labels must contain only 0 and 1".to_string());
     }
@@ -365,17 +381,61 @@ pub fn trimmed_tube_vec(
     if n0 == 0 || n1 == 0 {
         return Err(format!("both classes must be present (n0={n0}, n1={n1})"));
     }
+    Ok((n0, n1))
+}
+
+/// Validate an optional strictly-increasing column subset against the grid.
+fn validate_trim_cols(trim_cols: Option<&[usize]>, n_grid: usize) -> Result<(), String> {
+    if let Some(cols) = trim_cols {
+        if cols.is_empty() {
+            return Err("trim_cols must be non-empty when given".to_string());
+        }
+        if cols.windows(2).any(|w| w[1] <= w[0]) {
+            return Err("trim_cols must be strictly increasing".to_string());
+        }
+        if cols[cols.len() - 1] >= n_grid {
+            return Err(format!("trim_cols must be less than n_grid = {n_grid}"));
+        }
+    }
+    Ok(())
+}
+
+/// The trimmed fiducial tube on the native grid `t_k = k / n0`.
+///
+/// Returns `(lower, upper, j)`: the pointwise `j`-th smallest / largest
+/// fiducial draws, where `j` is the `alpha_eff`-quantile of the min-p depths
+/// clamped to `[1, n_draws / 2]`. When `trim_cols` is given, the min-p
+/// depths are computed on that (strictly increasing) subset of grid columns
+/// only — the production thinned trim-grid rule for large grids — while the
+/// tube itself is still built on the full grid. Corner allowances are the
+/// caller's job.
+///
+/// # Errors
+///
+/// Returns a message when `labels` is empty or contains values other than
+/// 0/1, either class is absent, `n_draws < 2`, `alpha_eff` is outside
+/// `(0, 1)`, or `trim_cols` is empty, unsorted, or out of range.
+pub fn trimmed_tube_vec(
+    labels: &[u8],
+    n_draws: usize,
+    alpha_eff: f64,
+    seed: u64,
+    trim_cols: Option<&[usize]>,
+) -> Result<(Vec<f64>, Vec<f64>, usize), String> {
+    let (n0, n1) = parse_labels(labels)?;
     if n_draws < 2 {
         return Err(format!("n_draws must be at least 2, got {n_draws}"));
     }
     if !(alpha_eff > 0.0 && alpha_eff < 1.0) {
         return Err(format!("alpha_eff must be in (0, 1), got {alpha_eff}"));
     }
-
     let n_grid = n0 + 1;
+    validate_trim_cols(trim_cols, n_grid)?;
+
     let cloud = fiducial_cloud(labels, n0, n1, n_draws, seed);
 
-    let mut depths = minp_depths(&cloud, n_draws, n_grid);
+    let depth_cols: Vec<usize> = trim_cols.map_or_else(|| (0..n_grid).collect(), <[usize]>::to_vec);
+    let mut depths = minp_depths_cols(&cloud, n_draws, n_grid, &depth_cols);
     depths.sort_unstable();
     // alpha_eff is validated positive, so the floored index cannot be negative.
     #[allow(clippy::cast_sign_loss)]
@@ -386,8 +446,25 @@ pub fn trimmed_tube_vec(
     Ok((lower, upper, j))
 }
 
-/// Run the kernel, on a dedicated pool when `n_threads > 0`, else the global
-/// rayon pool. Output is identical either way (draw-indexed RNG streams).
+/// Run `f` on a dedicated rayon pool when `n_threads > 0`, else the global
+/// pool. Output is identical either way (draw-indexed RNG streams).
+fn run_in_pool<T: Send>(
+    n_threads: usize,
+    f: impl FnOnce() -> Result<T, String> + Send,
+) -> Result<T, String> {
+    if n_threads > 0 {
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(n_threads)
+            .build()
+            .map_err(|e| e.to_string())?
+            .install(f)
+    } else {
+        f()
+    }
+}
+
+/// Run the tube kernel, on a dedicated pool when `n_threads > 0`, else the
+/// global rayon pool.
 ///
 /// # Errors
 ///
@@ -398,26 +475,35 @@ pub fn trimmed_tube_threaded(
     alpha_eff: f64,
     seed: u64,
     n_threads: usize,
+    trim_cols: Option<&[usize]>,
 ) -> Result<(Vec<f64>, Vec<f64>, usize), String> {
-    if n_threads > 0 {
-        rayon::ThreadPoolBuilder::new()
-            .num_threads(n_threads)
-            .build()
-            .map_err(|e| e.to_string())?
-            .install(|| trimmed_tube_vec(labels, n_draws, alpha_eff, seed))
-    } else {
-        trimmed_tube_vec(labels, n_draws, alpha_eff, seed)
-    }
+    run_in_pool(n_threads, || {
+        trimmed_tube_vec(labels, n_draws, alpha_eff, seed, trim_cols)
+    })
 }
 
 /// Lower edge, upper edge, and realized trim depth returned to Python.
 type PyTube<'py> = (Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>, usize);
 
+fn trim_cols_vec(trim_cols: Option<PyReadonlyArray1<'_, u64>>) -> PyResult<Option<Vec<usize>>> {
+    trim_cols
+        .map(|cols| {
+            cols.as_slice()
+                .map(|s| s.iter().map(|&c| c as usize).collect())
+        })
+        .transpose()
+        .map_err(Into::into)
+}
+
 /// Trimmed fiducial tube `(lower, upper, j)` on the grid `t = arange(n0 + 1) / n0`.
+///
+/// `trim_cols`, when given, restricts the min-p trim to that subset of grid
+/// columns (production thinned trim-grid rule); the tube is still built on
+/// the full grid.
 // PyO3 extracts arguments by value; passing references is not an option here.
 #[allow(clippy::needless_pass_by_value)]
 #[pyfunction]
-#[pyo3(signature = (labels, n_draws, alpha_eff, seed, n_threads))]
+#[pyo3(signature = (labels, n_draws, alpha_eff, seed, n_threads, trim_cols=None))]
 fn fiducial_trimmed_tube<'py>(
     py: Python<'py>,
     labels: PyReadonlyArray1<'py, u8>,
@@ -425,12 +511,126 @@ fn fiducial_trimmed_tube<'py>(
     alpha_eff: f64,
     seed: u64,
     n_threads: usize,
+    trim_cols: Option<PyReadonlyArray1<'py, u64>>,
 ) -> PyResult<PyTube<'py>> {
     let labels = labels.as_slice()?.to_vec();
+    let cols = trim_cols_vec(trim_cols)?;
     let (lower, upper, j) = py
-        .detach(|| trimmed_tube_threaded(&labels, n_draws, alpha_eff, seed, n_threads))
+        .detach(|| {
+            trimmed_tube_threaded(
+                &labels,
+                n_draws,
+                alpha_eff,
+                seed,
+                n_threads,
+                cols.as_deref(),
+            )
+        })
         .map_err(PyValueError::new_err)?;
     Ok((lower.into_pyarray(py), upper.into_pyarray(py), j))
+}
+
+/// Full ladder profile of one replicate (see `ladder::ladder_profile_vec`).
+///
+/// Returns a dict of numpy arrays and scalars:
+/// `ladder_covered/viol_low/viol_high` (bool, per ladder depth),
+/// `ladder_miss_depth/area/area_raw` (f64), `ladder_worst_k` (i64),
+/// the same fields prefixed `ref_` (per `alpha_effs` entry) plus `ref_j`
+/// (u32), `depths_sorted` (u32, per draw), `truth_depth_low/high` (int),
+/// and — when `return_edges` — `edge_depths` (u32) with flat row-major
+/// `edge_lower`/`edge_upper` (f32, one row of `n0 + 1` values per edge
+/// depth, raw tube before allowances).
+// PyO3 extracts arguments by value; passing references is not an option here.
+#[allow(clippy::needless_pass_by_value, clippy::too_many_arguments)]
+#[pyfunction]
+#[pyo3(signature = (labels, n_draws, seed, rtrue, khat, ladder, alpha_effs,
+                    trim_cols=None, return_edges=false, n_threads=0))]
+fn fiducial_ladder_profile<'py>(
+    py: Python<'py>,
+    labels: PyReadonlyArray1<'py, u8>,
+    n_draws: usize,
+    seed: u64,
+    rtrue: PyReadonlyArray1<'py, f64>,
+    khat: PyReadonlyArray1<'py, u32>,
+    ladder: PyReadonlyArray1<'py, u32>,
+    alpha_effs: PyReadonlyArray1<'py, f64>,
+    trim_cols: Option<PyReadonlyArray1<'py, u64>>,
+    return_edges: bool,
+    n_threads: usize,
+) -> PyResult<Bound<'py, PyDict>> {
+    let labels = labels.as_slice()?.to_vec();
+    let rtrue = rtrue.as_slice()?.to_vec();
+    let khat = khat.as_slice()?.to_vec();
+    let ladder_v = ladder.as_slice()?.to_vec();
+    let alpha_effs = alpha_effs.as_slice()?.to_vec();
+    let cols = trim_cols_vec(trim_cols)?;
+    let profile = py
+        .detach(|| {
+            run_in_pool(n_threads, || {
+                ladder::ladder_profile_vec(
+                    &labels,
+                    n_draws,
+                    seed,
+                    &rtrue,
+                    &khat,
+                    &ladder_v,
+                    &alpha_effs,
+                    cols.as_deref(),
+                    return_edges,
+                )
+            })
+        })
+        .map_err(PyValueError::new_err)?;
+
+    let out = PyDict::new(py);
+    let set_stats =
+        |out: &Bound<'py, PyDict>, prefix: &str, stats: &[ladder::BandStats]| -> PyResult<()> {
+            let covered: Vec<bool> = stats.iter().map(|s| s.covered).collect();
+            let viol_low: Vec<bool> = stats.iter().map(|s| s.viol_low).collect();
+            let viol_high: Vec<bool> = stats.iter().map(|s| s.viol_high).collect();
+            let miss: Vec<f64> = stats.iter().map(|s| s.miss_depth).collect();
+            let worst: Vec<i64> = stats.iter().map(|s| s.worst_k).collect();
+            let area: Vec<f64> = stats.iter().map(|s| s.area).collect();
+            let area_raw: Vec<f64> = stats.iter().map(|s| s.area_raw).collect();
+            out.set_item(format!("{prefix}covered"), covered.into_pyarray(py))?;
+            out.set_item(format!("{prefix}viol_low"), viol_low.into_pyarray(py))?;
+            out.set_item(format!("{prefix}viol_high"), viol_high.into_pyarray(py))?;
+            out.set_item(format!("{prefix}miss_depth"), miss.into_pyarray(py))?;
+            out.set_item(format!("{prefix}worst_k"), worst.into_pyarray(py))?;
+            out.set_item(format!("{prefix}area"), area.into_pyarray(py))?;
+            out.set_item(format!("{prefix}area_raw"), area_raw.into_pyarray(py))?;
+            Ok(())
+        };
+    set_stats(&out, "ladder_", &profile.ladder_stats)?;
+    set_stats(&out, "ref_", &profile.ref_stats)?;
+    out.set_item("ref_j", profile.ref_j.into_pyarray(py))?;
+    out.set_item("depths_sorted", profile.depths_sorted.into_pyarray(py))?;
+    out.set_item("truth_depth_low", profile.truth_depth_low)?;
+    out.set_item("truth_depth_high", profile.truth_depth_high)?;
+    if let Some(edges) = profile.edges {
+        out.set_item("edge_depths", edges.depths.into_pyarray(py))?;
+        out.set_item("edge_lower", edges.lower.into_pyarray(py))?;
+        out.set_item("edge_upper", edges.upper.into_pyarray(py))?;
+    }
+    Ok(out)
+}
+
+/// Inverse regularized incomplete beta (the Beta distribution quantile),
+/// exposed for cross-validation against scipy in the Python test suite.
+#[pyfunction]
+#[pyo3(signature = (p, a, b))]
+fn inv_reg_incomplete_beta(p: f64, a: f64, b: f64) -> PyResult<f64> {
+    if !(0.0..=1.0).contains(&p) {
+        return Err(PyValueError::new_err(format!(
+            "p must be in [0, 1], got {p}"
+        )));
+    }
+    if a <= 0.0 || b <= 0.0 {
+        return Err(PyValueError::new_err(format!(
+            "a and b must be positive, got a={a}, b={b}"
+        )));
+    }
+    Ok(incbeta::inv_reg_inc_beta(p, a, b))
 }
 
 /// Exact `P(lower[i] <= U_(i+1) <= upper[i] for all i)` for the order
@@ -454,7 +654,9 @@ fn ell_crossing_probability(
 #[pymodule]
 fn fiducial_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(fiducial_trimmed_tube, m)?)?;
+    m.add_function(wrap_pyfunction!(fiducial_ladder_profile, m)?)?;
     m.add_function(wrap_pyfunction!(ell_crossing_probability, m)?)?;
+    m.add_function(wrap_pyfunction!(inv_reg_incomplete_beta, m)?)?;
     Ok(())
 }
 
@@ -546,7 +748,8 @@ mod tests {
         let n_grid = n0 + 1;
         let cloud = fiducial_cloud(&labels, n0, n1, n_draws, 31);
         let depths = minp_depths(&cloud, n_draws, n_grid);
-        let (lower, upper, j) = trimmed_tube_vec(&labels, n_draws, alpha_eff, 31).expect("valid");
+        let (lower, upper, j) =
+            trimmed_tube_vec(&labels, n_draws, alpha_eff, 31, None).expect("valid");
         let mut inside_count = 0usize;
         for m in 0..n_draws {
             let row = &cloud[m * n_grid..(m + 1) * n_grid];
@@ -572,9 +775,10 @@ mod tests {
     #[test]
     fn output_is_independent_of_thread_count() {
         let labels = labels_case(60, 45, 4);
-        let reference = trimmed_tube_threaded(&labels, 500, 0.0975, 42, 1).expect("valid");
+        let reference = trimmed_tube_threaded(&labels, 500, 0.0975, 42, 1, None).expect("valid");
         for threads in [2usize, 4, 0] {
-            let out = trimmed_tube_threaded(&labels, 500, 0.0975, 42, threads).expect("valid");
+            let out =
+                trimmed_tube_threaded(&labels, 500, 0.0975, 42, threads, None).expect("valid");
             assert_eq!(out, reference, "thread count {threads} changed the output");
         }
     }
@@ -582,13 +786,39 @@ mod tests {
     #[test]
     fn rejects_invalid_inputs() {
         let ok = labels_case(5, 5, 1);
-        assert!(trimmed_tube_vec(&[], 100, 0.1, 0).is_err());
-        assert!(trimmed_tube_vec(&[0, 0, 0], 100, 0.1, 0).is_err());
-        assert!(trimmed_tube_vec(&[1, 1], 100, 0.1, 0).is_err());
-        assert!(trimmed_tube_vec(&[0, 2, 1], 100, 0.1, 0).is_err());
-        assert!(trimmed_tube_vec(&ok, 1, 0.1, 0).is_err());
-        assert!(trimmed_tube_vec(&ok, 100, 0.0, 0).is_err());
-        assert!(trimmed_tube_vec(&ok, 100, 1.0, 0).is_err());
+        assert!(trimmed_tube_vec(&[], 100, 0.1, 0, None).is_err());
+        assert!(trimmed_tube_vec(&[0, 0, 0], 100, 0.1, 0, None).is_err());
+        assert!(trimmed_tube_vec(&[1, 1], 100, 0.1, 0, None).is_err());
+        assert!(trimmed_tube_vec(&[0, 2, 1], 100, 0.1, 0, None).is_err());
+        assert!(trimmed_tube_vec(&ok, 1, 0.1, 0, None).is_err());
+        assert!(trimmed_tube_vec(&ok, 100, 0.0, 0, None).is_err());
+        assert!(trimmed_tube_vec(&ok, 100, 1.0, 0, None).is_err());
+        assert!(trimmed_tube_vec(&ok, 100, 0.1, 0, Some(&[])).is_err());
+        assert!(trimmed_tube_vec(&ok, 100, 0.1, 0, Some(&[1, 1])).is_err());
+        assert!(trimmed_tube_vec(&ok, 100, 0.1, 0, Some(&[0, 6])).is_err());
+    }
+
+    #[test]
+    fn thinned_trim_grid_weakly_widens_the_tube() {
+        // Depths over a column subset dominate full-grid depths, so the
+        // realized j is weakly larger and the tube weakly narrower — but the
+        // subset tube must still equal the pointwise order stats at its own j.
+        let (n0, n1, n_draws) = (80usize, 60usize, 600usize);
+        let labels = labels_case(n0, n1, 8);
+        let cols: Vec<usize> = (0..=n0).step_by(4).collect();
+        let (full_lo, full_hi, full_j) =
+            trimmed_tube_vec(&labels, n_draws, 0.0975, 13, None).expect("valid");
+        let (thin_lo, thin_hi, thin_j) =
+            trimmed_tube_vec(&labels, n_draws, 0.0975, 13, Some(&cols)).expect("valid");
+        assert!(thin_j >= full_j, "thinned j {thin_j} below full j {full_j}");
+        for k in 0..=n0 {
+            assert!(thin_lo[k] >= full_lo[k], "lower edge order at k={k}");
+            assert!(thin_hi[k] <= full_hi[k], "upper edge order at k={k}");
+        }
+        let cloud = fiducial_cloud(&labels, n0, n1, n_draws, 13);
+        let (exp_lo, exp_hi) = pointwise_order_stats(&cloud, n_draws, n0 + 1, thin_j);
+        assert_eq!(thin_lo, exp_lo);
+        assert_eq!(thin_hi, exp_hi);
     }
 
     #[test]

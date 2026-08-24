@@ -26,7 +26,10 @@ The band is assembled in four steps:
    ``stats/fiducial_band_theory.md`` section 7; the once-conjectured
    "Sidak budget per class" reading is falsified); exponent 1 gives the
    raw fiducial credible band, measured conservative at every tested cell
-   and asymptotically calibrated on the interior.
+   and asymptotically calibrated on the interior. On grids larger than
+   2001 points the depth minimum runs over the production thinned trim-grid
+   (:func:`production_trim_rows`); the band itself is always built on the
+   full grid.
 3. **Band.** Lower/upper edges are the pointwise j-th smallest / j-th
    largest draws.
 4. **Binomial (Clopper-Pearson-form) allowances at degenerate corners.**
@@ -65,6 +68,37 @@ TieBreak = str  # "random" | "even"
 
 _CHUNK_DRAWS = 1024  # draw-generation chunk (bounds peak numpy memory)
 _CHUNK_COLS = 512  # grid-column chunk for the rank passes
+
+_TRIM_GRID_THRESHOLD = 2001  # largest grid trimmed without thinning
+_TRIM_GRID_TARGET = 1000  # approximate thinned trim-grid size
+_TRIM_GRID_EDGE = 50  # grid points always kept at each end
+
+
+def production_trim_rows(n_grid: int) -> NDArray | None:
+    """Grid rows used for the min-p trim under the production thinning rule.
+
+    For grids of at most 2001 points the trim runs on the full grid
+    (returns ``None``). Larger grids are thinned to every
+    ``ceil(n_grid / 1000)``-th point plus the first and last 50 points; the
+    band is still built and evaluated on the full grid. Validated leak-free
+    in ``stats/experiments/m2_report.md`` P4 and adopted as the production
+    rule by ``stats/c_calibration_spec.md`` section 5.3 (the trim-exponent
+    map is calibrated under exactly this rule).
+
+    Args:
+        n_grid: Number of native grid points (``n0 + 1``).
+
+    Returns:
+        Sorted int64 array of grid-row indices, or ``None`` when the full
+        grid is used.
+    """
+    if n_grid <= _TRIM_GRID_THRESHOLD:
+        return None
+    step = math.ceil(n_grid / _TRIM_GRID_TARGET)
+    keep = set(range(0, n_grid, step))
+    keep |= set(range(_TRIM_GRID_EDGE))
+    keep |= set(range(n_grid - _TRIM_GRID_EDGE, n_grid))
+    return np.array(sorted(keep), dtype=np.int64)
 
 
 def _merged_labels(
@@ -350,7 +384,13 @@ def fiducial_band(
     cloud = _fiducial_cloud(lab_s, n0, n1, n_draws, grid, rng, device, dtype)
 
     # Trim depth: alpha_eff-quantile of the min-p depths, clipped to [1, M/2].
-    depths = _minp_depths(cloud)
+    # On large grids the depths are computed on the production thinned
+    # trim-grid (the band is still built on the full grid).
+    trim_rows = production_trim_rows(len(grid))
+    if trim_rows is None:
+        depths = _minp_depths(cloud)
+    else:
+        depths = _minp_depths(cloud[:, torch.as_tensor(trim_rows, device=device)])
     depth_sorted, _ = torch.sort(depths)
     j = int(depth_sorted[int(math.floor(alpha_eff * n_draws))].item())
     j = max(1, min(j, n_draws // 2))
