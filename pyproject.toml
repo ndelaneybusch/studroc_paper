@@ -18,6 +18,7 @@ dependencies = [
     "tqdm",
     "KDEpy",
     "cvxpy",
+    "fiducial-core",
 ]
 
 [build-system]
@@ -44,6 +45,14 @@ Repository = "https://github.com/ndelaneybusch/studroc"
 
 [tool.uv.pip]
 torch-backend = "auto"
+
+[tool.uv.workspace]
+members = [
+    "rust",
+]
+
+[tool.uv.sources]
+fiducial-core = { workspace = true }
 
 [tool.ruff]
 line-length = 88

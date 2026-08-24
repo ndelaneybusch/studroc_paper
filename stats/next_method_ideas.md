@@ -1,16 +1,23 @@
 # The Rank-Space Fiducial ROC Band: Working Model and Evidence
 
-*Status (2026-08-21): consolidated after two laptop experiment rounds. This
+*Status (2026-08-23): consolidated after four laptop experiment rounds. This
 document is a working model of what the full simulation suite should show,
 based on what has actually been measured — with the uncertainties stated. The
 full suite is the arbiter; nothing here is a result of that suite yet.*
 
+*Theory companion: `stats/fiducial_band_theory.md` — guarantees, rates,
+corner impossibility results, and the analysis of the C-remap.*
+
 *Method implementation: `src/studroc_paper/methods/fiducial_band.py`
 (`fiducial_band`, exported from `studroc_paper.methods`; unit tests in
 `tests/test_fiducial_band.py`). Evidence: `stats/experiments/` — harnesses
-`rank_band_experiments.py` and `m2_experiments.py`, ~20 result JSONs, and the
-detailed second-round report `m2_report.md`. Earlier ideation that this work
-descends from is summarized in §7–§9; superseded content has been cut.*
+`rank_band_experiments.py`, `m2_experiments.py`, `m3_experiments.py`,
+`m4_experiments.py`, and `r4_experiments.py`, ~40 result JSONs, and the
+detailed round reports `m2_report.md` (round 2), `m3m4_report.md` (round 3:
+the M3/M4 backlog and the C*(n) ladder), and `r4_report.md` (round 4: the
+last calibration ideas, the roughness functional, the named-curve exact test,
+and two round-3 loose ends). Earlier ideation that this work descends from is
+summarized in §7–§9; superseded content has been cut.*
 
 ---
 
@@ -37,10 +44,12 @@ can be simulated exactly for any hypothesized curve.
    points, of its rank from either end of the cloud) at the remapped level
    **α_eff = 1 − (1−α)^C with C = 2**. Band = pointwise [j-th smallest,
    j-th largest] of the draws, j = the α_eff-quantile of the depths.
-4. Two exact binomial corner allowances at the band's own local level
-   ℓ = j/(M+1): upper edge ∪ Clopper–Pearson upper bound (essential — the
+4. Two binomial (Clopper–Pearson-form) corner allowances at the band's own
+   local level ℓ = j/(M+1): upper edge ∪ CP upper bound (essential — the
    upper edge must equal 1 wherever empirical TPR = 1); lower edge = 0
-   wherever empirical TPR = 0 (free).
+   wherever empirical TPR = 0 (free). The level is data-selected, so these
+   are pure widenings at the corner-forced scale, not standalone exact
+   devices (theory doc §8).
 
 Tuning inputs: M (a Monte Carlo budget, self-diagnosing — the method warns
 when the realized trim depth j < 3; rule of thumb M ≳ 5/ℓ(K,α), ≈10,000 at
@@ -52,13 +61,19 @@ constants, or ε regularizers.
 
 ## 2. Evidence base — what was actually measured
 
-Two rounds, ~20 cells, 120–400 replicates per cell (coverage SE ≈ 1.1pp at
+Four rounds, ~20 cells, 60–400 replicates per cell (coverage SE ≈ 1.1pp at
 400 reps for the 95% level; ≈ 2.2pp at 120 reps; several pp at the 50%
 level). Cells span n per class 25–5,000; AUC 0.55–0.99; binormal, bimodal-
 negative, t(2), and kinked truths; 9:1 class imbalance in both directions;
 score quantization to 20 and 100 levels. By rank invariance, cells are curve
 *shapes*; parameter sweeps within a family (e.g. t's df at fixed shape) are
-provably redundant.
+provably redundant. The third round (2026-08-22, `m3m4_report.md`) tested the
+§7 backlog (M3 guarantee layer, M4b bracketed calibration) and extended the
+C*(n) ladder to n = 10,000 and 20,000 at central α; the fourth (2026-08-23,
+`r4_report.md`) closed the remaining calibration ideas, searched for a
+rank-computable roughness functional, delivered the exact named-curve test,
+and settled two round-3 loose ends. Deltas from both are folded into §3, §5,
+§6, §7, and §8 below.
 
 Development history matters for reading the numbers:
 
@@ -108,8 +123,9 @@ in n.** *(Confidence: moderate-high.)* Basis: 14-cell flatness and the
 structural rank invariance; the suite's DGP families reduce to curve shapes
 similar to those tested. Falsifiers to watch: LHS shapes with steeper corners
 or plateau structures not represented in the hand-picked cells; the n=10,000
-configuration (K=10,001), which was **never run** — the M rule extrapolates
-to M ≈ 11–12k there. A stratum below ~0.93 at adequate M would contradict
+configuration (K=10,001) at α=.05, which was **never run** — the M rule
+extrapolates to M ≈ 11–12k there (round 3 did run n = 10,000 and 20,000, but
+at α ∈ {.5, .2} only, with M = 2500). A stratum below ~0.93 at adequate M would contradict
 the model; a stratum at 1.00 would mean the map is more conservative there
 than any tested shape.
 
@@ -120,7 +136,11 @@ so the ±15pp shape spread seen in the cells should reappear as ±10–15pp
 stratum spread. This is the model's honest claim: *centred at every α, not
 calibrated at every α*. Falsifier: mean far from 0.50, or spread much larger
 than the cells showed. (If the suite is run with the identity map instead,
-expect 0.65–0.86 at α=.5 — valid, conservative.)
+expect 0.65–0.86 at α=.5 — valid, conservative.) Round-3 update: the C*(n)
+ladder now reaches n = 20,000 (§5.2) and fixed C ≈ 2 measurably over-trims at
+central α for n ≥ 10⁴ (coverage .41 at n = 10,000 and .38 at n = 20,000
+against nominal .50, at C = 2.2) — expect the suite's largest-n strata to land
+at the bottom edge of, or just below, the 0.40–0.60 range.
 
 **P-C. Directional and spatial miss balance.** *(Confidence: moderate-high.)*
 v_low ≈ v_high within a factor ~2–3 in most strata (vs ~10:1 for the
@@ -174,20 +194,35 @@ conclusion.
 
 ## 5. Known weaknesses and open uncertainties (ranked)
 
-1. **Shape dependence of calibration at central α survives the C=2 remap**
+1. **Shape dependence of calibration at central α survives the C=2 remap —
+   and after round 4 there is no data-driven candidate fix left**
    (±13–19pp spread at α=.2/.5; bias removed, spread remains). A level-only
-   correction cannot fix this; per-shape calibration would be needed, and
-   the obvious data-driven route (per-rep plug-in calibration of the trim
-   depth) is measured to inherit the plug-in bias (1.3–1.7× conservative in
-   j) at 80× compute — not recommended. Untried alternative:
-   fiducial-predictive calibration (calibrate the trim against draws from
-   the fiducial cloud itself).
-2. **C = 2 is empirical.** It has a natural reading (one Šidák budget per
-   sample class) and held on all 14 cells (per-cell fitted range 1.6–3.1),
-   but there is no proof. If the suite's LHS shapes produce strata where the
-   effective exponent is far from 2, α=.05 coverage could dip below 0.94 —
-   the identity map (C=1) is the conservative fallback and never dropped
-   below 0.967.
+   correction cannot fix this, and every per-dataset route tested is dead by
+   the same roughness mechanism: plug-in calibration (1.3–1.7× conservative
+   in j at 80× compute, round 2), worst-case bracketing (9–37×, round 3),
+   fiducial-predictive calibration (1.7–2.3×, *worse* than plug-in, round 4),
+   and functional-driven level rules (nothing among 32 rank functionals
+   survives out-of-sample, round 4 — see §8.4). The honest position is the
+   offline shape-library calibration of `c_calibration_spec.md`, which
+   accepts the residual spread.
+2. **C = 2 is empirical — and the n-taper is now measured, not just flagged.**
+   It held on all 14 cells (per-cell fitted range 1.6–3.1), but the
+   first-order theorem (`fiducial_band_theory.md` §6–7) says asymptotic
+   coverage equals 1−α_eff = (1−α)^C, so any fixed C > 1 under-covers in the
+   limit (0.9025 at nominal .95 for C=2). The discriminating experiment was
+   run in round 3 (`m3m4_report.md` §6): extending the ladder to n = 10,000
+   and 20,000 at α ∈ {.5, .2} gives C* at α=.5 of ≈3.1 (n=25) → 2.18 (500) →
+   1.71/1.79 (2000/5000) → 1.49 ± 0.17 (10,000) → **1.32 ± 0.16 (20,000)** —
+   4.2 SE below H1's predicted plateau of 2, decaying in step at α=.2
+   (3.89 → 1.23), with the roughness-contrast diagnostic H2 predicts
+   shrinking from ~3.5× at n = 150 to ≈1–2× at n ≥ 10⁴. H1 ("one budget per
+   class") is falsified over the tested range; the empirical taper is
+   C*(n) − 1 ≈ 1.26·(n/500)^{−0.32} (slow, ~n^{−1/3}). Not a problem at
+   α=.05 in the tested range (coverage ≥ .942 at n=5000), but the large-n
+   ladder is central-α only (M = 2500), so "C=2 still safe at α=.05 for
+   n ≥ 10⁴" remains an extrapolation from d(coverage)/dα_eff being small in
+   the tail. The identity map (C=1) is the asymptotically calibrated,
+   finite-sample conservative fallback (never measured below 0.967 at α=.05).
 3. **No coverage theorem.** All validity evidence is Monte Carlo. The
    fiducial composition is not automatically a confidence procedure; the
    oracle/test-inversion framing (§7) is the likely proof route, and the
@@ -195,18 +230,49 @@ conclusion.
    "fiducial = confidence" heuristic measurably failed before repair.
 4. **Steep-corner width at small n** (2–3× oracle at AUC .99, n=150). Valid
    but loose; the one width regime where the method leaves real money on
-   the table.
+   the table. Round 4 removed one candidate repair: intersecting with M3's
+   edges restricted to the first grid points (union-bound accounting) never
+   binds — at any α₂ carrying a guarantee, M3 is 1.7–4.6× *wider* than the
+   fiducial band on k = 1..25, reaching parity only near α₂ ≈ 0.9. The
+   corner slack is not reachable through exact-Beta bounds; both §10
+   mechanisms of the theory doc remain live and unseparated.
 5. **Untested configurations:** n = 10,000 (largest suite size); prevalence
    10% at n=1,000 (nearest tested: 900/100 at n=1,000 total); the full LHS
    shape sweep; α = 0.5 on the two largest n. Also the n=25 cell needed a
    larger effective level than the C=2 map gives (map is conservative
-   there — safe direction, but +9–13pp over at central α).
+   there — safe direction, but +9–13pp over at central α). Round 4 flagged
+   **class imbalance as a possibly genuine second calibration coordinate**:
+   the 9:1 cell (P2a) sets M3's worst-case level (not any shape) and breaks
+   the best-fitting functional rule, but imbalance has only ever been swept
+   at two points and never in n — relevant to the C-calibration spec's D2
+   ("don't assume a 1-D n_eff"), not pre-empted here.
 6. **Compute scales with M·K.** ~11 s/band at n₀=5,000 single-core; the
    suite multiplies this by ~10⁴ bands. GPU batching of draws (already
    chunked in the implementation) or per-n M tuning will matter.
 7. **Estimand under ties** must be declared (trapezoidal, random break).
    Deterministic even-spreading is a valid conservative alternative;
    class-ordered tie-breaking is invalid and the implementation refuses it.
+8. **The t = 0 width finding (round 3, `m3m4_report.md` §3) — measured
+   correctly, but the recommended pin is NOT valid distribution-free.**
+   The recipe's CP allowance at k = 0 does make U(0) run 0.4–0.99, worth
+   0.0–8.8% of area on the tested cells. But the premise "R(0) = 0 for
+   every continuous DGP" is false: continuous scores with bounded negative
+   support and positive mass above it have R(0) > 0, and the corner
+   impossibility argument applies at t = 0 (relocating the top c/n₀ of
+   negative mass is a TV-c change that sets R(0) = R(c/n₀)), so any valid
+   rank-based band must keep U(0) at exactly the scale the allowance
+   produces — see `fiducial_band_theory.md` Corollary 9.3. The fiducial
+   cloud alone has R̃(0) = 0 identically, so the k = 0 allowance is
+   load-bearing on separated-support truths (without it: certain miss at
+   t = 0 there). Production `fiducial_band` applies the allowance at k = 0
+   (checked) and keeps it. The pin is admissible only under an explicit,
+   user-asserted support-overlap assumption (true for all 7 suite DGPs) —
+   a possible documented option, not a default, and not currently
+   implemented. The production M3 (`m3_band_rs`) handles this correctly:
+   its default U(0) is the composition's own exact Beta bound (theory doc
+   Prop. 12), with the pin available only via `assume_r0_zero=True`; the
+   round-3 experimental harness still pins by convention (harmless on the
+   suite DGPs, all of which satisfy R(0) = 0).
 
 ---
 
@@ -227,6 +293,36 @@ conclusion.
 - **Class-ordered tie-breaking:** produces an estimand with vertical cliffs
   at deterministic FPRs that no band can cover (0.000 even against its own
   staircase estimand).
+- **Bracketed worst-case calibration over an M3-50% confidence set ("M4b").**
+  Falsified in round 3 (`m3m4_report.md` §5). The worst case over the set's
+  raw members is set by its roughest member (the M3 lower edge), which pins
+  the calibrated trim depth at the floor: 9–37× more conservative than the
+  oracle, α-independent (one identical band at α = .5/.2/.05), and far worse
+  than the plug-in it was meant to replace. Worst-casing does not dodge the
+  plug-in roughness pathology — it *selects for* it. Smoothing the members
+  recovers exactly plug-in performance (1.25–1.79× vs plug-in's 1.27×) and no
+  better, at 4.5× the compute plus a new tuning constant (the window).
+- **Early slope as the bracketing axis for calibration.** The exact
+  calibration ceiling ae* is flat along a five-fold early-slope ladder
+  (binormal .70→.99: 4.5pp at α=.5, ≈1 MC SE) while two off-family shapes
+  move it 9–13pp in directions inconsistent with any early-slope ordering
+  (t(2) .95 sits below the entire binormal ladder despite a mid-ladder early
+  slope; bimodal .90 moves opposite in sign). The axis that matters is
+  roughness-like, not slope.
+- **Fiducial-predictive trim calibration.** Falsified in round 4
+  (`r4_report.md` §1) — the last live data-driven calibration idea.
+  Calibrating the trim against candidate curves drawn from the fiducial
+  cloud (coverage averaged over the predictive law) is 1.7–2.3× conservative
+  in depth, *worse* than the plug-in it was meant to replace (1.27×), at
+  comparable inner compute. Mechanism measured: fiducial candidates are
+  rougher than Hazen plug-in curves — ≥5% of candidates fall outside their
+  own inner cloud entirely (depth 0), while the smooth truth sits ≈2.9×
+  deeper than a draw — so integrating over the predictive law *amplifies*
+  the roughness pathology rather than averaging it out. Smoothing the
+  candidates recovers exactly plug-in performance and no better, with a
+  window constant. Coverage gains over C=1 at central α: none.
+- **Steep-corner repair by intersecting with corner-restricted M3.** Never
+  binds at any guarantee-carrying level; see §5.4.
 - From the earlier envelope-era experiments (see
   `project_evaluation_report.md`): logit-space construction; Wilson-gate
   redesigns; the variance-model band (noisy variance × supremum).
@@ -236,19 +332,107 @@ conclusion.
 ## 7. Backlog: ideas retained but not currently needed
 
 - **M3 — composition of two exact one-sample (Berk–Jones/equal-local-level)
-  bands.** A provable finite-sample distribution-free band; generalizes the
-  old Beta and Wilson floors into one object. Superseded as the primary
-  method by the fiducial band's empirical performance, but remains (i) the
-  guarantee layer if a formal validity claim is required, (ii) a possible
-  outer cap making "misses are small" provable, (iii) the likely bridge to
-  a coverage theorem.
+  bands. Now a production method** —
+  `src/studroc_paper/methods/m3_band_rs.py` (tests
+  `tests/test_m3_band_rs.py`), with the coverage theorem stated and proved
+  as Prop. 12 of the theory doc. The production version upgrades the
+  round-3 harness in three ways: local levels are calibrated *exactly*
+  (non-crossing-probability DP in the `fiducial-core` Rust crate, replacing
+  the B=100k Monte Carlo + 2-SE shading), the invalid U(0) = 0 pin is
+  replaced by the composition's own exact bound (opt-in pin via
+  `assume_r0_zero`), and the class-level split is exposed as
+  `split_ratio` ((1−α_F) = (1−α)^ρ — a theorem-preserving lever for the
+  9:1-imbalance liability below, unswept so far). Cost: one cached
+  calibration per (n, level) (0.06s at n=500, ~47s at n=10⁴), ~1.5ms per
+  band thereafter. Measured in round 3 (`m3m4_report.md` §1–4:
+  Šidák split across the four one-sided components, MC-calibrated local
+  levels, endpoint pins). The theorem holds with a large margin — coverage
+  1.000 at α=.05 in all 8 cells (0 misses in 3,200 replicate-cells),
+  0.978–0.998 at α=.5 — and the band is cheap (one calibration per sample
+  size plus two gathers per band; orders of magnitude cheaper than the
+  fiducial cloud). It does generalize the old Beta/Wilson floors into one
+  object (its upper edge is the CP bound at an FPR-shifted count). Its three
+  hoped-for roles, updated:
+  - *(i) Guarantee layer:* fails the ~1.5× width criterion against the
+    production band — area 1.45–2.19× `fid_rc` (median 1.68×; only t(2)
+    passes), worst at steep corners (AUC .99: 1.97–2.19×) — but is narrower
+    than KS everywhere (0.37–0.88×), so as a provable band it strictly
+    dominates the provable baseline. The whole penalty is level accounting,
+    not geometry: at the nominal level whose realized coverage is .95
+    (α′ ≈ 0.6–0.8, shape- and n-dependent, drifting down with n), M3's area
+    is 0.93–1.05× `fid_cp`. That remap is a measurement of where the slack
+    lives, not a method — a fixed α′ forfeits exactly the theorem that is
+    M3's reason to exist. Round 4 measured the worst-case-remap ceiling over
+    all 14 cells (`r4_report.md` §4): the infimum-over-cells α′ attaining
+    ≥.95 coverage is 0.500 — set by the 9:1 imbalance cell, not by any
+    shape — and M3 at a fixed α′ = 0.5 has min coverage exactly .950 (±1.1pp
+    SE) with area 1.07–1.43× `fid_rc` (mean 1.21×): it clears the ~1.5× bar
+    on this library, but with zero margin (one ladder step of safety,
+    α′ = 0.4, gives 1.57× and fails), and the required α′ drifts down with n
+    (0.80 → 0.60 over n = 150 → 5000, ≈0.13/decade — a fixed 0.5 is
+    exhausted near n ≈ 3×10⁴). A finite library cannot establish the
+    distribution-free infimum, so this remains a ceiling measurement.
+  - *(ii) Outer miss cap:* fiducial ∩ M3(α/10) is free (0.00% width cost)
+    but inert — the cap never bound in 10,400 band-level checks — and the
+    certificate is weak: it proves miss depth ≤ 0.10–0.90 where the observed
+    worst case is 0.01–0.06. "Misses are small" is not made provable at a
+    useful constant.
+  - *(iii) Bridge to a coverage theorem via domination:* **ruled out
+    empirically.** M3(α′) ⊆ fiducial(.05) essentially never holds — at any
+    α′ up to .999, on any cell, even after discarding 25 grid points per end
+    (M3's lower edge is identically 0 over the first grid points and dips
+    under the fiducial floor near the plateau; at any α′ carrying a real
+    guarantee M3 is wider over most of the interior). The reverse
+    containment — the cap direction — holds comfortably at α′ ≈ 0.10–0.30
+    against the production band.
 - **M4 — exact rank-test inversion.** The theoretical ideal: H₀: R = R₀ is
   simple in rank space, so an exact confidence set exists by test inversion;
-  bands are its projections. Intractable directly; relevant as the frame for
-  proving what the fiducial band approximates, and for bracketed worst-case
-  calibration if plug-in-free guarantees are ever needed.
-- **Fiducial-predictive trim calibration** (untried): the one live idea for
-  removing the residual central-α shape spread.
+  bands are its projections. Intractable directly; remains relevant as the
+  frame for proving what the fiducial band approximates. Its practical
+  relaxation — bracketed worst-case calibration over an M3-50% set (M4b) —
+  was tested in round 3 and falsified (see §6). Its tractable fragment was
+  delivered in round 4 (`r4_report.md` §3): the **exact Monte Carlo test at
+  a named curve** (min-p depth of R₀ in a cloud simulated from R₀) is exact
+  within 2 SE at α ∈ {.05, .2} across five (shape, n) cells including the
+  two where WH has 0.000 coverage; power at n = 500 is .23–.26 at
+  |ΔAUC| = .01 and .71–.85 at .02 (halving at n = 150), with a ~2.5× worse
+  sup-norm exchange rate against localized early-FPR alternatives than
+  global ones, and easier detection of a corner pushed down than up. A clean
+  paper deliverable (non-inferiority against a named benchmark curve).
+- **Fiducial-predictive trim calibration** — falsified in round 4; moved to
+  §6. With it, plug-in, worst-case bracketing, and functional-driven rules
+  all dead, the central-α shape spread has no per-dataset candidate left;
+  the offline library calibration (`c_calibration_spec.md`) is the
+  remaining instrument.
+- **Change the depth functional (the one live construction idea for the
+  central-α spread).** Every *level*-side fix is now dead; the measured
+  mechanism (draws rougher than truth, contrast concentrated in the lower
+  depth tail) suggests attacking the depth functional itself. Two
+  candidates, both with content control proved (any per-draw trim score
+  qualifies — `fiducial_band_theory.md` Lemma 6b): (a) **smoothed-depth
+  trimming** — rank each draw by the min-p depth of its *smoothed* version,
+  trim by that score, band = envelope of the retained raw draws;
+  depth–tube duality is lost and a smoothing scale enters. (b) **ERL
+  trimming** (extreme rank length, the standard tie-breaking refinement
+  from the global-envelope literature — theory doc §5.1): parameter-free,
+  re-weights exactly the deep-tail rank excursions that drive the
+  roughness contrast, and as a bonus removes j*-saturation so M can shrink.
+  Untried; a 3-cell derisk (C2/C5/C4 at α ∈ {.5,.2,.05}) covering both is
+  cheap on the Rust core and would show whether either equalizes the
+  truth-vs-draw depth laws. See `fiducial_band_theory.md` §12 open
+  problem 3.
+- **Exact-test spinoffs (NEW after round 4).** The named-curve test
+  (`r4_report.md` §3, theory doc Prop. 11) opens three cheap deliverables:
+  (i) non-inferiority testing against a named benchmark curve (exact,
+  distribution-free — directly publishable); (ii) an exact
+  goodness-of-fit test of the binormal assumption via a split-sample
+  fitted null (fit the binormal curve on one half, test exactly on the
+  other) — the diagnostic WH users never had, though the split-sample
+  power cost needs measuring and the composite-null version needs care;
+  (iii) fiducial confidence intervals for scalar summaries (AUC, partial
+  AUC, TPR-at-fixed-FPR) by projecting the existing cloud — near-zero
+  marginal code, benchmarked against DeLong. None affect the band; all
+  reuse its machinery.
 - **Oracle band as a published benchmark:** the exact rank-space width
   ceiling is computable for any (R_true, n₀, n₁) and makes a clean yardstick
   figure for the paper regardless of method.
@@ -257,25 +441,70 @@ conclusion.
 
 ## 8. Open theory questions
 
-1. Prove (or refute) that C = 2 is the correct level remap asymptotically —
-   the conjecture is that the fiducial trim spends one simultaneity budget
-   for the composed curve where the frequentist requirement is one per
-   class-CDF.
+1. ~~Prove (or refute) that C = 2 is the correct level remap
+   asymptotically.~~ Refuted empirically in round 3: C*(n) decays toward 1
+   (1.32 ± 0.16 at n = 20,000), so the "one simultaneity budget per
+   class-CDF" account (H1) is out and the roughness-mismatch account (H2)
+   stands. What remains open: a proof of the H2 mechanism and of the taper
+   rate (empirically ~n^{−1/3}; second-order analysis of the min-p
+   functional under a rough-vs-smooth contrast), and a direct α=.05
+   measurement at n ≥ 10⁴ (owned by `c_calibration_spec.md` D3). Round 4
+   removed one candidate proxy for that analysis: the effective-looks ratio
+   is *not* a rank-path crossing count even in oracle form (+0.69 with C*
+   across shapes at fixed n but −0.31 across all 14 cells — wrong sign
+   along n — and the plug-in version flips sign against the oracle
+   version); tail-excursion structure is what the second-order analysis
+   must characterize instead.
 2. A coverage theorem for the fiducial composition + degenerate-corner
    allowances, plausibly via the Dirichlet process / Bayesian bootstrap
-   literature for a single CDF, extended to the two-sample composition.
+   literature for a single CDF, extended to the two-sample composition. The
+   domination-by-M3 route was ruled out empirically in round 3 (no M3 band
+   carrying a non-trivial guarantee fits inside the fiducial band, interior
+   or otherwise); the exchangeability/conformal embedding route is untouched.
 3. The identifiability frontier at the corner, restated in rank space: no
    band can certify a nonvacuous lower bound below ~c/n₀ — connects to the
    old Beta-floor honesty result and bounds the achievable width in the
    steep-corner strata.
 4. Characterize the shape functional driving the per-shape optimal exponent
-   (range 1.6–3.1) — if it is estimable from ranks, a data-driven level
-   without the plug-in bias may exist.
-5. Literature check before claiming novelty: fiducial/Bayesian-bootstrap
-   simultaneous bands for a single CDF; two-sample confidence bands via
-   Dirichlet spacings; equal-local-levels (Berk–Jones, Nair's equal-precision
-   bands) applied to ROC; Campbell (1994); Claeskens et al. (2003);
-   Macskassy–Provost–Rosset (2005); Hall–Hyndman–Fan smoothed ROC bands.
+   (range 1.6–3.1). Round 3 narrowed the search: early slope is excluded
+   (the ceiling is flat along a five-fold early-slope ladder) and the
+   operative axis is roughness-like (t(2) sits below the entire binormal
+   ladder; smoothing a calibration target at fixed shape moves its
+   calibrated depth 30×). Round 4 (`r4_report.md` §2) went further and came
+   back mostly empty-handed: over 32 rank-computable candidates in 5
+   families across 14 cells, in-sample correlations reach |r| 0.7–0.9 and
+   LOO RMSE of C* falls 0.19 → 0.13, but **nothing survives out of
+   sample** — held-out spread reductions sit inside MC noise, α=.05
+   coverage *degrades* under the rules (7 of 14 cells below 0.94, min .910,
+   vs 3 under fixed C=2), and the best-LOO two-predictor rule blows up on
+   the 9:1 cell (Ĉ = 5.0). Two eliminations and one surprise: the axis is
+   *not* a concavity defect (bimodal .90 is exactly concave yet sits below
+   the ladder); and the co-movement/Wald pathology does **not** bite for
+   functional-driven levels (within-cell |ρ| ≤ 0.25) — the failure is pure
+   lack of signal, not the mechanism that killed the calibration routes.
+   The axis remains unidentified; this is now a theory question (item 1's
+   second-order analysis), not a search problem.
+5. Literature check before claiming novelty — **first web pass done
+   2026-08-23; see `fiducial_band_theory.md` §14 for the full accounting.**
+   Headlines: the min-p trim + tube is the *global rank envelope*
+   (Myllymäki et al. 2017, JRSS-B; = extremal depth, Narisetty & Nair 2016
+   JASA; tube-from-draws back to Besag et al. 1995) and the named-curve
+   exact test is their rank envelope test — cite, don't re-derive; the
+   *nearest existing* ROC cloud is the Bayesian bootstrap of Gu–Ghosal–Roy
+   (2008, Stat. Med.), pointwise only and not identical to ours (the BB
+   puts n Dirichlet weights on the observed atoms and pins the extremes;
+   our cloud is the (n+1)-spacings GFD, which carries the corner mass —
+   an O(1/n) difference that is exactly the corner channel); the
+   one-sample fiducial band with a
+   functional Bernstein–von Mises theorem is Cui & Hannig (2019,
+   Biometrika) — the proof template for Theorem 7. Plausibly novel
+   (assessed honestly as combination-driven): the
+   two-sample composition of spacings-GFDs as a *band*, the
+   C-remap/roughness calibration study (an empirical phenomenon plus a toy
+   model until open problem 1 is solved), the corner-necessity sketches. Practical imports: ERL
+   tie-breaking as a saturation fix (theory doc §9), exact one-sample ELL
+   levels via `qqconf` for M3, and Cui–Hannig's interval-valued treatment
+   as an alternative to within-gap spreading.
 
 ---
 
@@ -289,6 +518,15 @@ conclusion.
   `stats/experiments/m2_experiments.py` + helpers; full report
   `stats/experiments/m2_report.md`; results `res_p*.json`,
   `res_baselines_p2.json`.
+- Round 3 (M3 guarantee layer, miss cap, containment probe, M4b bracket,
+  C*(n) ladder to n = 20,000): `stats/experiments/m3_experiments.py`,
+  `m4_experiments.py`, `analyze_m3.py`; results `res_m3_*.json`,
+  `res_m4_*.json`, `res_cstar_*.json`; full report
+  `stats/experiments/m3m4_report.md`.
+- Round 4 (fiducial-predictive calibration, roughness-functional search,
+  exact named-curve test, M3 worst-case-level map, steep-corner repair
+  probe): `stats/experiments/r4_experiments.py`, `r4_analyze.py`; results
+  `res_r4_*.json`; full report `stats/experiments/r4_report.md`.
 - Production implementation: `src/studroc_paper/methods/fiducial_band.py`;
   tests `tests/test_fiducial_band.py`; validation of the implementation
   against harness numbers: `validate_production.py` (scratch; figures quoted

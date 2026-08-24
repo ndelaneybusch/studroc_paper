@@ -22,17 +22,22 @@ The band is assembled in four steps:
    minimum over grid points of its rank from either end of the cloud) and
    trim to depth ``j`` = the ``alpha_eff``-quantile of the depths, where
    ``alpha_eff = 1 - (1 - alpha)**trim_exponent``. The default exponent 2 is
-   the empirically calibrated level remap (one simultaneity budget per
-   class, a Sidak-like correction); exponent 1 gives the raw fiducial
-   credible band, which is conservative at central alpha levels.
+   the empirically calibrated finite-sample level remap (see
+   ``stats/fiducial_band_theory.md`` section 7; the once-conjectured
+   "Sidak budget per class" reading is falsified); exponent 1 gives the
+   raw fiducial credible band, measured conservative at every tested cell
+   and asymptotically calibrated on the interior.
 3. **Band.** Lower/upper edges are the pointwise j-th smallest / j-th
    largest draws.
-4. **Exact binomial allowances at degenerate corners.** The upper edge is
-   unioned with the exact Clopper-Pearson upper bound at the band's own
-   local level ``j / (n_draws + 1)`` (essential: a credible upper edge
-   cannot touch 1, but the frequentist bound at an empirical TPR of 1 must
-   equal 1), and the lower edge is set to 0 wherever no positive exceeds
-   the operating threshold (the free mirror of the same fact).
+4. **Binomial (Clopper-Pearson-form) allowances at degenerate corners.**
+   The upper edge is unioned with the CP upper bound evaluated at the
+   band's own local level ``j / (n_draws + 1)`` (essential: a credible
+   upper edge cannot touch 1, but a valid band's upper edge at an
+   empirical TPR of 1 must equal 1), and the lower edge is set to 0
+   wherever no positive exceeds the operating threshold (the free mirror
+   of the same fact). Because the local level is data-selected, the
+   allowance is a pure widening at the corner-forced scale, not a
+   standalone exact confidence device (theory doc, section 8).
 
 The method is fully rank-based: coverage depends on the data-generating
 process only through the true ROC curve and the two sample sizes. Ties are
@@ -240,8 +245,9 @@ def fiducial_band(
     law of each class's CDF at its order statistics, trims the cloud to its
     most central curves by equal-local-levels (min-p) depth at the remapped
     level ``1 - (1 - alpha)**trim_exponent``, takes the pointwise envelope of
-    the retained depth, and applies two exact binomial corner allowances:
-    the Clopper-Pearson upper bound at the band's own local level (the upper
+    the retained depth, and applies two binomial (Clopper-Pearson-form)
+    corner allowances:
+    the CP upper bound at the band's own local level (the upper
     edge must reach 1 wherever the empirical TPR is 1) and a zero lower
     bound wherever the empirical TPR is 0. See the module docstring for the
     construction and ``stats/experiments/m2_report.md`` for its measured
@@ -264,9 +270,11 @@ def fiducial_band(
             the cloud.
         trim_exponent: Exponent ``C`` of the level remap
             ``alpha_eff = 1 - (1 - alpha)**C``. ``2.0`` (default) is the
-            empirically centred choice, read as one simultaneity budget per
-            class; ``1.0`` gives the raw fiducial credible band, valid but
-            over-conservative at central alpha levels.
+            empirically centred finite-sample choice; ``1.0`` gives the raw
+            fiducial credible band — measured conservative on every tested
+            cell and asymptotically calibrated on the interior, but with no
+            finite-sample coverage theorem (see
+            ``stats/fiducial_band_theory.md`` sections 6-7).
         k: Optional output grid size. ``None`` (default) returns the band on
             its native grid of ``n0 + 1`` points ``t = i / n0``. Otherwise
             the band is step-resampled onto ``linspace(0, 1, k)``

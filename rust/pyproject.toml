@@ -1,0 +1,13 @@
+[build-system]
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
+
+[project]
+name = "fiducial-core"
+version = "0.1.0"
+description = "Rust fiducial ROC band kernel for the studroc_paper package"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+
+[tool.maturin]
+module-name = "fiducial_core"
