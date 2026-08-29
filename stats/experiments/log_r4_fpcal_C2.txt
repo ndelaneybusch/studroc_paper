@@ -1,0 +1,141 @@
+== fpcal C2 ('binormal', 0.95) n0=500 n1=500 reps=100 M=3000 ncal=60 m_in=1000 arms=('raw', 'sm') ==
+  [C2] rep 10/100 (104s)
+  [C2] rep 20/100 (221s)
+  [C2] rep 30/100 (352s)
+  [C2] rep 40/100 (479s)
+  [C2] rep 50/100 (598s)
+  [C2] rep 60/100 (723s)
+  [C2] rep 70/100 (849s)
+  [C2] rep 80/100 (977s)
+  [C2] rep 90/100 (1109s)
+  [C2] rep 100/100 (1251s)
+{
+ "C2": {
+  "fid_cp": {
+   "0.5": {
+    "coverage": 0.77,
+    "area": 0.042,
+    "mean_jstar": 56.43
+   },
+   "0.2": {
+    "coverage": 0.93,
+    "area": 0.052,
+    "mean_jstar": 15.4
+   },
+   "0.05": {
+    "coverage": 0.98,
+    "area": 0.0638,
+    "mean_jstar": 3.03
+   }
+  },
+  "fid_rc": {
+   "0.5": {
+    "coverage": 0.53,
+    "area": 0.0346,
+    "mean_jstar": 132.13,
+    "ae_star": 0.78
+   },
+   "0.2": {
+    "coverage": 0.85,
+    "area": 0.045,
+    "mean_jstar": 38.47,
+    "ae_star": 0.39
+   },
+   "0.05": {
+    "coverage": 0.97,
+    "area": 0.0578,
+    "mean_jstar": 6.95,
+    "ae_star": 0.105
+   }
+  },
+  "recal": {
+   "0.5": {
+    "coverage": 0.5,
+    "area": 0.0335,
+    "mean_jstar": 148.09,
+    "ae_star": 0.815
+   },
+   "0.2": {
+    "coverage": 0.8,
+    "area": 0.0435,
+    "mean_jstar": 46.82,
+    "ae_star": 0.445
+   },
+   "0.05": {
+    "coverage": 0.95,
+    "area": 0.0522,
+    "mean_jstar": 14.93,
+    "ae_star": 0.195
+   }
+  },
+  "fid_pred_raw": {
+   "0.5": {
+    "coverage": 0.69,
+    "area": 0.0399,
+    "mean_jstar": 74.97
+   },
+   "0.2": {
+    "coverage": 0.92,
+    "area": 0.0504,
+    "mean_jstar": 20.58
+   },
+   "0.05": {
+    "coverage": 0.97,
+    "area": 0.0618,
+    "mean_jstar": 4.47
+   }
+  },
+  "fid_pred_raw_q": {
+   "0.5": {
+    "coverage": 0.71,
+    "area": 0.0411,
+    "mean_jstar": 64.8
+   },
+   "0.2": {
+    "coverage": 0.94,
+    "area": 0.0519,
+    "mean_jstar": 16.65
+   },
+   "0.05": {
+    "coverage": 0.98,
+    "area": 0.0628,
+    "mean_jstar": 3.63
+   }
+  },
+  "fid_pred_sm": {
+   "0.5": {
+    "coverage": 0.69,
+    "area": 0.0389,
+    "mean_jstar": 83.94
+   },
+   "0.2": {
+    "coverage": 0.93,
+    "area": 0.0492,
+    "mean_jstar": 24.48
+   },
+   "0.05": {
+    "coverage": 0.98,
+    "area": 0.0604,
+    "mean_jstar": 5.85
+   }
+  },
+  "fid_pred_sm_q": {
+   "0.5": {
+    "coverage": 0.73,
+    "area": 0.04,
+    "mean_jstar": 73.89
+   },
+   "0.2": {
+    "coverage": 0.93,
+    "area": 0.0504,
+    "mean_jstar": 21.03
+   },
+   "0.05": {
+    "coverage": 0.98,
+    "area": 0.0614,
+    "mean_jstar": 5.04
+   }
+  }
+ }
+}
+saved -> res_r4_fpcal_C2.json

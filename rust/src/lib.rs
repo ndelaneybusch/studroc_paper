@@ -1,0 +1,860 @@
+//! Fiducial ROC band kernel: the Monte Carlo core of the rank-space fiducial
+//! confidence band (`studroc_paper.methods.fiducial_band`).
+//!
+//! Given the merged label sequence (class labels sorted by descending score,
+//! ties already broken), the kernel:
+//!
+//! 1. draws `n_draws` fiducial ROC curves — per class a Dirichlet(1,...,1)
+//!    spacings vector (normalized cumulative exponentials) places that
+//!    class's CDF at its own order statistics, the other class's within-gap
+//!    elements are spread at sorted-uniform fractions of the gap, and the
+//!    resulting (x, y) polyline is linearly interpolated onto the grid
+//!    `t_k = k / n0`;
+//! 2. computes each draw's min-p depth (minimum over grid points of its
+//!    tie-inclusive rank from either end of the cloud) and the trim depth
+//!    `j` = the `alpha_eff`-quantile of the depths, clamped to
+//!    `[1, n_draws / 2]`;
+//! 3. returns the pointwise `j`-th smallest / `j`-th largest cloud values.
+//!
+//! The exact binomial corner allowances, tie-breaking, and output-grid
+//! resampling stay in the Python wrapper — they are O(K) and need scipy's
+//! Beta quantile.
+//!
+//! The cloud is stored as `f32`: the band edges are order statistics whose
+//! Monte Carlo resolution is `1 / n_draws >= 5e-5`, three orders above f32
+//! granularity, and halving the memory traffic roughly doubles the
+//! throughput of the sort-heavy rank passes. Curve generation and
+//! interpolation run in `f64` and round once on store.
+//!
+//! Reproducibility contract: the RNG stream is a pure function of
+//! `(seed, draw_index)`, so output is bit-identical regardless of thread
+//! count or scheduling.
+
+use numpy::{IntoPyArray, PyArray1, PyReadonlyArray1};
+use pyo3::exceptions::PyValueError;
+use pyo3::prelude::*;
+use pyo3::types::PyDict;
+use rayon::prelude::*;
+
+pub mod ell;
+pub mod incbeta;
+pub mod ladder;
+
+pub(crate) const CHUNK_COLS: usize = 128; // grid-column chunk for the rank passes
+
+#[inline(always)]
+fn splitmix64(state: &mut u64) -> u64 {
+    *state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    let mut z = *state;
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    z ^ (z >> 31)
+}
+
+pub struct Xoshiro256pp {
+    s: [u64; 4],
+}
+
+impl Xoshiro256pp {
+    #[must_use]
+    pub fn new(seed: u64) -> Self {
+        let mut sm = seed;
+        Self {
+            s: [
+                splitmix64(&mut sm),
+                splitmix64(&mut sm),
+                splitmix64(&mut sm),
+                splitmix64(&mut sm),
+            ],
+        }
+    }
+
+    #[inline(always)]
+    fn next_u64(&mut self) -> u64 {
+        let result = self.s[0]
+            .wrapping_add(self.s[3])
+            .rotate_left(23)
+            .wrapping_add(self.s[0]);
+        let t = self.s[1] << 17;
+        self.s[2] ^= self.s[0];
+        self.s[3] ^= self.s[1];
+        self.s[1] ^= self.s[2];
+        self.s[0] ^= self.s[3];
+        self.s[2] ^= t;
+        self.s[3] = self.s[3].rotate_left(45);
+        result
+    }
+
+    /// Uniform in `[0, 1)` with 53 random bits.
+    #[inline(always)]
+    fn next_f64(&mut self) -> f64 {
+        (self.next_u64() >> 11) as f64 * (1.0 / (1u64 << 53) as f64)
+    }
+
+    /// Standard exponential; `1 - u` is in `(0, 1]` so the log is finite.
+    #[inline(always)]
+    fn next_exp(&mut self) -> f64 {
+        -(1.0 - self.next_f64()).ln()
+    }
+}
+
+/// Derives a unique RNG seed per fiducial draw so results are reproducible
+/// across thread counts.
+#[inline]
+#[must_use]
+pub fn draw_seed(seed: u64, draw: u64) -> u64 {
+    seed ^ draw.wrapping_mul(0xA24B_AED4_963E_E407)
+}
+
+/// Normalized cumulative sums of iid exponentials: the cumulative masses of
+/// a Dirichlet(1,...,1) spacings vector. The last entry is pinned to 1 so
+/// downstream gap arithmetic sees an exact unit total.
+fn dirichlet_cumsum(rng: &mut Xoshiro256pp, out: &mut [f64]) {
+    let mut acc = 0.0;
+    for slot in out.iter_mut() {
+        acc += rng.next_exp();
+        *slot = acc;
+    }
+    for slot in out.iter_mut() {
+        *slot /= acc;
+    }
+    *out.last_mut().expect("non-empty spacings") = 1.0;
+}
+
+/// Fill one axis of the fiducial polyline (`out[1..=n]`; the caller owns the
+/// 0/1 endpoints at `out[0]` and `out[n + 1]`).
+///
+/// Elements of the axis-owning class sit at their Dirichlet cumulative
+/// masses; each maximal run of the other class is spread at sorted-uniform
+/// fractions of the gap it falls in.
+fn fill_axis(
+    labels: &[u8],
+    own_label: u8,
+    spacings_cum: &[f64],
+    out: &mut [f64],
+    rng: &mut Xoshiro256pp,
+    urun: &mut Vec<f64>,
+) {
+    let n = labels.len();
+    let mut own_count = 0usize;
+    let mut i = 0usize;
+    while i < n {
+        if labels[i] == own_label {
+            out[1 + i] = spacings_cum[own_count];
+            own_count += 1;
+            i += 1;
+        } else {
+            let start = i;
+            while i < n && labels[i] != own_label {
+                i += 1;
+            }
+            let base = if own_count > 0 {
+                spacings_cum[own_count - 1]
+            } else {
+                0.0
+            };
+            let mass = spacings_cum[own_count] - base;
+            urun.clear();
+            urun.extend((start..i).map(|_| rng.next_f64()));
+            urun.sort_unstable_by(f64::total_cmp);
+            for (offset, &u) in urun.iter().enumerate() {
+                out[1 + start + offset] = base + u * mass;
+            }
+        }
+    }
+}
+
+/// Evaluate the polyline `(xv, yv)` at the grid `t_k = k / n0` by linear
+/// interpolation. `xv` is non-decreasing with `xv[0] = 0` and a final 1, so
+/// a single forward pointer resolves every grid point.
+fn interpolate_row(xv: &[f64], yv: &[f64], n0: usize, out_row: &mut [f32]) {
+    let len = xv.len();
+    let mut idx = 0usize; // number of xv elements <= t, monotone in t
+    for (k, slot) in out_row.iter_mut().enumerate() {
+        let t = k as f64 / n0 as f64;
+        while idx < len && xv[idx] <= t {
+            idx += 1;
+        }
+        let i = idx.clamp(1, len - 1);
+        let x1 = xv[i - 1];
+        let x2 = xv[i];
+        let frac = ((t - x1) / (x2 - x1).max(1e-300)).clamp(0.0, 1.0);
+        *slot = (yv[i - 1] + frac * (yv[i] - yv[i - 1])) as f32;
+    }
+}
+
+struct DrawBufs {
+    pc: Vec<f64>,
+    qc: Vec<f64>,
+    xv: Vec<f64>,
+    yv: Vec<f64>,
+    urun: Vec<f64>,
+}
+
+impl DrawBufs {
+    fn new(n0: usize, n1: usize) -> Self {
+        let n = n0 + n1;
+        Self {
+            pc: vec![0.0; n0 + 1],
+            qc: vec![0.0; n1 + 1],
+            xv: vec![0.0; n + 2],
+            yv: vec![0.0; n + 2],
+            urun: Vec::with_capacity(n),
+        }
+    }
+}
+
+/// One fiducial draw: Dirichlet spacings per class, within-gap spreading,
+/// polyline evaluation on the grid.
+fn generate_row(
+    rng: &mut Xoshiro256pp,
+    labels: &[u8],
+    n0: usize,
+    buf: &mut DrawBufs,
+    out_row: &mut [f32],
+) {
+    let n = labels.len();
+    dirichlet_cumsum(rng, &mut buf.pc);
+    dirichlet_cumsum(rng, &mut buf.qc);
+    buf.xv[0] = 0.0;
+    buf.yv[0] = 0.0;
+    fill_axis(labels, 0, &buf.pc, &mut buf.xv, rng, &mut buf.urun);
+    fill_axis(labels, 1, &buf.qc, &mut buf.yv, rng, &mut buf.urun);
+    buf.xv[n + 1] = 1.0;
+    buf.yv[n + 1] = 1.0;
+    interpolate_row(&buf.xv, &buf.yv, n0, out_row);
+}
+
+/// Draw the full fiducial cloud, row-major `(n_draws, n0 + 1)`.
+pub fn fiducial_cloud(labels: &[u8], n0: usize, n1: usize, n_draws: usize, seed: u64) -> Vec<f32> {
+    let n_grid = n0 + 1;
+    let mut cloud = vec![0.0f32; n_draws * n_grid];
+    cloud.par_chunks_mut(n_grid).enumerate().for_each_init(
+        || DrawBufs::new(n0, n1),
+        |buf, (draw, row)| {
+            let mut rng = Xoshiro256pp::new(draw_seed(seed, draw as u64));
+            generate_row(&mut rng, labels, n0, buf, row);
+        },
+    );
+    cloud
+}
+
+/// Copy grid columns `[lo, lo + width)` of the row-major cloud into a
+/// column-major block (`block[c * n_draws + m]`). The row-major reads are
+/// contiguous and the `width` write streams stay cache-resident, so this is
+/// the transpose that makes the per-column passes bandwidth-bound instead of
+/// latency-bound.
+fn gather_block(cloud: &[f32], n_draws: usize, n_grid: usize, lo: usize, block: &mut [f32]) {
+    let width = block.len() / n_draws;
+    for m in 0..n_draws {
+        let src = &cloud[m * n_grid + lo..m * n_grid + lo + width];
+        for (c, &v) in src.iter().enumerate() {
+            block[c * n_draws + m] = v;
+        }
+    }
+}
+
+/// As [`gather_block`], for an arbitrary (sorted) set of grid columns.
+pub(crate) fn gather_block_cols(
+    cloud: &[f32],
+    n_draws: usize,
+    n_grid: usize,
+    cols: &[usize],
+    block: &mut [f32],
+) {
+    for m in 0..n_draws {
+        let row = &cloud[m * n_grid..(m + 1) * n_grid];
+        for (c, &k) in cols.iter().enumerate() {
+            block[c * n_draws + m] = row[k];
+        }
+    }
+}
+
+/// Min-p depth of each draw over an arbitrary subset of grid columns: the
+/// minimum over the given columns of its tie-inclusive rank from either end
+/// of the cloud (`min(#{<= v}, #{>= v})`). Passing all columns reproduces
+/// [`minp_depths`]; a strict subset implements the production thinned
+/// trim-grid rule (the band is still built and evaluated on the full grid).
+pub fn minp_depths_cols(cloud: &[f32], n_draws: usize, n_grid: usize, cols: &[usize]) -> Vec<u32> {
+    cols.par_chunks(CHUNK_COLS)
+        .map(|chunk| {
+            let width = chunk.len();
+            let mut block = vec![0.0f32; width * n_draws];
+            gather_block_cols(cloud, n_draws, n_grid, chunk, &mut block);
+            let mut depths = vec![n_draws as u32; n_draws];
+            let mut pairs: Vec<(f32, u32)> = Vec::with_capacity(n_draws);
+            for c in 0..width {
+                let col = &block[c * n_draws..(c + 1) * n_draws];
+                pairs.clear();
+                pairs.extend(col.iter().copied().zip(0..n_draws as u32));
+                pairs.sort_unstable_by(|a, b| a.0.total_cmp(&b.0));
+                // One pass over tie groups: every member of a group of equal
+                // values shares rank_le = group end and rank_ge = n - start.
+                let mut start = 0usize;
+                while start < n_draws {
+                    let v = pairs[start].0;
+                    let mut end = start + 1;
+                    while end < n_draws && pairs[end].0.total_cmp(&v).is_eq() {
+                        end += 1;
+                    }
+                    let d = (end as u32).min((n_draws - start) as u32);
+                    for &(_, m) in &pairs[start..end] {
+                        let slot = &mut depths[m as usize];
+                        if d < *slot {
+                            *slot = d;
+                        }
+                    }
+                    start = end;
+                }
+            }
+            depths
+        })
+        .reduce(
+            || vec![n_draws as u32; n_draws],
+            |mut a, b| {
+                for (x, y) in a.iter_mut().zip(b) {
+                    if y < *x {
+                        *x = y;
+                    }
+                }
+                a
+            },
+        )
+}
+
+/// Min-p depth of each draw over the full grid.
+pub fn minp_depths(cloud: &[f32], n_draws: usize, n_grid: usize) -> Vec<u32> {
+    let cols: Vec<usize> = (0..n_grid).collect();
+    minp_depths_cols(cloud, n_draws, n_grid, &cols)
+}
+
+/// A column chunk's start offset plus its lower/upper order-stat values.
+type ChunkEdges = (usize, Vec<f64>, Vec<f64>);
+
+/// Per-column `j`-th smallest and `j`-th largest cloud values (1-indexed).
+pub fn pointwise_order_stats(
+    cloud: &[f32],
+    n_draws: usize,
+    n_grid: usize,
+    j: usize,
+) -> (Vec<f64>, Vec<f64>) {
+    let starts: Vec<usize> = (0..n_grid).step_by(CHUNK_COLS).collect();
+    let per_chunk: Vec<ChunkEdges> = starts
+        .par_iter()
+        .map(|&lo| {
+            let width = CHUNK_COLS.min(n_grid - lo);
+            let mut block = vec![0.0f32; width * n_draws];
+            gather_block(cloud, n_draws, n_grid, lo, &mut block);
+            let mut lower = Vec::with_capacity(width);
+            let mut upper = Vec::with_capacity(width);
+            for c in 0..width {
+                let col = &mut block[c * n_draws..(c + 1) * n_draws];
+                let (_, lo_v, _) = col.select_nth_unstable_by(j - 1, f32::total_cmp);
+                lower.push(f64::from(*lo_v));
+                let (_, hi_v, _) = col.select_nth_unstable_by(n_draws - j, f32::total_cmp);
+                upper.push(f64::from(*hi_v));
+            }
+            (lo, lower, upper)
+        })
+        .collect();
+    let mut lower = vec![0.0f64; n_grid];
+    let mut upper = vec![0.0f64; n_grid];
+    for (lo, l, u) in per_chunk {
+        lower[lo..lo + l.len()].copy_from_slice(&l);
+        upper[lo..lo + u.len()].copy_from_slice(&u);
+    }
+    (lower, upper)
+}
+
+/// Validate the merged label sequence and return `(n0, n1)`.
+///
+/// # Errors
+///
+/// Returns a message when `labels` contains values other than 0/1 or either
+/// class is absent.
+pub(crate) fn parse_labels(labels: &[u8]) -> Result<(usize, usize), String> {
+    if labels.iter().any(|&l| l > 1) {
+        return Err("labels must contain only 0 and 1".to_string());
+    }
+    let n1: usize = labels.iter().map(|&l| usize::from(l)).sum();
+    let n0 = labels.len() - n1;
+    if n0 == 0 || n1 == 0 {
+        return Err(format!("both classes must be present (n0={n0}, n1={n1})"));
+    }
+    Ok((n0, n1))
+}
+
+/// Validate an optional strictly-increasing column subset against the grid.
+fn validate_trim_cols(trim_cols: Option<&[usize]>, n_grid: usize) -> Result<(), String> {
+    if let Some(cols) = trim_cols {
+        if cols.is_empty() {
+            return Err("trim_cols must be non-empty when given".to_string());
+        }
+        if cols.windows(2).any(|w| w[1] <= w[0]) {
+            return Err("trim_cols must be strictly increasing".to_string());
+        }
+        if cols[cols.len() - 1] >= n_grid {
+            return Err(format!("trim_cols must be less than n_grid = {n_grid}"));
+        }
+    }
+    Ok(())
+}
+
+/// The trimmed fiducial tube on the native grid `t_k = k / n0`.
+///
+/// Returns `(lower, upper, j)`: the pointwise `j`-th smallest / largest
+/// fiducial draws, where `j` is the `alpha_eff`-quantile of the min-p depths
+/// clamped to `[1, n_draws / 2]`. When `trim_cols` is given, the min-p
+/// depths are computed on that (strictly increasing) subset of grid columns
+/// only — the production thinned trim-grid rule for large grids — while the
+/// tube itself is still built on the full grid. Corner allowances are the
+/// caller's job.
+///
+/// # Errors
+///
+/// Returns a message when `labels` is empty or contains values other than
+/// 0/1, either class is absent, `n_draws < 2`, `alpha_eff` is outside
+/// `(0, 1)`, or `trim_cols` is empty, unsorted, or out of range.
+pub fn trimmed_tube_vec(
+    labels: &[u8],
+    n_draws: usize,
+    alpha_eff: f64,
+    seed: u64,
+    trim_cols: Option<&[usize]>,
+) -> Result<(Vec<f64>, Vec<f64>, usize), String> {
+    let (n0, n1) = parse_labels(labels)?;
+    if n_draws < 2 {
+        return Err(format!("n_draws must be at least 2, got {n_draws}"));
+    }
+    if !(alpha_eff > 0.0 && alpha_eff < 1.0) {
+        return Err(format!("alpha_eff must be in (0, 1), got {alpha_eff}"));
+    }
+    let n_grid = n0 + 1;
+    validate_trim_cols(trim_cols, n_grid)?;
+
+    let cloud = fiducial_cloud(labels, n0, n1, n_draws, seed);
+
+    let depth_cols: Vec<usize> = trim_cols.map_or_else(|| (0..n_grid).collect(), <[usize]>::to_vec);
+    let mut depths = minp_depths_cols(&cloud, n_draws, n_grid, &depth_cols);
+    depths.sort_unstable();
+    // alpha_eff is validated positive, so the floored index cannot be negative.
+    #[allow(clippy::cast_sign_loss)]
+    let quantile = depths[(alpha_eff * n_draws as f64).floor() as usize] as usize;
+    let j = quantile.clamp(1, (n_draws / 2).max(1));
+
+    let (lower, upper) = pointwise_order_stats(&cloud, n_draws, n_grid, j);
+    Ok((lower, upper, j))
+}
+
+/// Run `f` on a dedicated rayon pool when `n_threads > 0`, else the global
+/// pool. Output is identical either way (draw-indexed RNG streams).
+fn run_in_pool<T: Send>(
+    n_threads: usize,
+    f: impl FnOnce() -> Result<T, String> + Send,
+) -> Result<T, String> {
+    if n_threads > 0 {
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(n_threads)
+            .build()
+            .map_err(|e| e.to_string())?
+            .install(f)
+    } else {
+        f()
+    }
+}
+
+/// Run the tube kernel, on a dedicated pool when `n_threads > 0`, else the
+/// global rayon pool.
+///
+/// # Errors
+///
+/// As [`trimmed_tube_vec`], plus thread-pool construction failures.
+pub fn trimmed_tube_threaded(
+    labels: &[u8],
+    n_draws: usize,
+    alpha_eff: f64,
+    seed: u64,
+    n_threads: usize,
+    trim_cols: Option<&[usize]>,
+) -> Result<(Vec<f64>, Vec<f64>, usize), String> {
+    run_in_pool(n_threads, || {
+        trimmed_tube_vec(labels, n_draws, alpha_eff, seed, trim_cols)
+    })
+}
+
+/// Lower edge, upper edge, and realized trim depth returned to Python.
+type PyTube<'py> = (Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>, usize);
+
+fn trim_cols_vec(trim_cols: Option<PyReadonlyArray1<'_, u64>>) -> PyResult<Option<Vec<usize>>> {
+    trim_cols
+        .map(|cols| {
+            cols.as_slice()
+                .map(|s| s.iter().map(|&c| c as usize).collect())
+        })
+        .transpose()
+        .map_err(Into::into)
+}
+
+/// Trimmed fiducial tube `(lower, upper, j)` on the grid `t = arange(n0 + 1) / n0`.
+///
+/// `trim_cols`, when given, restricts the min-p trim to that subset of grid
+/// columns (production thinned trim-grid rule); the tube is still built on
+/// the full grid.
+// PyO3 extracts arguments by value; passing references is not an option here.
+#[allow(clippy::needless_pass_by_value)]
+#[pyfunction]
+#[pyo3(signature = (labels, n_draws, alpha_eff, seed, n_threads, trim_cols=None))]
+fn fiducial_trimmed_tube<'py>(
+    py: Python<'py>,
+    labels: PyReadonlyArray1<'py, u8>,
+    n_draws: usize,
+    alpha_eff: f64,
+    seed: u64,
+    n_threads: usize,
+    trim_cols: Option<PyReadonlyArray1<'py, u64>>,
+) -> PyResult<PyTube<'py>> {
+    let labels = labels.as_slice()?.to_vec();
+    let cols = trim_cols_vec(trim_cols)?;
+    let (lower, upper, j) = py
+        .detach(|| {
+            trimmed_tube_threaded(
+                &labels,
+                n_draws,
+                alpha_eff,
+                seed,
+                n_threads,
+                cols.as_deref(),
+            )
+        })
+        .map_err(PyValueError::new_err)?;
+    Ok((lower.into_pyarray(py), upper.into_pyarray(py), j))
+}
+
+/// Full ladder profile of one replicate (see `ladder::ladder_profile_vec`).
+///
+/// Returns a dict of numpy arrays and scalars:
+/// `ladder_covered/viol_low/viol_high` (bool, per ladder depth),
+/// `ladder_miss_depth/area/area_raw` (f64), `ladder_worst_k` (i64),
+/// the same fields prefixed `ref_` (per `alpha_effs` entry) plus `ref_j`
+/// (u32), `depths_sorted` (u32, per draw), `truth_depth_low/high` (int),
+/// and — when `return_edges` — `edge_depths` (u32) with flat row-major
+/// `edge_lower`/`edge_upper` (f32, one row of `n0 + 1` values per edge
+/// depth, raw tube before allowances).
+// PyO3 extracts arguments by value; passing references is not an option here.
+#[allow(clippy::needless_pass_by_value, clippy::too_many_arguments)]
+#[pyfunction]
+#[pyo3(signature = (labels, n_draws, seed, rtrue, khat, ladder, alpha_effs,
+                    trim_cols=None, return_edges=false, n_threads=0))]
+fn fiducial_ladder_profile<'py>(
+    py: Python<'py>,
+    labels: PyReadonlyArray1<'py, u8>,
+    n_draws: usize,
+    seed: u64,
+    rtrue: PyReadonlyArray1<'py, f64>,
+    khat: PyReadonlyArray1<'py, u32>,
+    ladder: PyReadonlyArray1<'py, u32>,
+    alpha_effs: PyReadonlyArray1<'py, f64>,
+    trim_cols: Option<PyReadonlyArray1<'py, u64>>,
+    return_edges: bool,
+    n_threads: usize,
+) -> PyResult<Bound<'py, PyDict>> {
+    let labels = labels.as_slice()?.to_vec();
+    let rtrue = rtrue.as_slice()?.to_vec();
+    let khat = khat.as_slice()?.to_vec();
+    let ladder_v = ladder.as_slice()?.to_vec();
+    let alpha_effs = alpha_effs.as_slice()?.to_vec();
+    let cols = trim_cols_vec(trim_cols)?;
+    let profile = py
+        .detach(|| {
+            run_in_pool(n_threads, || {
+                ladder::ladder_profile_vec(
+                    &labels,
+                    n_draws,
+                    seed,
+                    &rtrue,
+                    &khat,
+                    &ladder_v,
+                    &alpha_effs,
+                    cols.as_deref(),
+                    return_edges,
+                )
+            })
+        })
+        .map_err(PyValueError::new_err)?;
+
+    let out = PyDict::new(py);
+    let set_stats =
+        |out: &Bound<'py, PyDict>, prefix: &str, stats: &[ladder::BandStats]| -> PyResult<()> {
+            let covered: Vec<bool> = stats.iter().map(|s| s.covered).collect();
+            let viol_low: Vec<bool> = stats.iter().map(|s| s.viol_low).collect();
+            let viol_high: Vec<bool> = stats.iter().map(|s| s.viol_high).collect();
+            let miss: Vec<f64> = stats.iter().map(|s| s.miss_depth).collect();
+            let worst: Vec<i64> = stats.iter().map(|s| s.worst_k).collect();
+            let area: Vec<f64> = stats.iter().map(|s| s.area).collect();
+            let area_raw: Vec<f64> = stats.iter().map(|s| s.area_raw).collect();
+            out.set_item(format!("{prefix}covered"), covered.into_pyarray(py))?;
+            out.set_item(format!("{prefix}viol_low"), viol_low.into_pyarray(py))?;
+            out.set_item(format!("{prefix}viol_high"), viol_high.into_pyarray(py))?;
+            out.set_item(format!("{prefix}miss_depth"), miss.into_pyarray(py))?;
+            out.set_item(format!("{prefix}worst_k"), worst.into_pyarray(py))?;
+            out.set_item(format!("{prefix}area"), area.into_pyarray(py))?;
+            out.set_item(format!("{prefix}area_raw"), area_raw.into_pyarray(py))?;
+            Ok(())
+        };
+    set_stats(&out, "ladder_", &profile.ladder_stats)?;
+    set_stats(&out, "ref_", &profile.ref_stats)?;
+    out.set_item("ref_j", profile.ref_j.into_pyarray(py))?;
+    out.set_item("depths_sorted", profile.depths_sorted.into_pyarray(py))?;
+    out.set_item("truth_depth_low", profile.truth_depth_low)?;
+    out.set_item("truth_depth_high", profile.truth_depth_high)?;
+    if let Some(edges) = profile.edges {
+        out.set_item("edge_depths", edges.depths.into_pyarray(py))?;
+        out.set_item("edge_lower", edges.lower.into_pyarray(py))?;
+        out.set_item("edge_upper", edges.upper.into_pyarray(py))?;
+    }
+    Ok(out)
+}
+
+/// Inverse regularized incomplete beta (the Beta distribution quantile),
+/// exposed for cross-validation against scipy in the Python test suite.
+#[pyfunction]
+#[pyo3(signature = (p, a, b))]
+fn inv_reg_incomplete_beta(p: f64, a: f64, b: f64) -> PyResult<f64> {
+    if !(0.0..=1.0).contains(&p) {
+        return Err(PyValueError::new_err(format!(
+            "p must be in [0, 1], got {p}"
+        )));
+    }
+    if a <= 0.0 || b <= 0.0 {
+        return Err(PyValueError::new_err(format!(
+            "a and b must be positive, got a={a}, b={b}"
+        )));
+    }
+    Ok(incbeta::inv_reg_inc_beta(p, a, b))
+}
+
+/// Exact `P(lower[i] <= U_(i+1) <= upper[i] for all i)` for the order
+/// statistics of `n = len(lower)` iid Uniform(0,1) variables — the
+/// calibration kernel of the M3 composition band (see `ell::crossing_prob`).
+// PyO3 extracts arguments by value; passing references is not an option here.
+#[allow(clippy::needless_pass_by_value)]
+#[pyfunction]
+#[pyo3(signature = (lower, upper))]
+fn ell_crossing_probability(
+    py: Python<'_>,
+    lower: PyReadonlyArray1<'_, f64>,
+    upper: PyReadonlyArray1<'_, f64>,
+) -> PyResult<f64> {
+    let lower = lower.as_slice()?.to_vec();
+    let upper = upper.as_slice()?.to_vec();
+    py.detach(|| ell::crossing_prob(&lower, &upper))
+        .map_err(PyValueError::new_err)
+}
+
+#[pymodule]
+fn fiducial_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(fiducial_trimmed_tube, m)?)?;
+    m.add_function(wrap_pyfunction!(fiducial_ladder_profile, m)?)?;
+    m.add_function(wrap_pyfunction!(ell_crossing_probability, m)?)?;
+    m.add_function(wrap_pyfunction!(inv_reg_incomplete_beta, m)?)?;
+    Ok(())
+}
+
+#[cfg(test)]
+#[allow(clippy::float_cmp, clippy::cast_sign_loss)]
+mod tests {
+    use super::*;
+
+    fn labels_case(n0: usize, n1: usize, seed: u64) -> Vec<u8> {
+        // Interleave with a bias so runs of both classes appear.
+        let mut rng = Xoshiro256pp::new(seed);
+        let mut labels = Vec::with_capacity(n0 + n1);
+        let (mut r0, mut r1) = (n0, n1);
+        while r0 + r1 > 0 {
+            let p1 = r1 as f64 / (r0 + r1) as f64;
+            if r0 == 0 || (r1 > 0 && rng.next_f64() < p1) {
+                labels.push(1);
+                r1 -= 1;
+            } else {
+                labels.push(0);
+                r0 -= 1;
+            }
+        }
+        labels
+    }
+
+    #[test]
+    fn cloud_rows_are_monotone_unit_curves() {
+        for &(n0, n1) in &[(1usize, 1usize), (5, 3), (40, 25)] {
+            let labels = labels_case(n0, n1, 11);
+            let n_grid = n0 + 1;
+            let cloud = fiducial_cloud(&labels, n0, n1, 200, 7);
+            for m in 0..200 {
+                let row = &cloud[m * n_grid..(m + 1) * n_grid];
+                assert_eq!(row[0], 0.0, "curve must start at (0, 0)");
+                assert_eq!(row[n_grid - 1], 1.0, "curve must end at (1, 1)");
+                for w in row.windows(2) {
+                    assert!(w[0] <= w[1], "curve must be non-decreasing");
+                }
+                assert!(row.iter().all(|&v| (0.0..=1.0).contains(&v)));
+            }
+        }
+    }
+
+    #[test]
+    fn depths_match_bruteforce_ranks() {
+        let (n0, n1, n_draws) = (12usize, 9usize, 64usize);
+        let labels = labels_case(n0, n1, 3);
+        let n_grid = n0 + 1;
+        let cloud = fiducial_cloud(&labels, n0, n1, n_draws, 5);
+        let depths = minp_depths(&cloud, n_draws, n_grid);
+        for m in 0..n_draws {
+            let mut expect = n_draws as u32;
+            for k in 0..n_grid {
+                let v = cloud[m * n_grid + k];
+                let le = (0..n_draws).filter(|&r| cloud[r * n_grid + k] <= v).count() as u32;
+                let ge = (0..n_draws).filter(|&r| cloud[r * n_grid + k] >= v).count() as u32;
+                expect = expect.min(le.min(ge));
+            }
+            assert_eq!(depths[m], expect, "draw {m}");
+        }
+    }
+
+    #[test]
+    fn order_stats_match_full_sort() {
+        let (n0, n1, n_draws) = (17usize, 8usize, 128usize);
+        let labels = labels_case(n0, n1, 21);
+        let n_grid = n0 + 1;
+        let cloud = fiducial_cloud(&labels, n0, n1, n_draws, 9);
+        for j in [1usize, 4, 33, n_draws / 2] {
+            let (lower, upper) = pointwise_order_stats(&cloud, n_draws, n_grid, j);
+            for k in 0..n_grid {
+                let mut col: Vec<f32> = (0..n_draws).map(|m| cloud[m * n_grid + k]).collect();
+                col.sort_unstable_by(f32::total_cmp);
+                assert_eq!(lower[k], f64::from(col[j - 1]), "j={j} k={k}");
+                assert_eq!(upper[k], f64::from(col[n_draws - j]), "j={j} k={k}");
+            }
+        }
+    }
+
+    #[test]
+    fn depth_tube_duality_and_content_control() {
+        // Lemma: a draw lies inside the [j-th smallest, j-th largest] tube at
+        // every grid point iff its min-p depth is >= j; the trimmed tube must
+        // retain at least a 1 - alpha_eff fraction of the cloud.
+        let (n0, n1, n_draws) = (20usize, 15usize, 400usize);
+        let alpha_eff = 0.0975;
+        let labels = labels_case(n0, n1, 2);
+        let n_grid = n0 + 1;
+        let cloud = fiducial_cloud(&labels, n0, n1, n_draws, 31);
+        let depths = minp_depths(&cloud, n_draws, n_grid);
+        let (lower, upper, j) =
+            trimmed_tube_vec(&labels, n_draws, alpha_eff, 31, None).expect("valid");
+        let mut inside_count = 0usize;
+        for m in 0..n_draws {
+            let row = &cloud[m * n_grid..(m + 1) * n_grid];
+            let inside = row
+                .iter()
+                .enumerate()
+                .all(|(k, &v)| f64::from(v) >= lower[k] && f64::from(v) <= upper[k]);
+            assert_eq!(
+                inside,
+                depths[m] as usize >= j,
+                "duality violated at draw {m} (depth {}, j {j})",
+                depths[m]
+            );
+            inside_count += usize::from(inside);
+        }
+        let retained = inside_count as f64 / n_draws as f64;
+        assert!(
+            retained >= 1.0 - alpha_eff,
+            "tube content {retained} below 1 - alpha_eff"
+        );
+    }
+
+    #[test]
+    fn output_is_independent_of_thread_count() {
+        let labels = labels_case(60, 45, 4);
+        let reference = trimmed_tube_threaded(&labels, 500, 0.0975, 42, 1, None).expect("valid");
+        for threads in [2usize, 4, 0] {
+            let out =
+                trimmed_tube_threaded(&labels, 500, 0.0975, 42, threads, None).expect("valid");
+            assert_eq!(out, reference, "thread count {threads} changed the output");
+        }
+    }
+
+    #[test]
+    fn rejects_invalid_inputs() {
+        let ok = labels_case(5, 5, 1);
+        assert!(trimmed_tube_vec(&[], 100, 0.1, 0, None).is_err());
+        assert!(trimmed_tube_vec(&[0, 0, 0], 100, 0.1, 0, None).is_err());
+        assert!(trimmed_tube_vec(&[1, 1], 100, 0.1, 0, None).is_err());
+        assert!(trimmed_tube_vec(&[0, 2, 1], 100, 0.1, 0, None).is_err());
+        assert!(trimmed_tube_vec(&ok, 1, 0.1, 0, None).is_err());
+        assert!(trimmed_tube_vec(&ok, 100, 0.0, 0, None).is_err());
+        assert!(trimmed_tube_vec(&ok, 100, 1.0, 0, None).is_err());
+        assert!(trimmed_tube_vec(&ok, 100, 0.1, 0, Some(&[])).is_err());
+        assert!(trimmed_tube_vec(&ok, 100, 0.1, 0, Some(&[1, 1])).is_err());
+        assert!(trimmed_tube_vec(&ok, 100, 0.1, 0, Some(&[0, 6])).is_err());
+    }
+
+    #[test]
+    fn thinned_trim_grid_weakly_widens_the_tube() {
+        // Depths over a column subset dominate full-grid depths, so the
+        // realized j is weakly larger and the tube weakly narrower — but the
+        // subset tube must still equal the pointwise order stats at its own j.
+        let (n0, n1, n_draws) = (80usize, 60usize, 600usize);
+        let labels = labels_case(n0, n1, 8);
+        let cols: Vec<usize> = (0..=n0).step_by(4).collect();
+        let (full_lo, full_hi, full_j) =
+            trimmed_tube_vec(&labels, n_draws, 0.0975, 13, None).expect("valid");
+        let (thin_lo, thin_hi, thin_j) =
+            trimmed_tube_vec(&labels, n_draws, 0.0975, 13, Some(&cols)).expect("valid");
+        assert!(thin_j >= full_j, "thinned j {thin_j} below full j {full_j}");
+        for k in 0..=n0 {
+            assert!(thin_lo[k] >= full_lo[k], "lower edge order at k={k}");
+            assert!(thin_hi[k] <= full_hi[k], "upper edge order at k={k}");
+        }
+        let cloud = fiducial_cloud(&labels, n0, n1, n_draws, 13);
+        let (exp_lo, exp_hi) = pointwise_order_stats(&cloud, n_draws, n0 + 1, thin_j);
+        assert_eq!(thin_lo, exp_lo);
+        assert_eq!(thin_hi, exp_hi);
+    }
+
+    #[test]
+    fn beta_marginal_of_extreme_negative_gap() {
+        // With all positives ranked above all negatives, the cloud value at
+        // t = 1/n0 is the positive-CDF evaluated in the first negative gap;
+        // sanity-check the cloud's mean curve is monotone in t and the value
+        // at t = 0 is exactly 0 (no atom, per the interpolation convention).
+        let n0 = 10usize;
+        let n1 = 10usize;
+        let labels: Vec<u8> = std::iter::repeat_n(1u8, n1)
+            .chain(std::iter::repeat_n(0u8, n0))
+            .collect();
+        let n_draws = 4000usize;
+        let n_grid = n0 + 1;
+        let cloud = fiducial_cloud(&labels, n0, n1, n_draws, 77);
+        let mut mean = vec![0.0f64; n_grid];
+        for m in 0..n_draws {
+            for k in 0..n_grid {
+                mean[k] += f64::from(cloud[m * n_grid + k]);
+            }
+        }
+        for v in &mut mean {
+            *v /= n_draws as f64;
+        }
+        assert_eq!(mean[0], 0.0);
+        for w in mean.windows(2) {
+            assert!(w[0] <= w[1]);
+        }
+        // Perfect separation with n0 = n1 = 10: the fiducial TPR at the
+        // first negative should already be high (most positive mass sits
+        // above the top negative gap). Loose but directional bound.
+        assert!(
+            mean[1] > 0.6,
+            "mean cloud at t=1/n0 unexpectedly low: {}",
+            mean[1]
+        );
+    }
+}

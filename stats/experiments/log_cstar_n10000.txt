@@ -1,0 +1,22 @@
+== family binormal0.95 n0=10000 n1=10000 reps=150 M=2500 AUC=0.9500 ==
+  [binormal0.95] rep 25/150 (143s)
+  [binormal0.95] rep 50/150 (302s)
+  [binormal0.95] rep 75/150 (447s)
+  [binormal0.95] rep 100/150 (604s)
+  [binormal0.95] rep 125/150 (743s)
+  [binormal0.95] rep 150/150 (907s)
+{
+ "binormal0.95": {
+  "recal": {
+   "0.5": {
+    "ae_star": 0.645,
+    "mean_jstar": 36.12
+   },
+   "0.2": {
+    "ae_star": 0.3,
+    "mean_jstar": 10.126666666666667
+   }
+  }
+ }
+}
+saved -> res_cstar_n10000.json
