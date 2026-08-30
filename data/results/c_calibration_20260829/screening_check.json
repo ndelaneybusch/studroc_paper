@@ -1,0 +1,452 @@
+{
+ "primary_alpha": 0.05,
+ "n_usable_cells": 27,
+ "shape_screen": {
+  "lower_envelope_c_minus_1se": 0.9672905613657639,
+  "mean_oracle_area_gain_vs_c1": 0.09478291676769852,
+  "cells": [
+   {
+    "cell": "screen_shape--bimodal_90--n500",
+    "arm": "screen_shape",
+    "shape": "bimodal_90",
+    "n0": 500,
+    "n1": 500,
+    "c_star": 2.6638069980629244,
+    "c_se": 0.16756432026544482,
+    "c_lower_1se": 2.4962426777974795,
+    "area_gain_vs_c1": 0.1171236221862616
+   },
+   {
+    "cell": "screen_shape--binormal_60--n500",
+    "arm": "screen_shape",
+    "shape": "binormal_60",
+    "n0": 500,
+    "n1": 500,
+    "c_star": 2.9944965520966176,
+    "c_se": 0.2938391600435071,
+    "c_lower_1se": 2.7006573920531105,
+    "area_gain_vs_c1": 0.12129559170682847
+   },
+   {
+    "cell": "screen_shape--binormal_75--n500",
+    "arm": "screen_shape",
+    "shape": "binormal_75",
+    "n0": 500,
+    "n1": 500,
+    "c_star": 2.813668897022835,
+    "c_se": 0.2792560963728965,
+    "c_lower_1se": 2.5344128006499385,
+    "area_gain_vs_c1": 0.1155390308271641
+   },
+   {
+    "cell": "screen_shape--binormal_90--n500",
+    "arm": "screen_shape",
+    "shape": "binormal_90",
+    "n0": 500,
+    "n1": 500,
+    "c_star": 2.2799541300185133,
+    "c_se": 0.26643060885767467,
+    "c_lower_1se": 2.0135235211608387,
+    "area_gain_vs_c1": 0.09674851205324131
+   },
+   {
+    "cell": "screen_shape--binormal_99--n500",
+    "arm": "screen_shape",
+    "shape": "binormal_99",
+    "n0": 500,
+    "n1": 500,
+    "c_star": 2.598291553926991,
+    "c_se": 0.25125303695747075,
+    "c_lower_1se": 2.3470385169695205,
+    "area_gain_vs_c1": 0.1344591200686237
+   },
+   {
+    "cell": "screen_shape--hetero_90_r3--n500",
+    "arm": "screen_shape",
+    "shape": "hetero_90_r3",
+    "n0": 500,
+    "n1": 500,
+    "c_star": 2.3598719147297986,
+    "c_se": 0.2574668569739481,
+    "c_lower_1se": 2.1024050577558504,
+    "area_gain_vs_c1": 0.10781449865579285
+   },
+   {
+    "cell": "screen_shape--trapezoid_q10_90--n500",
+    "arm": "screen_shape",
+    "shape": "trapezoid_q10_90",
+    "n0": 500,
+    "n1": 500,
+    "c_star": 2.0102968728028205,
+    "c_se": 0.23789724877055546,
+    "c_lower_1se": 1.772399624032265,
+    "area_gain_vs_c1": 0.08029611339953102
+   },
+   {
+    "cell": "screen_taper--binormal_95--n500",
+    "arm": "screen_taper",
+    "shape": "binormal_95",
+    "n0": 500,
+    "n1": 500,
+    "c_star": 2.2282155392590095,
+    "c_se": 0.22428184218875494,
+    "c_lower_1se": 2.0039336970702544,
+    "area_gain_vs_c1": 0.09825316347828073
+   },
+   {
+    "cell": "screen_taper--kink_80--n500",
+    "arm": "screen_taper",
+    "shape": "kink_80",
+    "n0": 500,
+    "n1": 500,
+    "c_star": 1.5631249355179977,
+    "c_se": 0.21902960758671966,
+    "c_lower_1se": 1.344095327931278,
+    "area_gain_vs_c1": 0.05434604214142158
+   },
+   {
+    "cell": "screen_taper--t2_95--n500",
+    "arm": "screen_taper",
+    "shape": "t2_95",
+    "n0": 500,
+    "n1": 500,
+    "c_star": 1.1734690541880068,
+    "c_se": 0.20617849282224293,
+    "c_lower_1se": 0.9672905613657639,
+    "area_gain_vs_c1": 0.021953473159839865
+   }
+  ]
+ },
+ "taper_screen": {
+  "by_shape": {
+   "binormal_95": {
+    "n_first": 100,
+    "n_last": 50000,
+    "c_star_decrease": 2.1848624582407172,
+    "decrease_lower_95": 1.4996326062010774,
+    "resolved_decrease": true,
+    "high_n_c_lower_1se": 0.7492146476224467
+   },
+   "kink_80": {
+    "n_first": 100,
+    "n_last": 50000,
+    "c_star_decrease": 1.4239421933661525,
+    "decrease_lower_95": 0.9012855260388162,
+    "resolved_decrease": true,
+    "high_n_c_lower_1se": 0.87692815019719
+   },
+   "t2_95": {
+    "n_first": 100,
+    "n_last": 50000,
+    "c_star_decrease": -0.9873745023333576,
+    "decrease_lower_95": -1.282520783148352,
+    "resolved_decrease": false,
+    "high_n_c_lower_1se": 0.9261845552589939
+   }
+  },
+  "cells": [
+   {
+    "cell": "screen_taper--binormal_95--n100",
+    "arm": "screen_taper",
+    "shape": "binormal_95",
+    "n0": 100,
+    "n1": 100,
+    "c_star": 3.052036022798489,
+    "c_se": 0.3291060550468698,
+    "c_lower_1se": 2.7229299677516194,
+    "area_gain_vs_c1": 0.15481832678659135
+   },
+   {
+    "cell": "screen_taper--binormal_95--n500",
+    "arm": "screen_taper",
+    "shape": "binormal_95",
+    "n0": 500,
+    "n1": 500,
+    "c_star": 2.2282155392590095,
+    "c_se": 0.22428184218875494,
+    "c_lower_1se": 2.0039336970702544,
+    "area_gain_vs_c1": 0.09825316347828073
+   },
+   {
+    "cell": "screen_taper--binormal_95--n5000",
+    "arm": "screen_taper",
+    "shape": "binormal_95",
+    "n0": 5000,
+    "n1": 5000,
+    "c_star": 1.77735643924483,
+    "c_se": 0.21202916299149918,
+    "c_lower_1se": 1.5653272762533308,
+    "area_gain_vs_c1": 0.06525169913998796
+   },
+   {
+    "cell": "screen_taper--binormal_95--n50000",
+    "arm": "screen_taper",
+    "shape": "binormal_95",
+    "n0": 50000,
+    "n1": 50000,
+    "c_star": 0.8671735645577718,
+    "c_se": 0.11795891693532516,
+    "c_lower_1se": 0.7492146476224467,
+    "area_gain_vs_c1": -0.002922204393185579
+   },
+   {
+    "cell": "screen_taper--kink_80--n100",
+    "arm": "screen_taper",
+    "shape": "kink_80",
+    "n0": 100,
+    "n1": 100,
+    "c_star": 2.453467987116188,
+    "c_se": 0.21868321703001312,
+    "c_lower_1se": 2.234784770086175,
+    "area_gain_vs_c1": 0.11167672578401278
+   },
+   {
+    "cell": "screen_taper--kink_80--n500",
+    "arm": "screen_taper",
+    "shape": "kink_80",
+    "n0": 500,
+    "n1": 500,
+    "c_star": 1.5631249355179977,
+    "c_se": 0.21902960758671966,
+    "c_lower_1se": 1.344095327931278,
+    "area_gain_vs_c1": 0.05434604214142158
+   },
+   {
+    "cell": "screen_taper--kink_80--n5000",
+    "arm": "screen_taper",
+    "shape": "kink_80",
+    "n0": 5000,
+    "n1": 5000,
+    "c_star": 1.5076434489927972,
+    "c_se": 0.21839214955504518,
+    "c_lower_1se": 1.289251299437752,
+    "area_gain_vs_c1": 0.047569732003175824
+   },
+   {
+    "cell": "screen_taper--kink_80--n50000",
+    "arm": "screen_taper",
+    "shape": "kink_80",
+    "n0": 50000,
+    "n1": 50000,
+    "c_star": 1.0295257937500357,
+    "c_se": 0.15259764355284572,
+    "c_lower_1se": 0.87692815019719,
+    "area_gain_vs_c1": 0.010398754524729048
+   },
+   {
+    "cell": "screen_taper--t2_95--n100",
+    "arm": "screen_taper",
+    "shape": "t2_95",
+    "n0": 100,
+    "n1": 100,
+    "c_star": 0.08402934202842863,
+    "c_se": 0.039839066908305805,
+    "c_lower_1se": 0.04419027512012282,
+    "area_gain_vs_c1": -0.26808255335436626
+   },
+   {
+    "cell": "screen_taper--t2_95--n500",
+    "arm": "screen_taper",
+    "shape": "t2_95",
+    "n0": 500,
+    "n1": 500,
+    "c_star": 1.1734690541880068,
+    "c_se": 0.20617849282224293,
+    "c_lower_1se": 0.9672905613657639,
+    "area_gain_vs_c1": 0.021953473159839865
+   },
+   {
+    "cell": "screen_taper--t2_95--n5000",
+    "arm": "screen_taper",
+    "shape": "t2_95",
+    "n0": 5000,
+    "n1": 5000,
+    "c_star": 1.488812918624206,
+    "c_se": 0.1552530955202873,
+    "c_lower_1se": 1.3335598231039187,
+    "area_gain_vs_c1": 0.04572452998004084
+   },
+   {
+    "cell": "screen_taper--t2_95--n50000",
+    "arm": "screen_taper",
+    "shape": "t2_95",
+    "n0": 50000,
+    "n1": 50000,
+    "c_star": 1.0714038443617862,
+    "c_se": 0.14521928910279228,
+    "c_lower_1se": 0.9261845552589939,
+    "area_gain_vs_c1": 0.013585175864729626
+   }
+  ]
+ },
+ "imbalance_screen": {
+  "binormal_90": {
+   "min_c_lower_1se": 1.4985070452211782,
+   "max_c_star_spread": 1.0010012385666718,
+   "spread_lower_simultaneous": 0.12471571424235195,
+   "orientation_contrasts": [
+    {
+     "majority_n": 1500,
+     "negative_minus_positive_c_star": 0.26505715841529964,
+     "ci95": [
+      -0.3076632560448652,
+      0.8377775728754645
+     ]
+    },
+    {
+     "majority_n": 4500,
+     "negative_minus_positive_c_star": -0.5498768888646954,
+     "ci95": [
+      -1.0526177953350098,
+      -0.047135982394381104
+     ]
+    }
+   ],
+   "cells": [
+    {
+     "cell": "screen_imbalance--binormal_90--n1500x500",
+     "arm": "screen_imbalance",
+     "shape": "binormal_90",
+     "n0": 1500,
+     "n1": 500,
+     "c_star": 2.6886291617309577,
+     "c_se": 0.21008849800826127,
+     "c_lower_1se": 2.4785406637226965,
+     "area_gain_vs_c1": 0.11320745765421436
+    },
+    {
+     "cell": "screen_imbalance--binormal_90--n4500x500",
+     "arm": "screen_imbalance",
+     "shape": "binormal_90",
+     "n0": 4500,
+     "n1": 500,
+     "c_star": 1.687627923164286,
+     "c_se": 0.18912087794310767,
+     "c_lower_1se": 1.4985070452211782,
+     "area_gain_vs_c1": 0.0602008097744704
+    },
+    {
+     "cell": "screen_imbalance--binormal_90--n500x1500",
+     "arm": "screen_imbalance",
+     "shape": "binormal_90",
+     "n0": 500,
+     "n1": 1500,
+     "c_star": 2.423572003315658,
+     "c_se": 0.20309153578123826,
+     "c_lower_1se": 2.22048046753442,
+     "area_gain_vs_c1": 0.10226792508260374
+    },
+    {
+     "cell": "screen_imbalance--binormal_90--n500x4500",
+     "arm": "screen_imbalance",
+     "shape": "binormal_90",
+     "n0": 500,
+     "n1": 4500,
+     "c_star": 2.2375048120289813,
+     "c_se": 0.17327948747896357,
+     "c_lower_1se": 2.064225324550018,
+     "area_gain_vs_c1": 0.09244734346707562
+    }
+   ]
+  },
+  "t2_95": {
+   "min_c_lower_1se": 0.752266499574672,
+   "max_c_star_spread": 0.39036376064998957,
+   "spread_lower_simultaneous": -0.30290723519712903,
+   "orientation_contrasts": [
+    {
+     "majority_n": 1500,
+     "negative_minus_positive_c_star": 0.30541739851907435,
+     "ci95": [
+      -0.162667835444802,
+      0.7735026324829507
+     ]
+    },
+    {
+     "majority_n": 4500,
+     "negative_minus_positive_c_star": 0.2747159883366749,
+     "ci95": [
+      -0.22641691813762965,
+      0.7758488948109794
+     ]
+    }
+   ],
+   "cells": [
+    {
+     "cell": "screen_imbalance--t2_95--n1500x500",
+     "arm": "screen_imbalance",
+     "shape": "t2_95",
+     "n0": 1500,
+     "n1": 500,
+     "c_star": 1.2955051855851596,
+     "c_se": 0.16322447893653344,
+     "c_lower_1se": 1.1322807066486262,
+     "area_gain_vs_c1": 0.031532023664518016
+    },
+    {
+     "cell": "screen_imbalance--t2_95--n4500x500",
+     "arm": "screen_imbalance",
+     "shape": "t2_95",
+     "n0": 4500,
+     "n1": 500,
+     "c_star": 1.179857413271845,
+     "c_se": 0.20494279049274675,
+     "c_lower_1se": 0.9749146227790981,
+     "area_gain_vs_c1": 0.021849762485347424
+    },
+    {
+     "cell": "screen_imbalance--t2_95--n500x1500",
+     "arm": "screen_imbalance",
+     "shape": "t2_95",
+     "n0": 500,
+     "n1": 1500,
+     "c_star": 0.9900877870660852,
+     "c_se": 0.1743338256504943,
+     "c_lower_1se": 0.815753961415591,
+     "area_gain_vs_c1": 0.0034639371524007867
+    },
+    {
+     "cell": "screen_imbalance--t2_95--n500x4500",
+     "arm": "screen_imbalance",
+     "shape": "t2_95",
+     "n0": 500,
+     "n1": 4500,
+     "c_star": 0.90514142493517,
+     "c_se": 0.15287492536049804,
+     "c_lower_1se": 0.752266499574672,
+     "area_gain_vs_c1": -0.005502787268894194
+    }
+   ]
+  }
+ },
+ "completeness": {
+  "shape": true,
+  "taper": true,
+  "imbalance": true
+ },
+ "strong_c_below_1_flags": [
+  {
+   "cell": "screen_taper--t2_95--n100",
+   "arm": "screen_taper",
+   "shape": "t2_95",
+   "n0": 100,
+   "n1": 100,
+   "c_star": 0.08402934202842863,
+   "c_se": 0.039839066908305805,
+   "c_lower_1se": 0.04419027512012282,
+   "area_gain_vs_c1": -0.26808255335436626
+  }
+ ],
+ "thresholds": {
+  "minimum_c_margin": 0.15,
+  "minimum_mean_area_gain": 0.04,
+  "maximum_simple_map_c_spread": 0.15
+ },
+ "recommendations": {
+  "large_n": "do not run a dense large-n arm; validate a C=1 clamp above the measured range",
+  "imbalance": "test min(n0,n1) first; omit a broad 2-D sweep",
+  "alpha": "defer the full alpha grid until the alpha=.05 usefulness gate passes"
+ },
+ "verdict": "STOP: retain a documented fixed/default rule; full auto-map study is not justified",
+ "interpretation": "This is a resource-allocation gate, not a coverage guarantee. A positive verdict still requires a constrained fit and fresh confirmation."
+}

@@ -1,0 +1,106 @@
+{
+ "passed": true,
+ "statistical": {
+  "passed": true,
+  "reps": 400,
+  "m_draws": 3000,
+  "runtime_s": 9.2,
+  "rows": [
+   {
+    "arm": "c1",
+    "alpha": 0.05,
+    "coverage": 0.975,
+    "coverage_published": 0.973,
+    "coverage_tol_3se": 0.0534,
+    "coverage_ok": true,
+    "area": 0.06329,
+    "area_published": 0.064,
+    "area_ok": true
+   },
+   {
+    "arm": "c2",
+    "alpha": 0.05,
+    "coverage": 0.955,
+    "coverage_published": 0.96,
+    "coverage_tol_3se": 0.0572,
+    "coverage_ok": true,
+    "area": 0.05792,
+    "area_published": 0.0584,
+    "area_ok": true
+   },
+   {
+    "arm": "c1",
+    "alpha": 0.5,
+    "coverage": 0.71,
+    "coverage_published": 0.76,
+    "coverage_tol_3se": 0.138,
+    "coverage_ok": true,
+    "area": 0.04152,
+    "area_published": 0.042,
+    "area_ok": true
+   },
+   {
+    "arm": "c2",
+    "alpha": 0.5,
+    "coverage": 0.5025,
+    "coverage_published": 0.553,
+    "coverage_tol_3se": 0.1415,
+    "coverage_ok": true,
+    "area": 0.03489,
+    "area_published": 0.035,
+    "area_ok": true
+   }
+  ]
+ },
+ "exact_full_grid": {
+  "passed": true,
+  "n0": 300,
+  "n1": 200,
+  "m_draws": 2000,
+  "reps": 10,
+  "area_diff": 7.216449660063518e-16,
+  "cov_mismatches": 0,
+  "j_checked": [
+   2,
+   3,
+   4,
+   5,
+   83,
+   88,
+   90,
+   91,
+   94
+  ]
+ },
+ "exact_thinned_grid": {
+  "passed": true,
+  "n0": 2500,
+  "n1": 500,
+  "m_draws": 2000,
+  "reps": 5,
+  "area_diff": 3.066991105526995e-15,
+  "cov_mismatches": 0,
+  "j_checked": [
+   1,
+   2,
+   3,
+   59,
+   60,
+   62,
+   64,
+   66
+  ]
+ },
+ "provenance": {
+  "git_hash": "5e27609acbb0cae09b13220d246af09da72b4154",
+  "versions": {
+   "numpy": "2.3.5",
+   "scipy": "1.16.3",
+   "fiducial-core": "0.1.0",
+   "studroc_paper": "0.1.0"
+  },
+  "python": "3.12.11",
+  "study_seed": 20260822,
+  "created": "2026-08-29T10:08:58-0700"
+ }
+}
