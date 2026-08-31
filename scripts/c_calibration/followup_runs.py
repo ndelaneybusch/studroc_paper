@@ -5,11 +5,26 @@ worth running on this infrastructure (see the dated follow-up entry in
 ``stats/c_calibration_spec.md``, revised 2026-08-31 after review):
 
 1. ``boundary``   — locate the small-n heavy-tail validity boundary of the
-                    C = 1 default (t(2)/.95 broke at n = 100, passed at
-                    500; probe n in between, a heavier tail, a higher AUC).
-                    Coverage-driven sequential replication; the report
-                    produces a conservative, library-relative global
-                    routing threshold.
+                    C = 1 default. Hybrid design (rev. 2026-08-31):
+                    (a) classification-grade CORNER ANCHORS at the suite
+                    design box's worst corner (t df = 1.1, AUC .99) plus
+                    Stage-S-anchored t(2)/.95 probes, with coverage-driven
+                    sequential replication — these set the conservative,
+                    library-relative global routing threshold;
+                    (b) an estimation-grade LHS SURFACE SWEEP over
+                    (log df, probit AUC, log n) within the student-t
+                    family — many cells, few reps each (information lives
+                    at the cell level) — fitted with a sign-constrained
+                    logistic smooth to produce the provisional boundary
+                    contour n*(df, AUC) and per-stratum predictions for
+                    the final suite;
+                    (c) cross-family SPOT CHECKS at the Weibull/gamma/
+                    beta-opposing design-box corners, verifying the
+                    t-family is the binding family before the threshold
+                    is quoted suite-wide.
+                    The fitted contour is PROVISIONAL: candidate cutoffs
+                    it proposes are confirmed classification-grade by the
+                    spec's follow-up item 5 (cutoff confirmation).
 2. ``heldout``    — designer-bias guard: validate C = 1 (plus the exact M3
                     band's width economics) on the six held-out shapes at
                     n = 500, with a mechanism-diverse sentinel subset at
@@ -72,6 +87,7 @@ from design import (  # noqa: E402
 from runner import provenance, run_cell, truth_curve  # noqa: E402
 from shapes import (  # noqa: E402
     ShapeSpec,
+    _lhs_curve,
     get_curve,
     make_t_shape,
     quantize_jitter,
@@ -90,10 +106,21 @@ BAR_CI_LO = 0.925
 BAR_STRICT = 0.95
 
 # Sequential replication (start, batch, cap) per item.
-PROBE_REPS = (1_000, 1_000, 3_000)  # boundary + imbalance
+PROBE_REPS = (1_000, 1_000, 3_000)  # boundary anchors/spot checks + imbalance
 HELDOUT_REPS = (2_000, 1_000, 4_000)
 COMPOSITE_REPS = (500, 500, 2_000)
 SENTINEL_REPS = 250  # large-n composite sentinels: fixed, no top-up
+
+# Boundary LHS surface sweep (estimation-grade: many cells, few reps each —
+# the information lives at the cell level of the sampling hierarchy).
+LHS_SEED = 20260831  # frozen; the sweep is deterministic given it
+LHS_N_CELLS = 96
+LHS_REPS = 125  # fixed, no top-up; the smooth pools reps across cells
+LHS_DF_BOUNDS = (1.1, 30.0)  # the suite's student_t design bounds
+LHS_AUC_BOUNDS = (0.55, 0.99)  # sampled uniformly on the probit scale
+LHS_N_BOUNDS = (100, 2_500)  # sampled uniformly in log n (per class)
+SURFACE_BOOT = 200  # bootstrap resamples (over cells) for the contour band
+SURFACE_CONS_Q = 0.90  # conservative quantile of bootstrap n* estimates
 
 M3_ALPHAS = (0.5, 0.05)
 
@@ -152,19 +179,33 @@ def needs_topup(p_hat: float, n: int) -> bool:
 
 
 def register_followup_shapes() -> None:
-    """Add the two boundary-probe shapes to the (cached, mutable) registry."""
+    """Add the boundary anchor and cross-family spot-check shapes to the
+    (cached, mutable) registry.
+
+    The anchors sit on the *achievability frontier* of the suite's design
+    box: the DGP mapper caps the location shift at 20, so t(df = 1.1)
+    tops out at AUC ~.976 (and gamma shape .5 at ~.936) — the literal
+    box corner (1.1, .99) does not exist and the paper's LHS filters it.
+    Under the measured tail-mass mechanism (monotone in tail weight and
+    AUC), the worst achievable cases are the frontier corners probed
+    here — `t11_97` (heaviest tail at its AUC cap) and `t2_99` (heaviest
+    tail that reaches AUC .99) — and these, not interior probes, bound
+    the routing threshold. The spot checks are the achievable corners of
+    the suite's other corner-curved families.
+    """
     registry = shape_registry()
     for spec in (
         ShapeSpec(
-            name="t15_95",
+            name="t11_97",
             role="followup",
-            build=lambda: make_t_shape(0.95, df=1.5),
+            build=lambda: make_t_shape(0.97, df=1.1),
             meta={
                 "family": "student_t",
-                "auc": 0.95,
-                "df": 1.5,
-                "note": "heavier tail than the library's t(2): does the "
-                "small-n validity boundary move up?",
+                "auc": 0.97,
+                "df": 1.1,
+                "note": "achievable-frontier corner: df at the design "
+                "bound 1.1, AUC just under its ~.976 cap (mapper "
+                "delta <= 20)",
             },
         ),
         ShapeSpec(
@@ -175,7 +216,42 @@ def register_followup_shapes() -> None:
                 "family": "student_t",
                 "auc": 0.99,
                 "df": 2.0,
-                "note": "higher AUC at t(2) tails: same question via the AUC axis",
+                "note": "achievable-frontier corner: heaviest tail that "
+                "reaches AUC .99",
+            },
+        ),
+        ShapeSpec(
+            name="wb05_99",
+            role="followup",
+            build=lambda: _lhs_curve("weibull", 0.99, {"shape": 0.5}),
+            meta={
+                "family": "weibull",
+                "auc": 0.99,
+                "shape": 0.5,
+                "note": "cross-family corner spot check",
+            },
+        ),
+        ShapeSpec(
+            name="gm05_93",
+            role="followup",
+            build=lambda: _lhs_curve("gamma", 0.93, {"shape": 0.5}),
+            meta={
+                "family": "gamma",
+                "auc": 0.93,
+                "shape": 0.5,
+                "note": "cross-family corner spot check (gamma shape .5 "
+                "caps at AUC ~.936)",
+            },
+        ),
+        ShapeSpec(
+            name="bo05_99",
+            role="followup",
+            build=lambda: _lhs_curve("beta_opposing", 0.99, {"alpha": 0.5}),
+            meta={
+                "family": "beta_opposing",
+                "auc": 0.99,
+                "alpha": 0.5,
+                "note": "cross-family corner spot check",
             },
         ),
     ):
@@ -188,15 +264,26 @@ def register_followup_shapes() -> None:
 
 
 def boundary_cells() -> list[Cell]:
-    """Item 1: locate the C = 1 small-n validity boundary."""
+    """Item 1, classification arm: corner anchors + cross-family spot checks.
+
+    These carry the routing-threshold *decision* (assumption-free per-cell
+    verdicts, sequential replication); the LHS sweep below carries the
+    surface *estimation*. The t2_95 rows double as Stage S consistency
+    checks and holdout points for the fitted smooth.
+    """
     grid = [
-        # t(2)/.95: broken at 100 (cov .802), fine at 500 (.958)
+        # achievable-frontier corners of the suite's student_t design
+        # space: worst cases in-family if the tail-mass mechanism is
+        # monotone in df and AUC (the literal box corner (1.1, .99) is
+        # unachievable — the mapper caps t(1.1) at AUC ~.976)
+        ("t11_97", (250, 500, 1_000, 2_500)),
+        ("t2_99", (250, 500, 1_000, 2_500)),
+        # Stage-S-anchored probes (100 broken at .802, 500 fine at .958)
         ("t2_95", (150, 250, 350)),
-        # milder tail: was never measured below 500
-        ("t3_90", (100, 250)),
-        # heavier tail / higher AUC: does the boundary move above 500?
-        ("t15_95", (250, 500)),
-        ("t2_99", (250, 500)),
+        # cross-family achievable corners (are t-tails the binding family?)
+        ("wb05_99", (100, 250)),
+        ("gm05_93", (100, 250)),
+        ("bo05_99", (100, 250)),
     ]
     start, _, cap = PROBE_REPS
     cells = []
@@ -212,9 +299,85 @@ def boundary_cells() -> list[Cell]:
                     n1=n,
                     reps=start,
                     reps_max=cap,
-                    notes="C=1 validity-boundary probe (spec follow-up item 1)",
+                    notes="C=1 validity-boundary anchor/spot check "
+                    "(spec follow-up item 1a/1c)",
                 )
             )
+    return cells
+
+
+def boundary_lhs_points() -> list[dict]:
+    """The frozen LHS design of the surface sweep: (df, auc, n) triples.
+
+    Latin hypercube over log df × probit AUC × log n within the suite's
+    student_t design bounds, with unachievable (df, AUC) combinations
+    dropped exactly as the paper's LHS pipeline drops them (the DGP
+    mapper caps the location shift at 20, so heavy-tail rows cannot
+    reach the highest AUCs). Deterministic given LHS_SEED.
+    """
+    from scipy.stats import norm, qmc
+
+    from studroc_paper.datagen.roc_to_dgp import StudentTSolver
+
+    sampler = qmc.LatinHypercube(d=3, seed=LHS_SEED)
+    u = sampler.random(LHS_N_CELLS)
+    log_df = np.log(LHS_DF_BOUNDS[0]) + u[:, 0] * (
+        np.log(LHS_DF_BOUNDS[1]) - np.log(LHS_DF_BOUNDS[0])
+    )
+    z_lo, z_hi = norm.ppf(LHS_AUC_BOUNDS[0]), norm.ppf(LHS_AUC_BOUNDS[1])
+    auc = norm.cdf(z_lo + u[:, 1] * (z_hi - z_lo))
+    log_n = np.log(LHS_N_BOUNDS[0]) + u[:, 2] * (
+        np.log(LHS_N_BOUNDS[1]) - np.log(LHS_N_BOUNDS[0])
+    )
+    solver = StudentTSolver()
+    points = []
+    for i in range(LHS_N_CELLS):
+        df = round(float(np.exp(log_df[i])), 4)
+        a = round(float(auc[i]), 4)
+        cap = float(solver._compute_auc(df, 20.0))  # the mapper's shift cap
+        if a > cap - 0.002:
+            continue  # unachievable combination; the paper's LHS drops these
+        points.append(
+            {"index": i, "df": df, "auc": a, "n": int(round(np.exp(log_n[i])))}
+        )
+    return points
+
+
+def boundary_lhs_cells() -> list[Cell]:
+    """Item 1, estimation arm: the LHS surface sweep (fixed reps, no
+    top-up — many cells, few reps each; the smooth pools across cells)."""
+    registry = shape_registry()
+    cells = []
+    for pt in boundary_lhs_points():
+        shape_name = f"tsurf{pt['index']:02d}"
+        registry.setdefault(
+            shape_name,
+            ShapeSpec(
+                name=shape_name,
+                role="followup",
+                build=(lambda auc=pt["auc"], df=pt["df"]: make_t_shape(auc, df=df)),
+                meta={
+                    "family": "student_t",
+                    "auc": pt["auc"],
+                    "df": pt["df"],
+                    "lhs_seed": LHS_SEED,
+                    "lhs_index": pt["index"],
+                },
+            ),
+        )
+        cells.append(
+            _cell(
+                name=f"boundary_lhs--{shape_name}--n{pt['n']}",
+                stage="S",
+                arm="followup_boundary_lhs",
+                shape=shape_name,
+                n0=pt["n"],
+                n1=pt["n"],
+                reps=LHS_REPS,
+                reps_max=LHS_REPS,
+                notes="C=1 boundary surface sweep (spec follow-up item 1b)",
+            )
+        )
     return cells
 
 
@@ -703,6 +866,108 @@ def run_composite_cell(
 
 
 # ---------------------------------------------------------------------------
+# boundary surface fit (item 1b)
+# ---------------------------------------------------------------------------
+
+
+def fit_boundary_surface(
+    rows: list[dict], n_boot: int = SURFACE_BOOT, seed: int = LHS_SEED
+) -> dict:
+    """Sign-constrained logistic smooth of C = 1 coverage over the t-family.
+
+    Model: logit(coverage) = b0 + b1·log n + b2·log df + b3·probit(AUC),
+    with the monotone constraints the tail-mass mechanism implies —
+    coverage nondecreasing in n and df (b1, b2 >= 0) and nonincreasing in
+    AUC (b3 <= 0). Fit by bounded maximum binomial likelihood; uncertainty
+    by a multinomial bootstrap over cells (the top of the sampling
+    hierarchy — reps within a cell are exchangeable given the cell).
+
+    Args:
+        rows: One dict per cell with keys ``df``, ``auc``, ``n``, ``cov``,
+            ``reps``.
+        n_boot: Bootstrap resamples over cells.
+        seed: Bootstrap randomness.
+
+    Returns:
+        Dict with ``beta`` (the point fit), ``boot`` (n_boot × 4 array of
+        bootstrap fits), and the design arrays for diagnostics.
+    """
+    from scipy.optimize import minimize
+    from scipy.special import expit
+    from scipy.stats import norm
+
+    x = np.column_stack(
+        [
+            np.ones(len(rows)),
+            np.log([r["n"] for r in rows]),
+            np.log([r["df"] for r in rows]),
+            norm.ppf([r["auc"] for r in rows]),
+        ]
+    )
+    m = np.asarray([r["reps"] for r in rows], dtype=float)
+    k = np.asarray([r["cov"] * r["reps"] for r in rows])
+
+    def nll(beta: np.ndarray, w: np.ndarray) -> float:
+        p = np.clip(expit(x @ beta), 1e-9, 1 - 1e-9)
+        return float(-(w * (k * np.log(p) + (m - k) * np.log(1 - p))).sum())
+
+    bounds = [(None, None), (0.0, None), (0.0, None), (None, 0.0)]
+    x0 = np.array([0.0, 0.5, 0.5, -0.5])
+
+    def solve(w: np.ndarray) -> np.ndarray:
+        res = minimize(nll, x0, args=(w,), method="L-BFGS-B", bounds=bounds)
+        return res.x
+
+    beta = solve(np.ones(len(rows)))
+    rng = np.random.default_rng(seed)
+    boot = np.stack(
+        [
+            solve(rng.multinomial(len(rows), np.full(len(rows), 1 / len(rows))))
+            for _ in range(n_boot)
+        ]
+    )
+    return {"beta": beta, "boot": boot, "x": x, "cov": k / m, "reps": m}
+
+
+def surface_predict(beta: np.ndarray, df: float, auc: float, n: float) -> float:
+    """Fitted coverage at one (df, AUC, n) point."""
+    from scipy.special import expit
+    from scipy.stats import norm
+
+    return float(
+        expit(
+            beta[0]
+            + beta[1] * np.log(n)
+            + beta[2] * np.log(df)
+            + beta[3] * norm.ppf(auc)
+        )
+    )
+
+
+def surface_n_star(
+    beta: np.ndarray, df: float, auc: float, bar: float = BAR_POINT
+) -> float:
+    """The n at which the fitted coverage crosses ``bar`` (inf if the fit
+    is flat in n and below the bar; 0 if flat and above)."""
+    from scipy.stats import norm
+
+    target = np.log(bar / (1 - bar))
+    resid = target - beta[0] - beta[2] * np.log(df) - beta[3] * norm.ppf(auc)
+    if beta[1] <= 1e-8:
+        return float("inf") if resid > 0 else 0.0
+    return float(np.exp(resid / beta[1]))
+
+
+def _fmt_n_star(value: float) -> str:
+    """Display an n* value, marking extrapolation beyond the sampled range."""
+    if value < LHS_N_BOUNDS[0]:
+        return f"<{LHS_N_BOUNDS[0]}"
+    if value > LHS_N_BOUNDS[1]:
+        return f">{LHS_N_BOUNDS[1]} (extrap.)"
+    return f"{value:.0f}"
+
+
+# ---------------------------------------------------------------------------
 # report
 # ---------------------------------------------------------------------------
 
@@ -723,6 +988,8 @@ def _cell_row(s: dict, sub_dir: Path) -> dict:
     row = {
         "name": name,
         "shape": s["meta"]["cell"]["shape"],
+        "shape_meta": s["meta"]["cell"].get("shape_meta", {}),
+        "arm": s["meta"]["cell"]["arm"],
         "n0": s["meta"]["cell"]["n0"],
         "n1": s["meta"]["cell"]["n1"],
         "reps": reps,
@@ -816,6 +1083,82 @@ def _boundary_threshold(rows: list[dict]) -> list[str]:
     return lines
 
 
+def _boundary_surface_section(cls_rows: list[dict], lhs_rows: list[dict]) -> list[str]:
+    """Fit the LHS surface sweep and render the provisional contour,
+    holdout diagnostics against the t-family anchors, and the pointer to
+    the cutoff-confirmation follow-up (spec item 5)."""
+    if not lhs_rows:
+        return []
+    fit_rows = [
+        {
+            "df": w["shape_meta"]["df"],
+            "auc": w["shape_meta"]["auc"],
+            "n": w["n0"],
+            "cov": w["cov"],
+            "reps": w["reps"],
+        }
+        for w in lhs_rows
+    ]
+    fit = fit_boundary_surface(fit_rows)
+    beta = fit["beta"]
+    lines = [
+        "",
+        f"**Boundary surface (LHS sweep, {len(fit_rows)} cells × "
+        f"~{int(np.mean([r['reps'] for r in fit_rows]))} reps).** "
+        "Sign-constrained logistic smooth "
+        "logit(cov) = b0 + b1·log n + b2·log df + b3·probit(AUC): "
+        f"b = ({beta[0]:.2f}, {beta[1]:.3f}, {beta[2]:.3f}, {beta[3]:.3f}). "
+        "The n*(df, AUC) contour at the .94 bar — point fit, with the "
+        f"conservative {SURFACE_CONS_Q:.0%} bootstrap quantile (over cells) "
+        "in brackets:",
+        "",
+    ]
+    aucs = (0.90, 0.95, 0.99)
+    lines.append("| df \\ AUC | " + " | ".join(f"{a:g}" for a in aucs) + " |")
+    lines.append("|---" * (len(aucs) + 1) + "|")
+    for df in (1.1, 1.5, 2.0, 3.0, 30.0):
+        entries = []
+        for auc in aucs:
+            point = surface_n_star(beta, df, auc)
+            # cap inf n* before the quantile (interpolating between two
+            # infs yields nan); the display clamps to the sampled range
+            boot_ns = np.minimum(
+                [surface_n_star(b, df, auc) for b in fit["boot"]], 1e9
+            )
+            cons = float(np.quantile(boot_ns, SURFACE_CONS_Q))
+            entries.append(f"{_fmt_n_star(point)} [{_fmt_n_star(cons)}]")
+        lines.append(f"| {df:g} | " + " | ".join(entries) + " |")
+    # Holdout diagnostics: the classification-grade t-family anchors were
+    # not used in the fit; compare fitted vs measured coverage there.
+    holdout = [w for w in cls_rows if w["shape_meta"].get("family") == "student_t"]
+    if holdout:
+        lines.extend(["", "**Holdout check (anchors vs fitted surface):**"])
+        for w in sorted(holdout, key=lambda w: (w["shape"], w["n0"])):
+            pred = surface_predict(
+                beta, w["shape_meta"]["df"], w["shape_meta"]["auc"], w["n0"]
+            )
+            inside = w["wilson_lo"] <= pred <= w["wilson_hi"]
+            lines.append(
+                f"- {w['name']}: measured {w['cov']:.3f} "
+                f"[{w['wilson_lo']:.3f}, {w['wilson_hi']:.3f}], "
+                f"fitted {pred:.3f} — {'consistent' if inside else 'OUTSIDE CI'}"
+            )
+    lines.extend(
+        [
+            "",
+            "*The contour is PROVISIONAL (a smooth over a 2-D family "
+            "slice; smoothing bias is largest exactly at the contour). "
+            "Candidate routing cutoffs read from it are confirmed "
+            "classification-grade by follow-up item 5 (cutoff "
+            "confirmation) before any routing guidance is frozen; the "
+            "surface's other product — per-stratum coverage predictions "
+            "for the final suite's student_t strata — needs no "
+            "confirmation to be useful as predictions.*",
+        ]
+    )
+    return lines
+
+
 def build_report(out_root: Path) -> str:
     """Aggregate whatever has finished into a markdown report."""
     lines = [
@@ -838,10 +1181,16 @@ def build_report(out_root: Path) -> str:
         if not sub_dir.exists():
             continue
         rows = [_cell_row(s, sub_dir) for s in _load_summaries(sub_dir)]
+        cls_rows = [w for w in rows if w["arm"] != "followup_boundary_lhs"]
+        lhs_rows = [w for w in rows if w["arm"] == "followup_boundary_lhs"]
         lines.extend([f"## {item}", ""])
-        lines.extend(_runner_table(rows))
+        if cls_rows:
+            lines.append("**Anchors and spot checks (classification-grade):**")
+            lines.append("")
+            lines.extend(_runner_table(cls_rows))
         if sub == "boundary":
-            lines.extend(_boundary_threshold(rows))
+            lines.extend(_boundary_threshold(cls_rows))
+            lines.extend(_boundary_surface_section(cls_rows, lhs_rows))
         lines.append("")
 
     sub_dir = out_root / "heldout"
@@ -860,8 +1209,7 @@ def build_report(out_root: Path) -> str:
             )
         if marginal:
             msg += (
-                f" MARGINAL (undecided at the replication cap): "
-                f"{', '.join(marginal)}."
+                f" MARGINAL (undecided at the replication cap): {', '.join(marginal)}."
             )
         if not fails and not marginal:
             msg += " All cells PASS."
@@ -1021,20 +1369,36 @@ def main() -> None:
         if item in runner_items:
             builder, (_, batch, cap), m3_arm = runner_items[item]
             cells = _scale_cells(builder(), args.reps_scale)
+            lhs_cells = (
+                _scale_cells(boundary_lhs_cells(), args.reps_scale)
+                if item == "boundary"
+                else []
+            )
             if args.select:
                 cells = [c for c in cells if args.select in c.name]
+                lhs_cells = [c for c in lhs_cells if args.select in c.name]
             if args.dry_run:
                 s = summarize(cells)
                 print(
-                    f"[{item}] {s.n_cells} cells, {s.total_reps} baseline reps "
+                    f"[{item}] {s.n_cells} classification cells, "
+                    f"{s.total_reps} baseline reps "
                     f"(top-up cap x{cap / max(cells[0].reps, 1):.0f}), "
                     f"~{s.total_hours:.1f} idealized core-saturated hours, "
                     f"max cloud {s.max_cloud_gb:.2f} GB"
+                    if cells
+                    else f"[{item}] 0 classification cells selected"
                 )
                 for row in s.rows:
                     print(
                         f"  {row['name']}: M={row['M']}, reps={row['reps']}, "
                         f"~{row['est_hours']:.2f}h"
+                    )
+                if lhs_cells:
+                    sl = summarize(lhs_cells)
+                    print(
+                        f"[{item}] + {sl.n_cells} LHS surface cells × "
+                        f"{lhs_cells[0].reps} reps (fixed), "
+                        f"~{sl.total_hours:.1f} idealized hours"
                     )
                 continue
             out_dir = args.out / item
@@ -1048,10 +1412,19 @@ def main() -> None:
                     threads_per_call=args.threads_per_call,
                     mem_gb=args.mem_gb,
                 )
-                # M3 width economics: boundary (routing cells) and the
-                # n = 500 held-out rows + ties cell; paired rep counts.
+                # M3 width economics: boundary anchors/spot checks (routing
+                # cells) and the n <= 1000 held-out rows; paired rep counts.
                 if m3_arm and (item == "boundary" or cell.n0 <= 1_000):
                     run_m3_arm(cell, out_dir, reps=summary["aggregate"]["reps"])
+            # Estimation-grade LHS sweep: fixed reps, no top-up, no M3 arm.
+            for cell in lhs_cells:
+                run_cell(
+                    cell,
+                    out_dir,
+                    workers=args.workers,
+                    threads_per_call=args.threads_per_call,
+                    mem_gb=args.mem_gb,
+                )
         elif item == "composite":
             cells = _scale_cells(composite_cells(), args.reps_scale)
             if args.select:

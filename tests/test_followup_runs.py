@@ -17,14 +17,22 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts/c_calibrat
 from followup_runs import (  # noqa: E402
     BAR_POINT,
     CORNER_EXPONENT,
+    LHS_AUC_BOUNDS,
+    LHS_DF_BOUNDS,
+    LHS_N_BOUNDS,
+    LHS_N_CELLS,
     SENTINEL_INTERIOR_C,
     _composite_constants,
     _load_composite,
     _stitch,
+    boundary_lhs_points,
     classify,
     composite_cells,
     composite_configs,
+    fit_boundary_surface,
     needs_topup,
+    surface_n_star,
+    surface_predict,
     wilson_ci,
 )
 
@@ -144,3 +152,87 @@ class TestCompositeDesign:
         # round-trips through JSON (tuples become lists) and still matches
         loaded = _load_composite(tmp_path, cell)
         assert loaded is not None
+
+
+class TestBoundarySurface:
+    def test_lhs_points_deterministic_and_in_bounds(self):
+        a = boundary_lhs_points()
+        b = boundary_lhs_points()
+        assert a == b
+        # the achievability filter may drop a few sampled points (the
+        # paper's LHS pipeline drops the same combinations)
+        assert 0.8 * LHS_N_CELLS <= len(a) <= LHS_N_CELLS
+        for pt in a:
+            assert LHS_DF_BOUNDS[0] <= pt["df"] <= LHS_DF_BOUNDS[1]
+            assert LHS_AUC_BOUNDS[0] <= pt["auc"] <= LHS_AUC_BOUNDS[1]
+            assert LHS_N_BOUNDS[0] <= pt["n"] <= LHS_N_BOUNDS[1]
+        assert len({pt["index"] for pt in a}) == len(a)
+
+    def test_lhs_points_all_achievable(self):
+        from studroc_paper.datagen.roc_to_dgp import StudentTSolver
+
+        solver = StudentTSolver()
+        for pt in boundary_lhs_points():
+            assert pt["auc"] <= solver._compute_auc(pt["df"], 20.0)
+
+    def _synthetic_rows(self, beta_true, n_cells=80, reps=125, seed=1):
+        from scipy.special import expit
+        from scipy.stats import norm
+
+        rng = np.random.default_rng(seed)
+        rows = []
+        for _ in range(n_cells):
+            df = float(np.exp(rng.uniform(np.log(1.1), np.log(30))))
+            auc = float(norm.cdf(rng.uniform(norm.ppf(0.55), norm.ppf(0.99))))
+            n = int(np.exp(rng.uniform(np.log(100), np.log(2500))))
+            p = expit(
+                beta_true[0]
+                + beta_true[1] * np.log(n)
+                + beta_true[2] * np.log(df)
+                + beta_true[3] * norm.ppf(auc)
+            )
+            rows.append(
+                {
+                    "df": df,
+                    "auc": auc,
+                    "n": n,
+                    "cov": rng.binomial(reps, p) / reps,
+                    "reps": reps,
+                }
+            )
+        return rows
+
+    def test_fit_recovers_monotone_surface(self):
+        beta_true = np.array([-2.0, 0.9, 0.6, -0.8])
+        rows = self._synthetic_rows(beta_true)
+        fit = fit_boundary_surface(rows, n_boot=10, seed=0)
+        beta = fit["beta"]
+        # sign constraints respected and slope in log n roughly recovered
+        assert beta[1] >= 0 and beta[2] >= 0 and beta[3] <= 0
+        assert abs(beta[1] - beta_true[1]) < 0.3
+        # fitted coverage close to truth at a mid-design point
+        from scipy.special import expit
+        from scipy.stats import norm
+
+        p_true = expit(
+            beta_true[0]
+            + beta_true[1] * np.log(500)
+            + beta_true[2] * np.log(3.0)
+            + beta_true[3] * norm.ppf(0.95)
+        )
+        assert abs(surface_predict(beta, 3.0, 0.95, 500) - p_true) < 0.03
+
+    def test_n_star_monotone_in_df_and_auc(self):
+        beta = np.array([-2.0, 0.9, 0.6, -0.8])
+        # heavier tail (smaller df) or higher AUC needs a larger n
+        assert surface_n_star(beta, 1.1, 0.95) > surface_n_star(beta, 5.0, 0.95)
+        assert surface_n_star(beta, 2.0, 0.99) > surface_n_star(beta, 2.0, 0.90)
+        # crossing consistency: fitted coverage at n* equals the bar
+        n_star = surface_n_star(beta, 2.0, 0.95)
+        assert abs(surface_predict(beta, 2.0, 0.95, n_star) - BAR_POINT) < 1e-9
+
+    def test_n_star_flat_slope_guard(self):
+        below = np.array([-10.0, 0.0, 0.0, 0.0])
+        above = np.array([10.0, 0.0, 0.0, 0.0])
+        assert surface_n_star(below, 2.0, 0.95) == float("inf")
+        assert surface_n_star(above, 2.0, 0.95) == 0.0

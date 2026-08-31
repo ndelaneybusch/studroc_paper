@@ -134,9 +134,14 @@ uv run --project . python scripts/c_calibration/followup_runs.py composite repor
 Outputs land in `data/results/c_calibration_followup_20260830/<item>/`.
 Runner cells resume/extend and top up on the coverage classification
 (Wilson CI vs the .94 noninferiority bar — NOT the retired SE(C*) gate);
-composite cells store per-rep records, resume, and refuse to mix with
-outputs from different design constants. `report` writes
-`followup_report.md` with PASS/MARGINAL/FAIL verdicts, the
-library-relative routing threshold, and the composite candidate table.
-Dry-run budget: ~7 idealized core-saturated hours plus top-ups
-(composite includes two n=20,000 Theorem-7 erosion sentinels).
+the boundary item also runs an ~95-cell LHS surface sweep (fixed 125
+reps, no top-up) whose sign-constrained logistic smooth the report fits
+and renders as a provisional n*(df, AUC) contour; composite cells store
+per-rep records, resume, and refuse to mix with outputs from different
+design constants. `report` writes `followup_report.md` with
+PASS/MARGINAL/FAIL verdicts, the library-relative routing threshold,
+the boundary surface + holdout diagnostics, and the composite candidate
+table. Dry-run budget: ~8 idealized core-saturated hours plus top-ups
+(composite includes two n=20,000 Theorem-7 erosion sentinels; cutoffs
+proposed by the boundary smooth are confirmed later by spec follow-up
+item 5).

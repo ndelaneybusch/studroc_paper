@@ -227,8 +227,13 @@ conclusion.
    band, §7 top) or routing small-n_eff users to M3. The failure boundary
    is unmeasured between n = 100 (broken) and 500 (fine) — locating it is
    a cheap, high-value next run (`scripts/c_calibration/followup_runs.py`
-   item 1: t-shapes at n ∈ {150, 250, 350} plus heavier-tail and
-   higher-AUC probes at 250–500).
+   item 1, hybrid design: classification-grade anchors at the suite's
+   *achievable* design-box corners — t(1.1)/.97 and t(2)/.99; the literal
+   corner (1.1, .99) is unachievable under the mapper's shift cap — plus
+   an ~95-cell LHS surface sweep over (df, AUC, n) fitted with a
+   sign-constrained logistic smooth, and cross-family corner spot
+   checks; cutoffs the smooth proposes are confirmed classification-grade
+   by spec follow-up item 5 before routing guidance freezes).
 2. **No shape-blind level map is worth shipping — the Stage S screen
    returned its pre-registered STOP.** Per-shape C*(.05) at n = 500 spans
    1.17 (t(2), 2,000 reps) to 3.0; the library lower envelope minus one SE

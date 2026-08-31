@@ -102,8 +102,10 @@ rep) seeding (new cell names ⇒ fresh streams), same ladder kernel,
 production trim-grid rule, M budget `m_budget(n0, .05)` (α grid
 {.50, .20, .10, .05}), same evaluation conventions (native grid
 t_k = k/n0, pointwise truth check, area = mean band width over grid
-points). Cells resume and extend; dry-run budget ≈ 7 idealized
-core-saturated hours plus top-ups.
+points). Cells resume and extend; dry-run budget ≈ 8 idealized
+core-saturated hours plus top-ups (boundary ≈ 0.5h classification +
+0.5h LHS sweep; heldout ≈ 2.3h; composite ≈ 4.5h incl. the n = 20,000
+sentinels).
 
 **Predeclared inference rules (all items).** Per cell, the estimand is
 the C = 1 arm's coverage at α = .05. Verdict PASS iff point ≥ .94 AND
@@ -115,25 +117,57 @@ targets the retired auto-map estimand): cells top up in batches while
 the Wilson CI straddles .94 — boundary/imbalance 1,000 → 3,000, heldout
 2,000 → 4,000, composite 500 → 2,000. All claims are library-relative.
 
-1. **`boundary` — locate the C = 1 small-n validity boundary** (9 cells):
-   t2_95 at n ∈ {150, 250, 350} (bracket the known 100-broken/500-fine
-   pair); t3_90 at n ∈ {100, 250} (milder tail, never measured below
-   500); two NEW registry shapes probing whether the boundary moves
-   above 500 — `t15_95` (t df = 1.5, AUC .95, heavier tail) and `t2_99`
-   (t df = 2, AUC .99, higher AUC) at n ∈ {250, 500}. The report gives,
-   per shape, the smallest tested n from which all larger tested n PASS,
-   and the **global routing threshold = the worst (largest) such n over
-   the tested shapes** — conservative and explicitly library-relative
-   (routing at runtime can only see sample sizes, so the operational
-   threshold must be worst-case over shapes, and shapes outside the
-   library can move it). An **M3 arm** runs on every boundary cell (same
-   seeds and data, α ∈ {.5, .05}, rep count paired to the fiducial arm's
-   final post-top-up count) so the routing target's width economics are
-   measured where routing would engage; its coverage column is a
-   regression check (Prop. 12 already guarantees it). **If t15_95 or
-   t2_99 fails at n = 500, the min(n0,n1) ≥ 500 safety claim of the
+1. **`boundary` — locate the C = 1 small-n validity boundary** (hybrid
+   design, revised 2026-08-31 a second time on review feedback: a
+   handful of hand-picked probes is neither a surface sample nor an
+   envelope bound; the redesign separates the two jobs).
+   **(1a) Corner anchors, classification-grade** (11 cells, sequential
+   replication): the *achievable-frontier* corners of the suite's
+   student_t design space — the literal box corner (df = 1.1, AUC .99)
+   does not exist: the DGP mapper caps the location shift at 20, so
+   t(1.1) tops out at AUC ≈ .976 and the paper's LHS filters such
+   combinations. Anchors: `t11_97` (df 1.1, AUC .97 — heaviest tail at
+   its cap) and `t2_99` (heaviest tail reaching AUC .99), both at
+   n ∈ {250, 500, 1000, 2500}; plus t2_95 at n ∈
+   {150, 250, 350} (Stage S consistency + holdout points for the smooth,
+   below). These carry the **decision**: per shape the smallest tested n
+   from which all larger tested n PASS, and the global routing threshold
+   = the worst such n — assumption-free, conservative, and explicitly
+   library-relative (routing at runtime sees only sample sizes, so the
+   operational threshold must be worst-case over shapes). **If an
+   anchor fails at n = 500, the min(n0,n1) ≥ 500 safety claim of the
    OUTCOME entry is library-limited and theory doc §7.2(c) must be
    amended** — the run's most important possible finding.
+   **(1b) LHS surface sweep, estimation-grade** (≈95 cells × 125 reps,
+   fixed, no top-up — deliberately many cells / few replicates: the
+   information lives at the cell level of the sampling hierarchy, and
+   the smooth pools replicates across cells): maximin-free Latin
+   hypercube (frozen seed 20260831) over log df ∈ [1.1, 30] ×
+   probit-AUC ∈ [.55, .99] × log n ∈ [100, 2500] within the student-t
+   family (whose shape space is exactly 2-D by rank invariance),
+   unachievable (df, AUC) combinations dropped exactly as the paper's
+   LHS drops them. Fit: sign-constrained logistic smooth
+   logit(cov) = b0 + b1·log n + b2·log df + b3·probit(AUC) with
+   b1, b2 ≥ 0, b3 ≤ 0 (the monotone tail-mass mechanism), bootstrap
+   over cells. Products: the **provisional boundary contour n\*(df,
+   AUC)** at the .94 bar (point fit plus a conservative 90% bootstrap
+   quantile — the quotable number comes from the conservative band,
+   never the mean fit, since a mean smooth is anti-conservative for an
+   envelope), holdout diagnostics against the (1a) anchors, and
+   **per-stratum coverage predictions for the final suite's student_t
+   strata** (the suite samples LHS in the same coordinates, so the
+   surface maps onto it directly).
+   **(1c) Cross-family spot checks, classification-grade** (6 cells):
+   the achievable corners of the suite's other corner-curved families —
+   `wb05_99` (Weibull shape .5, AUC .99), `gm05_93` (gamma shape .5 at
+   its ≈.936 cap), `bo05_99` (beta-opposing α .5, AUC .99) at n ∈
+   {100, 250} — verifying the t-family is the binding family before the
+   threshold is quoted suite-wide.
+   An **M3 arm** runs on every (1a)/(1c) cell (same seeds and data,
+   α ∈ {.5, .05}, rep count paired to the fiducial arm's final
+   post-top-up count) for the routing target's width economics; its
+   coverage column is a regression check (Prop. 12 already guarantees
+   it).
 2. **`heldout` — designer-bias guard for the shipped C = 1 default**
    (10 cells): all six §5.1 held-out shapes at n = 500; a
    mechanism-diverse sentinel subset (t3_90, bimodal_80_sep15, the LHS
@@ -185,11 +219,30 @@ the Wilson CI straddles .94 — boundary/imbalance 1,000 → 3,000, heldout
    more severe imbalance (minority 500), so this is unlikely to change
    guidance; excluded from `all`, runnable on demand if the final-run
    guidance turns out to need it.
+5. **Cutoff confirmation (FOLLOW-UP, gated on item 1's results — not yet
+   implemented).** The (1b) smooth *proposes* routing cutoffs; it must
+   not *set* them (a smooth over a 2-D family slice, with smoothing bias
+   largest exactly at the contour). Once item 1 is in: read the
+   candidate global cutoff(s) from the conservative contour band and the
+   (1a) anchors, then run **fresh classification-grade confirmation
+   cells** (new cell names ⇒ fresh seed streams; the sequential
+   replication rule as in item 1a) at the proposed cutoff and one step
+   either side of it, on the worst shapes the surface identifies —
+   including any shape the (1c) spot checks flag as binding outside the
+   t-family. Routing guidance (the theory-doc §7.2(c) threshold and the
+   `fiducial_band` docstring language) is frozen only from these
+   confirmation cells; the surface's role in the paper is per-stratum
+   prediction, not certification. If the confirmation cells contradict
+   the surface (a cutoff cell FAILs where the smooth predicted PASS),
+   the smooth's functional form is wrong in the tail — report both,
+   keep the anchor-based conservative threshold, and treat the
+   discrepancy as a finding about the boundary's shape.
 
 Items 1–2 gate the method-usage guidance the paper must state (where
 C = 1 is claimed measured-safe, where M3 is the routed recommendation);
 item 3 decides whether the roster's fiducial entry is the plain C = 1
-band or a range-limited composite. Findings fold into
+band or a range-limited composite; item 5 converts item 1's provisional
+contour into frozen routing guidance. Findings fold into
 `fiducial_band_theory.md` §7.2 and `next_method_ideas.md` §5/§7 as
 amendments to the same entries the OUTCOME block names.
 
