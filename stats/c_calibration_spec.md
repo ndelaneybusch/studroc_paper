@@ -237,6 +237,36 @@ the Wilson CI straddles .94 — boundary/imbalance 1,000 → 3,000, heldout
    the smooth's functional form is wrong in the tail — report both,
    keep the anchor-based conservative threshold, and treat the
    discrepancy as a finding about the boundary's shape.
+   **Empirical-AUC-conditional cutoffs (added 2026-08-31).** The
+   candidate family evaluated here is not restricted to n-only rules:
+   an (n, AUC-hat) cutoff — route to M3 iff n_eff < N\*(AUC-hat) — is
+   strictly more efficient, since an n-only threshold must be
+   worst-cased over the whole library while the boundary contour rises
+   steeply in AUC. Ground rules, learned the hard way in rounds 2–4:
+   (i) *routing is admissible per-dataset adaptivity only because it
+   has a conservative direction* — mis-routing to M3 costs width, never
+   coverage — so the rule must be calibrated so mis-routing toward the
+   fiducial band is controlled: route on an **upper confidence bound of
+   the AUC**, not the point estimate (AUC-hat has SE ≈ .01–.03 at the
+   small n where routing matters, and the noise must err toward M3);
+   (ii) *selection effects are measured, not assumed away* — a router
+   conditions on the data, so fiducial coverage among routed-to-fiducial
+   reps is not the unconditional coverage. Evaluation is a **per-rep
+   replay join**: every rep is deterministically seeded, so its
+   empirical AUC (or any later statistic) is recomputable post hoc
+   (`followup_runs.replay_empirical_aucs`) and joins to the same rep's
+   stored C = 1 coverage indicator across the item-1 anchors, the ~95
+   LHS cells, and the held-out cells — no re-simulation, no schema
+   change. Candidate routers are scored by their realized composite
+   coverage per cell (routed fraction × conditional coverages),
+   worst-cased over df at each (n, AUC) region, since tail weight — the
+   stronger driver — is not observable at routing time;
+   (iii) *shape-functional triggers* (estimating tail weight from the
+   ranks to condition the cutoff further) are optional appendix work:
+   conservative-only triggers cannot break validity, but round 4's
+   32-functional search found no rank functional that survives out of
+   sample — expect no signal, and require held-out confirmation before
+   any such trigger enters guidance.
 
 Items 1–2 gate the method-usage guidance the paper must state (where
 C = 1 is claimed measured-safe, where M3 is the routed recommendation);

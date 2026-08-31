@@ -497,6 +497,28 @@ def sample_scores(cell: Cell, rep: int) -> tuple[np.ndarray, np.ndarray, int]:
     return y_true, y_score, seed
 
 
+def replay_empirical_aucs(cell: Cell, reps: int) -> np.ndarray:
+    """Per-rep empirical (Mann-Whitney) AUCs, replayed from the seeds.
+
+    Every rep is deterministically seeded, so per-rep statistics never
+    need to be stored: this regenerates each rep's rank data (identical
+    draw order to the runner) and returns its empirical AUC, ready to be
+    joined to the same rep's stored coverage indicators. This join is
+    what the empirical-AUC-conditional router evaluation of spec
+    follow-up item 5 runs on — selection effects included, because the
+    join is per-rep.
+    """
+    out = np.empty(reps)
+    for rep in range(reps):
+        y_true, y_score, _ = sample_scores(cell, rep)
+        order = np.argsort(y_score, kind="stable")
+        ranks = np.empty(len(y_score))
+        ranks[order] = np.arange(1, len(y_score) + 1)
+        r_pos = ranks[y_true == 1].sum()
+        out[rep] = (r_pos - cell.n1 * (cell.n1 + 1) / 2) / (cell.n0 * cell.n1)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # runner cells with coverage-driven sequential replication (items 1, 2, 4)
 # ---------------------------------------------------------------------------
@@ -1122,9 +1144,7 @@ def _boundary_surface_section(cls_rows: list[dict], lhs_rows: list[dict]) -> lis
             point = surface_n_star(beta, df, auc)
             # cap inf n* before the quantile (interpolating between two
             # infs yields nan); the display clamps to the sampled range
-            boot_ns = np.minimum(
-                [surface_n_star(b, df, auc) for b in fit["boot"]], 1e9
-            )
+            boot_ns = np.minimum([surface_n_star(b, df, auc) for b in fit["boot"]], 1e9)
             cons = float(np.quantile(boot_ns, SURFACE_CONS_Q))
             entries.append(f"{_fmt_n_star(point)} [{_fmt_n_star(cons)}]")
         lines.append(f"| {df:g} | " + " | ".join(entries) + " |")

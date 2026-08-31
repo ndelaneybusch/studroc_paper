@@ -31,6 +31,7 @@ from followup_runs import (  # noqa: E402
     composite_configs,
     fit_boundary_surface,
     needs_topup,
+    replay_empirical_aucs,
     surface_n_star,
     surface_predict,
     wilson_ci,
@@ -230,6 +231,26 @@ class TestBoundarySurface:
         # crossing consistency: fitted coverage at n* equals the bar
         n_star = surface_n_star(beta, 2.0, 0.95)
         assert abs(surface_predict(beta, 2.0, 0.95, n_star) - BAR_POINT) < 1e-9
+
+    def test_replay_empirical_auc_matches_direct_and_is_deterministic(self):
+        from followup_runs import (
+            boundary_cells,
+            register_followup_shapes,
+            sample_scores,
+        )
+
+        register_followup_shapes()
+        cell = [c for c in boundary_cells() if "t2_95--n150" in c.name][0]
+        aucs = replay_empirical_aucs(cell, 5)
+        assert np.array_equal(aucs, replay_empirical_aucs(cell, 5))
+        # direct pairwise Mann-Whitney on the same replayed data
+        y_true, y_score, _ = sample_scores(cell, 3)
+        pos = y_score[y_true == 1]
+        neg = y_score[y_true == 0]
+        direct = float(np.mean(pos[:, None] > neg[None, :]))
+        assert abs(aucs[3] - direct) < 1e-12
+        # in the right neighborhood of the cell's true AUC (.95)
+        assert 0.85 < aucs.mean() < 1.0
 
     def test_n_star_flat_slope_guard(self):
         below = np.array([-10.0, 0.0, 0.0, 0.0])
