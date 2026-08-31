@@ -112,3 +112,31 @@ full design, not the default execution plan.
   frozen in `map_eval.py`).
 - The final `stats/c_calibration_report.md`: written by a human from the
   outputs above.
+
+## Follow-up runs after the Stage S STOP (2026-08-30)
+
+Stage S returned its pre-registered STOP (see the OUTCOME entry in
+`stats/c_calibration_spec.md`): Stage A/B above will not run, and the
+sections describing them are historical. What remains is
+`followup_runs.py` (revised 2026-08-31 after external review; unit tests
+in `tests/test_followup_runs.py`), detailed in the spec's dated
+FOLLOW-UP RUN PLAN entry:
+
+```
+uv run --project . python scripts/c_calibration/followup_runs.py all
+#   = boundary, heldout, composite, report (imbalance is deferred;
+#     request it explicitly if the final-run guidance needs it)
+uv run --project . python scripts/c_calibration/followup_runs.py boundary heldout
+uv run --project . python scripts/c_calibration/followup_runs.py composite report
+# knobs: --workers 4 --threads-per-call 4 --reps-scale --select <substr> --dry-run
+```
+
+Outputs land in `data/results/c_calibration_followup_20260830/<item>/`.
+Runner cells resume/extend and top up on the coverage classification
+(Wilson CI vs the .94 noninferiority bar — NOT the retired SE(C*) gate);
+composite cells store per-rep records, resume, and refuse to mix with
+outputs from different design constants. `report` writes
+`followup_report.md` with PASS/MARGINAL/FAIL verdicts, the
+library-relative routing threshold, and the composite candidate table.
+Dry-run budget: ~7 idealized core-saturated hours plus top-ups
+(composite includes two n=20,000 Theorem-7 erosion sentinels).

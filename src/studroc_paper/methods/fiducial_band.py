@@ -21,12 +21,16 @@ The band is assembled in four steps:
 2. **Equal-local-levels trim.** Score each draw by its min-p depth (the
    minimum over grid points of its rank from either end of the cloud) and
    trim to depth ``j`` = the ``alpha_eff``-quantile of the depths, where
-   ``alpha_eff = 1 - (1 - alpha)**trim_exponent``. The default exponent 2 is
-   the empirically calibrated finite-sample level remap (see
-   ``stats/fiducial_band_theory.md`` section 7; the once-conjectured
-   "Sidak budget per class" reading is falsified); exponent 1 gives the
-   raw fiducial credible band, measured conservative at every tested cell
-   and asymptotically calibrated on the interior. On grids larger than
+   ``alpha_eff = 1 - (1 - alpha)**trim_exponent``. The default exponent 1
+   is the raw fiducial credible band — the identity level map, measured
+   safe at every Stage S screening cell with min(n0, n1) >= 500 and the
+   asymptotically calibrated choice (Theorem 7). Exponents above 1 trim
+   deeper and are anti-conservative on heavy-tailed shapes: the 2026-08
+   Stage S screen (``stats/c_calibration_screening_report_stage_s.md``;
+   ``stats/fiducial_band_theory.md`` section 7) measured C = 2 at
+   92-94% realized coverage at alpha = .05 on t(2)-shaped cells at every
+   n >= 500 (75% at n = 100), which retired the former default of 2. On
+   grids larger than
    2001 points the depth minimum runs over the production thinned trim-grid
    (:func:`production_trim_rows`); the band itself is always built on the
    full grid.
@@ -268,7 +272,7 @@ def fiducial_band(
     y_score: NDArray | Tensor,
     alpha: float = 0.05,
     n_draws: int | None = None,
-    trim_exponent: float = 2.0,
+    trim_exponent: float = 1.0,
     k: int | None = None,
     tie_break: TieBreak = "random",
     random_state: int | np.random.Generator | None = None,
@@ -303,11 +307,15 @@ def fiducial_band(
             the band falls back toward the (conservative) full envelope of
             the cloud.
         trim_exponent: Exponent ``C`` of the level remap
-            ``alpha_eff = 1 - (1 - alpha)**C``. ``2.0`` (default) is the
-            empirically centred finite-sample choice; ``1.0`` gives the raw
-            fiducial credible band — measured conservative on every tested
-            cell and asymptotically calibrated on the interior, but with no
-            finite-sample coverage theorem (see
+            ``alpha_eff = 1 - (1 - alpha)**C``. ``1.0`` (default) is the raw
+            fiducial credible band — measured safe on every Stage S
+            screening cell with ``min(n0, n1) >= 500`` and asymptotically
+            calibrated, but with no finite-sample coverage theorem (below
+            ``min(n0, n1) ~ 500`` heavy-tailed high-AUC shapes can
+            under-cover; use :func:`m3_band_rs` when a guarantee is needed).
+            Values above 1 trim deeper and are anti-conservative on
+            heavy-tailed shapes — the former default ``2.0`` measured
+            92-94% at ``alpha = .05`` on t(2) cells at ``n >= 500`` (see
             ``stats/fiducial_band_theory.md`` sections 6-7).
         k: Optional output grid size. ``None`` (default) returns the band on
             its native grid of ``n0 + 1`` points ``t = i / n0``. Otherwise

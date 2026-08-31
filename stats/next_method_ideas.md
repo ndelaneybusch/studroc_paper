@@ -1,6 +1,14 @@
 # The Rank-Space Fiducial ROC Band: Working Model and Evidence
 
-*Status (2026-08-23): consolidated after four laptop experiment rounds. This
+*Status (2026-08-31): consolidated after four laptop experiment rounds plus
+the Stage S calibration screen (2026-08-29; 27 cells, 500–2,000 reps each,
+`data/results/c_calibration_20260829/`, theory-doc §7.2). Stage S changed
+the production default to **C = 1**, found a small-n heavy-tail validity
+failure that no trim level can express or repair (the D5 floor conjecture
+as posed stands), returned STOP on the shape-blind auto-C map, and
+relocated the surviving width opportunity to the band's interior over a
+finite range — see
+§5 items 1–3 and the composite-band entry at the top of §7. This
 document is a working model of what the full simulation suite should show,
 based on what has actually been measured — with the uncertainties stated. The
 full suite is the arbiter; nothing here is a result of that suite yet.*
@@ -42,7 +50,10 @@ can be simulated exactly for any hypothesized curve.
    at sorted-uniform fractions of the gap; compose on the grid t_k = k/n₀.
 3. Trim by equal-local-levels min-p depth (each draw's minimum, over grid
    points, of its rank from either end of the cloud) at the remapped level
-   **α_eff = 1 − (1−α)^C with C = 2**. Band = pointwise [j-th smallest,
+   **α_eff = 1 − (1−α)^C with C = 1** (the identity map — the default since
+   2026-08-30; the former C = 2 was refuted by Stage S, which measured it
+   at .917–.940 realized coverage at α=.05 on heavy-tail and large-n
+   cells). Band = pointwise [j-th smallest,
    j-th largest] of the draws, j = the α_eff-quantile of the depths.
 4. Two binomial (Clopper–Pearson-form) corner allowances at the band's own
    local level ℓ = j/(M+1): upper edge ∪ CP upper bound (essential — the
@@ -53,9 +64,13 @@ can be simulated exactly for any hypothesized curve.
 
 Tuning inputs: M (a Monte Carlo budget, self-diagnosing — the method warns
 when the realized trim depth j < 3; rule of thumb M ≳ 5/ℓ(K,α), ≈10,000 at
-n₀ = 5,000) and the exponent C = 2 (empirically fitted; conjectured
-structural — see §5.2). There are no variance floors, gates, jurisdiction
-constants, or ε regularizers.
+n₀ = 5,000) and the exponent C = 1 (the identity map; values above 1 are a
+manual option, anti-conservative on heavy-tailed shapes — see §5 item 2).
+There are no variance floors, gates, jurisdiction constants, or ε
+regularizers. Known validity boundary: below min(n₀,n₁) ≈ 500 (exact
+boundary unmeasured between 100 and 500), heavy-tailed high-AUC shapes can
+under-cover badly even at C = 1 (80.2% at t(2)/.95, n = 100, α = .05 —
+theory doc §7.2a); the exact M3 band is the indicated method there.
 
 ---
 
@@ -118,18 +133,22 @@ binormal cells and 0.000 on bimodal, t(2), and kinked truths).
 Predictions, each with a confidence tag and what would falsify it. "Suite"
 means the existing 7-DGP × 6-n × LHS framework at α ∈ {0.05, 0.5}.
 
-**P-A. Coverage at α=.05 lands in ~0.94–0.99 in every (DGP, n) stratum, flat
-in n.** *(Confidence: moderate-high.)* Basis: 14-cell flatness and the
-structural rank invariance; the suite's DGP families reduce to curve shapes
-similar to those tested. Falsifiers to watch: LHS shapes with steeper corners
-or plateau structures not represented in the hand-picked cells; the n=10,000
-configuration (K=10,001) at α=.05, which was **never run** — the M rule
-extrapolates to M ≈ 11–12k there (round 3 did run n = 10,000 and 20,000, but
-at α ∈ {.5, .2} only, with M = 2500). A stratum below ~0.93 at adequate M would contradict
-the model; a stratum at 1.00 would mean the map is more conservative there
+**P-A. Coverage at α=.05 lands in ~0.94–0.99 in every (DGP, n) stratum with
+min class size ≥ 500, flat in n.** *(Confidence: moderate-high at C = 1,
+after Stage S.)* Basis: 14-cell flatness, the structural rank invariance,
+and now the Stage S screen (.950–.981 at C = 1 on every min-500+ cell up to
+n = 50,000, including n = 50,000 at α = .05 — the configuration this
+prediction previously flagged as never-run). **Known exception, measured:**
+small-n heavy-tail strata. The suite's student_t DGP at n ≤ ~300 per class
+should be *expected* to fall below nominal (t(2)/.95 measured .802 at
+n = 100), with misses at the FPR corners — this is now a prediction, not a
+falsifier. Elsewhere a stratum below ~0.93 at adequate M would contradict
+the model; a stratum at 1.00 would mean C = 1 is more conservative there
 than any tested shape.
 
-**P-B. With C=2, coverage at α=.5 is centred but dispersed: stratum values
+**P-B. With the shipped default C=1, coverage at α=.5 is conservative and
+dispersed: expect 0.65–0.86 (valid everywhere, centred nowhere). Under the
+retired C=2 it would be centred but dispersed: stratum values
 roughly 0.40–0.60, mean near 0.50.** *(Confidence: moderate.)* The measured
 per-cell optimal exponent ranges 1.6–3.1, and dcoverage/dα_eff ≈ 1 at α=.5,
 so the ±15pp shape spread seen in the cells should reappear as ±10–15pp
@@ -137,7 +156,7 @@ stratum spread. This is the model's honest claim: *centred at every α, not
 calibrated at every α*. Falsifier: mean far from 0.50, or spread much larger
 than the cells showed. (If the suite is run with the identity map instead,
 expect 0.65–0.86 at α=.5 — valid, conservative.) Round-3 update: the C*(n)
-ladder now reaches n = 20,000 (§5.2) and fixed C ≈ 2 measurably over-trims at
+ladder now reaches n = 20,000 (§5 item 2) and fixed C ≈ 2 measurably over-trims at
 central α for n ≥ 10⁴ (coverage .41 at n = 10,000 and .38 at n = 20,000
 against nominal .50, at C = 2.2) — expect the suite's largest-n strata to land
 at the bottom edge of, or just below, the 0.40–0.60 range.
@@ -194,41 +213,53 @@ conclusion.
 
 ## 5. Known weaknesses and open uncertainties (ranked)
 
-1. **Shape dependence of calibration at central α survives the C=2 remap —
-   and after round 4 there is no data-driven candidate fix left**
+1. **The small-n heavy-tail hole (NEW, Stage S — the most serious finding
+   to date).** Below min(n₀,n₁) ≈ 500, heavy-tailed high-AUC shapes break
+   the band outright: t(2)/.95 at n = 100 covers .802 at α=.05 (.688 at
+   α=.2) under C = 1 — a validity failure the C coordinate cannot express
+   (the cell's sub-1 C* = 0.084 is a boundary-pinned ladder artifact, not
+   a shippable level; D5's floor conjecture as posed, about roughness,
+   stands — the trapezoid sailed through at C* = 2.01). Mechanism (theory
+   doc §7.2a): *unseen tail mass* — the truth exits the entire untrimmed
+   cloud in 1–2% of reps, misses concentrate at the FPR corners (≤ .02
+   and ≥ .90). No level map fixes reps where the truth is outside the
+   cloud's support; the fix is either a corner widening (the composite
+   band, §7 top) or routing small-n_eff users to M3. The failure boundary
+   is unmeasured between n = 100 (broken) and 500 (fine) — locating it is
+   a cheap, high-value next run (`scripts/c_calibration/followup_runs.py`
+   item 1: t-shapes at n ∈ {150, 250, 350} plus heavier-tail and
+   higher-AUC probes at 250–500).
+2. **No shape-blind level map is worth shipping — the Stage S screen
+   returned its pre-registered STOP.** Per-shape C*(.05) at n = 500 spans
+   1.17 (t(2), 2,000 reps) to 3.0; the library lower envelope minus one SE
+   is 0.97, i.e. at the n where the 9.5% mean oracle gain lives there is
+   *no* safe C > 1. The former default C = 2 under-covers at α=.05 on t(2)
+   at every n (.918–.940) and on binormal .95 at n = 50,000 (.917) —
+   production default is now **C = 1** (measured ≥ .950 on every min-500+
+   cell; margin ~0 at n = 50,000, consistent with Theorem 7's
+   approach-from-above). The round-3 taper story survives only per-shape:
+   the *envelope* is non-monotone in n (t(2): 0.08 → 1.17 → 1.49 → 1.07),
+   so the tapered-C(n) family is withdrawn; re-evaluating the stored
+   profiles, the largest safe shape-blind C is ≈1.5 at n = 5,000 (~4%
+   area) and 1.0 at n = 50,000 and at every minority-500 imbalance cell.
+3. **Shape dependence of calibration at central α survives any level
+   remap — and after round 4 there is no data-driven candidate fix left**
    (±13–19pp spread at α=.2/.5; bias removed, spread remains). A level-only
    correction cannot fix this, and every per-dataset route tested is dead by
    the same roughness mechanism: plug-in calibration (1.3–1.7× conservative
    in j at 80× compute, round 2), worst-case bracketing (9–37×, round 3),
    fiducial-predictive calibration (1.7–2.3×, *worse* than plug-in, round 4),
    and functional-driven level rules (nothing among 32 rank functionals
-   survives out-of-sample, round 4 — see §8.4). The honest position is the
-   offline shape-library calibration of `c_calibration_spec.md`, which
-   accepts the residual spread.
-2. **C = 2 is empirical — and the n-taper is now measured, not just flagged.**
-   It held on all 14 cells (per-cell fitted range 1.6–3.1), but the
-   first-order theorem (`fiducial_band_theory.md` §6–7) says asymptotic
-   coverage equals 1−α_eff = (1−α)^C, so any fixed C > 1 under-covers in the
-   limit (0.9025 at nominal .95 for C=2). The discriminating experiment was
-   run in round 3 (`m3m4_report.md` §6): extending the ladder to n = 10,000
-   and 20,000 at α ∈ {.5, .2} gives C* at α=.5 of ≈3.1 (n=25) → 2.18 (500) →
-   1.71/1.79 (2000/5000) → 1.49 ± 0.17 (10,000) → **1.32 ± 0.16 (20,000)** —
-   4.2 SE below H1's predicted plateau of 2, decaying in step at α=.2
-   (3.89 → 1.23), with the roughness-contrast diagnostic H2 predicts
-   shrinking from ~3.5× at n = 150 to ≈1–2× at n ≥ 10⁴. H1 ("one budget per
-   class") is falsified over the tested range; the empirical taper is
-   C*(n) − 1 ≈ 1.26·(n/500)^{−0.32} (slow, ~n^{−1/3}). Not a problem at
-   α=.05 in the tested range (coverage ≥ .942 at n=5000), but the large-n
-   ladder is central-α only (M = 2500), so "C=2 still safe at α=.05 for
-   n ≥ 10⁴" remains an extrapolation from d(coverage)/dα_eff being small in
-   the tail. The identity map (C=1) is the asymptotically calibrated,
-   finite-sample conservative fallback (never measured below 0.967 at α=.05).
-3. **No coverage theorem.** All validity evidence is Monte Carlo. The
+   survives out-of-sample, round 4 — see §8.4). The offline shape-library
+   route was then tried (Stage S) and STOPped by item 2. What remains:
+   accept the spread at C = 1 (conservative everywhere at central α), or
+   change the construction (composite band / depth functional — §7).
+4. **No coverage theorem.** All validity evidence is Monte Carlo. The
    fiducial composition is not automatically a confidence procedure; the
    oracle/test-inversion framing (§7) is the likely proof route, and the
    degenerate-corner allowances are exactly the places where the naive
    "fiducial = confidence" heuristic measurably failed before repair.
-4. **Steep-corner width at small n** (2–3× oracle at AUC .99, n=150). Valid
+5. **Steep-corner width at small n** (2–3× oracle at AUC .99, n=150). Valid
    but loose; the one width regime where the method leaves real money on
    the table. Round 4 removed one candidate repair: intersecting with M3's
    edges restricted to the first grid points (union-bound accounting) never
@@ -236,23 +267,24 @@ conclusion.
    fiducial band on k = 1..25, reaching parity only near α₂ ≈ 0.9. The
    corner slack is not reachable through exact-Beta bounds; both §10
    mechanisms of the theory doc remain live and unseparated.
-5. **Untested configurations:** n = 10,000 (largest suite size); prevalence
-   10% at n=1,000 (nearest tested: 900/100 at n=1,000 total); the full LHS
-   shape sweep; α = 0.5 on the two largest n. Also the n=25 cell needed a
-   larger effective level than the C=2 map gives (map is conservative
-   there — safe direction, but +9–13pp over at central α). Round 4 flagged
-   **class imbalance as a possibly genuine second calibration coordinate**:
-   the 9:1 cell (P2a) sets M3's worst-case level (not any shape) and breaks
-   the best-fitting functional rule, but imbalance has only ever been swept
-   at two points and never in n — relevant to the C-calibration spec's D2
-   ("don't assume a 1-D n_eff"), not pre-empted here.
-6. **Compute scales with M·K.** ~11 s/band at n₀=5,000 single-core; the
+6. **Untested configurations (revised after Stage S):** large n at α=.05
+   is now measured (C=1 covers .951–.960 at n = 50,000; the former
+   n = 10,000 gap is closed by bracketing); the imbalance arm ran at
+   minority 500 in both directions × two shapes (C=1 fine at .950–.973;
+   a real directional C* effect on binormal .90 — majority-negative
+   4500×500 cuts C* to 1.69 vs 2.2–2.7 elsewhere — confirming round 4's
+   D2 concern). Still untested: the small-n failure boundary (n between
+   100 and 500 on heavy-tail shapes — item 1, the priority); imbalance
+   with min(n₀,n₁) > 500; the full LHS shape sweep; heavy-tail shapes at
+   AUC > .95 (the library's t(2) tops out at .95 — plausibly not the
+   worst case for item 1's mechanism).
+7. **Compute scales with M·K.** ~11 s/band at n₀=5,000 single-core; the
    suite multiplies this by ~10⁴ bands. GPU batching of draws (already
    chunked in the implementation) or per-n M tuning will matter.
-7. **Estimand under ties** must be declared (trapezoidal, random break).
+8. **Estimand under ties** must be declared (trapezoidal, random break).
    Deterministic even-spreading is a valid conservative alternative;
    class-ordered tie-breaking is invalid and the implementation refuses it.
-8. **The t = 0 width finding (round 3, `m3m4_report.md` §3) — measured
+9. **The t = 0 width finding (round 3, `m3m4_report.md` §3) — measured
    correctly, but the recommended pin is NOT valid distribution-free.**
    The recipe's CP allowance at k = 0 does make U(0) run 0.4–0.99, worth
    0.0–8.8% of area on the tested cells. But the premise "R(0) = 0 for
@@ -322,7 +354,7 @@ conclusion.
   candidates recovers exactly plug-in performance and no better, with a
   window constant. Coverage gains over C=1 at central α: none.
 - **Steep-corner repair by intersecting with corner-restricted M3.** Never
-  binds at any guarantee-carrying level; see §5.4.
+  binds at any guarantee-carrying level; see §5 item 5.
 - From the earlier envelope-era experiments (see
   `project_evaluation_report.md`): logit-space construction; Wilson-gate
   redesigns; the variance-model band (noisy variance × supremum).
@@ -331,6 +363,54 @@ conclusion.
 
 ## 7. Backlog: ideas retained but not currently needed
 
+- **The composite band — corner-patched interior trim over a declared
+  finite range (NEW after Stage S; the lead idea for both stated
+  objectives, validity and width).**
+  Stage S's miss-location analysis found that everything blocking a deeper
+  trim is corner-local: the small-n heavy-tail failure (§5 item 1) misses
+  at FPR ≤ .02 / ≥ .90, the shape spread that pinned the level-map
+  envelope at C ≈ 1 collapses on the interior, and restricting to
+  FPR ∈ (.05, .90) the worst-miss rate under C = 2 is ≤ 3.5% at *every*
+  screen cell (nominal 5%) — including 1.0% at the t(2) n = 100 cell
+  where the full-curve band covers .802, and flat at every measured n
+  from 100 to 50,000. **That flatness is finite-range, not asymptotic:**
+  Theorem 7's erosion applies to a fixed interior C > 1 exactly as it did
+  to the full-curve C = 2 (interior coverage → (1−α)^C: .926/.903/.880 at
+  C = 1.5/2/2.5, α = .05, at ~1pp/decade of n), so no fixed-C composite
+  can be an unrestricted method — the shipping form must taper
+  C_int(n) → 1 or clamp to 1 above a declared range. Proposed
+  construction: the band is widened at the two corner regions to the
+  untrimmed cloud envelope + allowances (an *empirical* widening — not an
+  exact bound; see (iii)) and min-p-trimmed at C > 1 on the interior,
+  calibrated *as one object*. A crude union bound (untrimmed corners +
+  C=2 interior) already clears .95 at every screen cell (worst ≈ .953).
+  Why this is the right shape of fix: the corners are where the width
+  price is provably unavoidable for any rank-based band (theory doc
+  §8–9) and where 100 samples of a heavy tail genuinely know nothing —
+  honest width there is correct, not conservative; the interior is where
+  the measured 7–8% (C=2 vs C=1) to 9.5% (per-shape oracle) area surplus
+  actually lives. Known unknowns before it can ship: (i) the stored
+  profiles log only worst-miss location, so interior rates are optimistic
+  by an estimated ~0.1–0.3pp — the follow-up derisk
+  (`scripts/c_calibration/followup_runs.py` item 3, revised 2026-08-31)
+  removes this by building the actual stitched band per rep, with a
+  predeclared noninferiority rule, paired width inference, and 20k
+  sentinels for the erosion direction; (ii) corner/interior boundary
+  placement is a real design knob (corner misses smear inward
+  continuously — max low-corner miss at FPR .049 even at n = 50,000 — so
+  boundary and interior-C must be chosen jointly, and a graded allowance
+  may beat a hard mask); (iii) the composite's guarantee statement is
+  library-relative (Monte Carlo), unless the corner treatment is made
+  exact (an M3-style Beta bound on the corner regions only — cheap
+  there — would make the corner piece theorem-carrying and confine the
+  empirical claim to the interior); (iv) the taper-vs-range decision for
+  C_int above the calibrated range. Companion decisions settled by the
+  same evidence: default C = 1 shipped; the shape-blind auto-C(n) map is
+  dead (Stage S STOP); an M3-below-n≤500 / auto-above hybrid was tested
+  and rejected on economics (M3 costs 1.26–1.69× the C=1 band at n ≤ 500
+  where C=1 is measured-valid, while the safe shape-blind gain above 500
+  is ~2–6% in a mid-n window only); M3 remains the router target for the
+  small-n_eff hole once its boundary is located.
 - **M3 — composition of two exact one-sample (Berk–Jones/equal-local-level)
   bands. Now a production method** —
   `src/studroc_paper/methods/m3_band_rs.py` (tests
@@ -401,9 +481,16 @@ conclusion.
   paper deliverable (non-inferiority against a named benchmark curve).
 - **Fiducial-predictive trim calibration** — falsified in round 4; moved to
   §6. With it, plug-in, worst-case bracketing, and functional-driven rules
-  all dead, the central-α shape spread has no per-dataset candidate left;
-  the offline library calibration (`c_calibration_spec.md`) is the
-  remaining instrument.
+  all dead, the central-α shape spread has no per-dataset candidate left.
+  The offline library calibration (`c_calibration_spec.md`) was then run
+  (Stage S) and STOPped by its own pre-registered gate — see §5 item 2;
+  the composite band above is what replaced it as the live instrument.
+  One narrow adaptive idea survives on validity grounds: a
+  *conservative-only* data-driven guard (e.g. a tail-heaviness trigger at
+  small n that can only lower C / widen the band) is immune to the plug-in
+  co-movement pathology in the invalid direction — bias can cost width,
+  never coverage. It cannot harvest the interior surplus, only soften the
+  small-n routing cliff; unprioritized.
 - **Change the depth functional (the one live construction idea for the
   central-α spread).** Every *level*-side fix is now dead; the measured
   mechanism (draws rougher than truth, contrast concentrated in the lower
@@ -447,8 +534,15 @@ conclusion.
    class-CDF" account (H1) is out and the roughness-mismatch account (H2)
    stands. What remains open: a proof of the H2 mechanism and of the taper
    rate (empirically ~n^{−1/3}; second-order analysis of the min-p
-   functional under a rough-vs-smooth contrast), and a direct α=.05
-   measurement at n ≥ 10⁴ (owned by `c_calibration_spec.md` D3). Round 4
+   functional under a rough-vs-smooth contrast). The direct α=.05
+   measurement at large n (formerly owned by `c_calibration_spec.md` D3)
+   is now done: Stage S measured C*(.05) to n = 50,000 on three shapes;
+   the smooth-shape taper reaches ~1 and crosses it (binormal .95:
+   3.05 → 2.23 → 1.78 → 0.87), while t(2)'s is non-monotone
+   (0.08 → 1.17 → 1.49 → 1.07) — the *envelope* over shapes is therefore
+   not a taper at all, and H2's proof target should be per-shape, with the
+   small-n tail channel (theory doc §7.2a) treated as a separate mechanism
+   outside the roughness account. Round 4
    removed one candidate proxy for that analysis: the effective-looks ratio
    is *not* a rank-path crossing count even in oracle form (+0.69 with C*
    across shapes at fixed n but −0.31 across all 14 cells — wrong sign
@@ -461,6 +555,11 @@ conclusion.
    domination-by-M3 route was ruled out empirically in round 3 (no M3 band
    carrying a non-trivial guarantee fits inside the fiducial band, interior
    or otherwise); the exchangeability/conformal embedding route is untouched.
+   Stage S sharpened the target: no theorem can hold for the current
+   construction at small n (the truth measurably exits the cloud's support
+   at the corners — theory doc §7.2a), so the provable object is either the
+   composite band (§7, with exact corner treatment) or the current band
+   restricted to min(n₀,n₁) above the failure boundary.
 3. The identifiability frontier at the corner, restated in rank space: no
    band can certify a nonvacuous lower bound below ~c/n₀ — connects to the
    old Beta-floor honesty result and bounds the achievable width in the

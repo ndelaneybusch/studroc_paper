@@ -47,7 +47,7 @@ def fiducial_band_rs(
     y_score: NDArray | Tensor,
     alpha: float = 0.05,
     n_draws: int | None = None,
-    trim_exponent: float = 2.0,
+    trim_exponent: float = 1.0,
     k: int | None = None,
     tie_break: TieBreak = "random",
     n_threads: int = 0,
@@ -76,9 +76,12 @@ def fiducial_band_rs(
             rule as the reference implementation (2,000-20,000). A warning
             is raised when the realized trim depth falls below 3.
         trim_exponent: Exponent ``C`` of the level remap
-            ``alpha_eff = 1 - (1 - alpha)**C``; ``2.0`` (default) is the
-            empirically centred choice, ``1.0`` the raw fiducial credible
-            band.
+            ``alpha_eff = 1 - (1 - alpha)**C``; ``1.0`` (default) is the raw
+            fiducial credible band, measured safe on every Stage S screening
+            cell with ``min(n0, n1) >= 500``. Values above 1 trim deeper and
+            are anti-conservative on heavy-tailed shapes (the former default
+            ``2.0`` measured 92-94% at ``alpha = .05`` on t(2) cells at
+            ``n >= 500``, and 75% at ``n = 100``).
         k: Optional output grid size. ``None`` (default) returns the band on
             its native grid of ``n0 + 1`` points; otherwise the band is
             step-resampled conservatively onto ``linspace(0, 1, k)``.

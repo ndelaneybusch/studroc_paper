@@ -24,6 +24,175 @@ is its primary estimand. A negative verdict ends the auto-map effort and keeps
 a documented fixed/default rule. A positive verdict justifies a *reduced*
 Stage A tailored to the observed failure modes; it is not evidence of coverage.
 
+**OUTCOME (2026-08-30, wording revised 2026-08-31). Stage S ran 2026-08-29
+(27 cells, 500–2,000 reps each, parity gate passed; no D6-degenerate
+points, and no ladder-saturation flags fired — though the flag only
+detects j* = 1, and the t(2)/n=100 crossing at j* = 2 is equally
+boundary-pinned; the screening report §5 recommends widening the flag to
+j* ≤ 3) and returned its pre-registered STOP: the auto-map effort is
+ended.** The body of this spec below is retained unchanged as the
+pre-registered record; Stage A and Stage B as designed will not run.
+Verdict and data: `stats/c_calibration_screening_report_stage_s.md`,
+`data/results/c_calibration_20260829/`. Findings folded into
+`stats/fiducial_band_theory.md` §7.2 and `stats/next_method_ideas.md`
+(§5 items 1–3, §7 lead entry). Disposition of the open questions and of
+what remains worth running:
+
+- **Headline findings.** (i) A genuine small-n validity failure that the C
+  coordinate cannot express: t(2)/.95 at n = 100 covers .802 at C = 1,
+  α = .05, with misses at the FPR corners and the truth exiting the entire
+  untrimmed cloud in 1–2% of reps (*unseen tail mass*, not roughness — the
+  designed rough adversary passed at C* = 2.01, so D5's floor conjecture
+  as posed stands; the cell's sub-1 C* = 0.084 is a boundary-pinned
+  artifact one rung off the ladder top, not a shippable level — screening
+  report §2). **C = 1 shipped as the production default 2026-08-30**
+  (it measured ≥ .950 at every cell with min(n0, n1) ≥ 500). (ii) The §8
+  fallback as written ("keep C = 2.0 for n_eff ≤ 1000") is itself
+  falsified: C = 2 measured .917–.940 at α = .05 on t(2) at every n ≥ 500
+  and on binormal .95 at n = 50,000. (iii) The envelope over shapes is
+  pinned at ~1 by t(2) at n = 500 (lower envelope − 1 SE = 0.967 < C*_min
+  = 1.15) and t(2)'s taper is non-monotone (0.08 → 1.17 → 1.49 → 1.07), so
+  no member of the §2 shipping family is both safe and useful. The mean
+  oracle gain (9.5% at n = 500) is real but reachable only per-shape.
+- **Decision dispositions.** D1: moot (no map ships; C remains the manual
+  coordinate). D2: the screen's directional probe confirmed round 4 —
+  imbalance direction is real on binormal .90 (majority-negative 4500×500
+  cuts C* to 1.69 vs 2.2–2.7) — but with no map to fit, no reduction is
+  frozen; the finding transfers to the composite-band successor. D3:
+  resolved — the α = .05 large-n arm is measured to n = 50,000; the
+  smooth-shape taper reaches and crosses 1 (binormal .95: C* = 0.87 ±
+  0.12 at n = 50,000, C = 1 coverage .951), the *envelope* is not a taper.
+  D4: moot. D5: stands as posed (the trapezoid did not push C* below 1);
+  superseded in importance by the validity failure of (i), which the C
+  coordinate cannot express. D6: never triggered (allowance
+  attribution ≈ 0 everywhere; no unconstrained cells).
+- **What remains worth running on this infrastructure** (details, cell
+  grids, and decision rules in the FOLLOW-UP RUN PLAN below; ordered by
+  value to the final `simulation_spec.md` run):
+  1. **Locate the small-n validity boundary** of the C = 1 default and
+     produce a conservative, library-relative routing threshold.
+  2. **Held-out validation of C = 1** — the designer-bias guard for the
+     shipped default, with M3 width economics alongside.
+  3. **The composite-band derisk** — posed as a *finite-range* question
+     (Theorem 7 forces interior coverage → (1−α)^C for any fixed
+     interior C > 1, so no fixed-C composite can be an unrestricted
+     method; the corner treatment tested is the untrimmed cloud envelope,
+     an empirical widening, not an exact bound).
+  4. *(Deferred)* Imbalance with min(n0, n1) > 500 — Stage S already
+     found C = 1 at nominal under more severe imbalance (minority 500);
+     run only if the final-run guidance turns out to need it.
+- **Everything else below is obsolete:** the Stage A fitting grid and
+  protocol (§6), Stage B as confirmation of a frozen map (§7), the
+  acceptance criteria A1–A3 (§8; A4's escalation clause was exercised),
+  the large-n dense arm, and the §10 frozen-map artifact deliverable
+  (deliverable 2's report exists as the screening report; no map artifact
+  will exist).
+
+**FOLLOW-UP RUN PLAN (2026-08-30; revised 2026-08-31 after external
+review — the revision narrows the composite question to a finite range,
+replaces the top-up gate and acceptance rules with coverage-driven
+noninferiority inference, fixes the stitched band's monotone closure,
+slims the held-out grid, and defers the imbalance item).** Implemented in
+`scripts/c_calibration/followup_runs.py` (subcommands `boundary`,
+`heldout`, `composite`, `imbalance`, `report`; `all` = boundary, heldout,
+composite, report), tests in `tests/test_followup_runs.py`, writing to
+`data/results/c_calibration_followup_20260830/<item>/`. All runner items
+keep the Stage S machinery: same study seed and per-(stage, cell name,
+rep) seeding (new cell names ⇒ fresh streams), same ladder kernel,
+production trim-grid rule, M budget `m_budget(n0, .05)` (α grid
+{.50, .20, .10, .05}), same evaluation conventions (native grid
+t_k = k/n0, pointwise truth check, area = mean band width over grid
+points). Cells resume and extend; dry-run budget ≈ 7 idealized
+core-saturated hours plus top-ups.
+
+**Predeclared inference rules (all items).** Per cell, the estimand is
+the C = 1 arm's coverage at α = .05. Verdict PASS iff point ≥ .94 AND
+Wilson-95% lower bound ≥ .925 (the A1-letter noninferiority bar);
+MARGINAL if the Wilson CI still straddles .94 at the replication cap;
+FAIL otherwise; the strict ≥ .95 point bar is reported alongside.
+**Sequential replication replaces the runner's SE(C*) gate** (that gate
+targets the retired auto-map estimand): cells top up in batches while
+the Wilson CI straddles .94 — boundary/imbalance 1,000 → 3,000, heldout
+2,000 → 4,000, composite 500 → 2,000. All claims are library-relative.
+
+1. **`boundary` — locate the C = 1 small-n validity boundary** (9 cells):
+   t2_95 at n ∈ {150, 250, 350} (bracket the known 100-broken/500-fine
+   pair); t3_90 at n ∈ {100, 250} (milder tail, never measured below
+   500); two NEW registry shapes probing whether the boundary moves
+   above 500 — `t15_95` (t df = 1.5, AUC .95, heavier tail) and `t2_99`
+   (t df = 2, AUC .99, higher AUC) at n ∈ {250, 500}. The report gives,
+   per shape, the smallest tested n from which all larger tested n PASS,
+   and the **global routing threshold = the worst (largest) such n over
+   the tested shapes** — conservative and explicitly library-relative
+   (routing at runtime can only see sample sizes, so the operational
+   threshold must be worst-case over shapes, and shapes outside the
+   library can move it). An **M3 arm** runs on every boundary cell (same
+   seeds and data, α ∈ {.5, .05}, rep count paired to the fiducial arm's
+   final post-top-up count) so the routing target's width economics are
+   measured where routing would engage; its coverage column is a
+   regression check (Prop. 12 already guarantees it). **If t15_95 or
+   t2_99 fails at n = 500, the min(n0,n1) ≥ 500 safety claim of the
+   OUTCOME entry is library-limited and theory doc §7.2(c) must be
+   amended** — the run's most important possible finding.
+2. **`heldout` — designer-bias guard for the shipped C = 1 default**
+   (10 cells): all six §5.1 held-out shapes at n = 500; a
+   mechanism-diverse sentinel subset (t3_90, bimodal_80_sep15, the LHS
+   Weibull member) at n = 5,000; the §7 ties cell (binormal_90 at Q = 20,
+   random tie-break, n = 1,000). The n = 1,000 shape rows of the original
+   plan were dropped on review (little information between the routing
+   boundary and the sentinels). Fresh seed streams. α = .5 reported as
+   the conservative-dispersion check; M3 width economics on the n ≤ 1,000
+   rows. A FAIL traceable to a held-out shape is a library gap in the
+   §7.2(c) claim and escalates as in item 1.
+3. **`composite` — derisk a *finite-range* composite band** (9 core
+   cells at 500 reps + 2 large-n sentinels, no kernel change). Framing
+   forced by theory: Theorem 7 drives interior coverage to (1−α)^C for
+   any fixed interior C > 1 (.926/.903/.880 at C = 1.5/2/2.5, α = .05),
+   so **no fixed-C composite is a candidate for an unrestricted method**
+   — the declared question is whether a candidate exists on a declared
+   finite range, with the production form clamping C_int to 1 (or
+   tapering) above it. The corner treatment tested is the **untrimmed
+   cloud envelope + allowances — an empirical widening, not an exact
+   distribution-free bound**; the theorem-capable variant (exact
+   M3/Beta-style corner arm) is deferred to the full spec. Per rep, ONE
+   fiducial cloud (same kernel seed) is trimmed at the corner exponent
+   (1e-4), at C = 1 (full-curve reference/parity arm), and at each
+   interior C ∈ {1.5, 2.0, 2.5}; each corner cut ∈ {(.02, .95),
+   (.05, .90), (.10, .85)} stitches corner-wide with interior-trimmed
+   under **monotone closure of both edges** (running max; the lower-edge
+   closure is a valid tightening that leaves the per-rep coverage event
+   unchanged — tested) and is scored exactly, removing the
+   worst-only-logging bias of the Stage S mid-band estimates. Core
+   cells: t2_95 at n ∈ {100, 500, 5000} and 500×4,500; binormal_95 at
+   {500, 5000}; kink_80, trapezoid_q10_90, binormal_60 at 500.
+   Sentinels: t2_95 and binormal_95 at n = 20,000 (250 reps, reduced
+   configs: cut (.05,.90) × C ∈ {1.5, 2}) — outside the candidate range,
+   they measure the Theorem-7 erosion direction. Per-rep covered/area
+   records are retained (common-random-number pairing) and reuse
+   validates the design constants (refuse-to-mix). **Decision rule: a
+   config is a candidate iff every core cell PASSes the coverage bar
+   above AND its pooled paired width change vs the full-curve C = 1 arm
+   is negative** (paired per-rep differences, pooled SE reported); among
+   candidates prefer the largest saving, breaking ties toward the
+   narrower cut. The parity arm must reproduce the Stage S C = 1
+   coverages within 3 combined SEs or the item is void. A surviving
+   candidate justifies the full composite-band spec (held-out + large-n
+   confirmation, taper/range decision, corner-treatment refinement,
+   possibly the exact corner arm); **"no survivor" is evidence against
+   this coarse (cut × C) family only**, not against the composite idea.
+4. **`imbalance` — DEFERRED** (4 cells specced: binormal_90 and t2_95 at
+   5,000×1,500 and 1,500×5,000). Stage S found C = 1 at nominal under
+   more severe imbalance (minority 500), so this is unlikely to change
+   guidance; excluded from `all`, runnable on demand if the final-run
+   guidance turns out to need it.
+
+Items 1–2 gate the method-usage guidance the paper must state (where
+C = 1 is claimed measured-safe, where M3 is the routed recommendation);
+item 3 decides whether the roster's fiducial entry is the plain C = 1
+band or a range-limited composite. Findings fold into
+`fiducial_band_theory.md` §7.2 and `next_method_ideas.md` §5/§7 as
+amendments to the same entries the OUTCOME block names.
+
 ---
 
 ## 1. Objective and non-objectives

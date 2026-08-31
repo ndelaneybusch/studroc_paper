@@ -4,8 +4,12 @@
 `src/studroc_paper/methods/fiducial_band.py` (implementation). This document
 develops the probabilistic structure behind the method: what is exactly true,
 what is asymptotically true, what is finite-sample heuristic, and what is
-open. Last substantive revision 2026-08-23, after a full-text reading of the
-key antecedent literature (§14).*
+open. Last substantive revision 2026-08-30, folding in the Stage S
+calibration screen (§7.2: the small-n heavy-tail validity failure that
+the $C$ coordinate cannot express, the retirement of the $C=2$ default,
+and the interior-only, finite-range survival of the deep-trim headroom);
+previous major revision 2026-08-23, after a
+full-text reading of the key antecedent literature (§14).*
 
 **Status tags.** Every claim carries one of:
 - **[Exact]** — proved here or a one-step consequence of a classical result;
@@ -647,7 +651,7 @@ plus the large-$n$ ladder (M = 2500, central $\alpha$):
 |---|---|---|
 | $n=25$ | 3.1 | 4.6 |
 | $n=500$ (binormal/bimodal/kink) | 1.9–2.2 | 2.3–2.6 |
-| $n=500$, t(2) shape | 1.66 | 1.84 |
+| $n=500$, t(2) shape | 1.66 | 1.84 → 1.17 ± 0.21 (Stage S re-measurement, 2,000 reps; §7.2) |
 | $n=2000$–$5000$ | 1.71–1.79 | 1.95–2.38 |
 | $n=10{,}000$ | $1.49 \pm 0.17$ | (unmeasured) |
 | $n=20{,}000$ | $1.32 \pm 0.16$ | (unmeasured) |
@@ -736,7 +740,9 @@ Consequences: coverage is log-linear in $C$; the entire coverage-vs-$C$
 profile at a given (shape, $n_0$, $n_1$) is one number $C^\*(n)$;
 $C=1$ gives $(1-\alpha)^{r_n} \ge 1-\alpha$ — *within the model*, coverage
 at least $1-\alpha$ at every $n$, converging from above (a model
-consequence, not a finite-sample proof); $C>1$ covers at least $1-\alpha$ iff
+consequence, not a finite-sample proof — and now measurably false outside
+the model's premises: §7.2(a) exhibits a heavy-tail small-$n$ cell where
+the truth exits the cloud's support and $C=1$ covers .802); $C>1$ covers at least $1-\alpha$ iff
 $C \le C^\*(n)$; the asymptotic deficit under the roughness account
 ($r_n \to 1$) is $1-(1-\alpha)^C$. It also explains why the Šidák-form
 parametrization fit the experiments so cleanly: the exponent scale is the
@@ -767,6 +773,11 @@ $\alpha=.05$, using $(\delta_0, \gamma) = (1.26, 0.32)$:
 | n/class | 500 | 2000 | 5000 | $2\cdot10^4$ | $5\cdot10^4$ | $5\cdot10^5$ | $\infty$ |
 |---|---|---|---|---|---|---|---|
 | coverage | .956 | .945 | .938 | .929 | .923 | .914 | .9025 |
+
+*(Post-hoc confirmation: the Stage S screen — §7.2 — later measured $C=2$
+at $n = 5\cdot10^4$, α = .05, 1,500–2,000 reps: .917/.914/.924 on
+binormal .95 / kink / t(2). The $5\cdot10^4$ projection of .923 was made
+before those cells ran.)*
 
 The crossover below nominal sits near $n \approx$ 1000–2000; beyond it the
 erosion is $\approx$ 1pp per decade of $n$ (slow because coverage depends
@@ -800,21 +811,132 @@ second-order analysis eventually derives $r_n$ must characterize the rate
 of *deep tail excursions* of the rank path, not its median-scale
 oscillation.
 
-**Production guidance derived from this section.** $C=1$ is the
-conservative, asymptotically calibrated fallback (never measured below
-$.967$ at $\alpha=.05$); fixed $C=2$ is centred in the $n \sim 10^2$–$10^3$
-regime and measurably over-trims at central $\alpha$ for $n \ge 10^4$
-(coverage .41/.38 at $n = 10^4/2\cdot10^4$ against nominal .50, at
-$C=2.2$, while $C=1$ gives .633/.583); a tapered
-$C(n) = 1 + \delta_0 (n_{\mathrm{eff}}/500)^{-\gamma}$ is the indicated
-production choice, with constants to be frozen by the offline study of
-`c_calibration_spec.md`.
+**Production guidance derived from this section — revised by §7.2.**
+$C=1$ is the production default (asymptotically calibrated; measured
+$\ge .950$ at every Stage S cell with $\min(n_0,n_1) \ge 500$, but *not*
+universally conservative — see §7.2(a) for the small-$n$ heavy-tail
+failure, where M3 is the indicated method). Fixed $C=2$ — the former
+default — is refuted: it measurably over-trims at central $\alpha$ for
+$n \ge 10^4$ (coverage .41/.38 at $n = 10^4/2\cdot10^4$ against nominal
+.50, at $C=2.2$, while $C=1$ gives .633/.583) *and* under-covers at
+$\alpha = .05$ on heavy-tailed shapes at every measured $n$ (§7.2(b)).
+The once-indicated tapered
+$C(n) = 1 + \delta_0 (n_{\mathrm{eff}}/500)^{-\gamma}$ is withdrawn: the
+Stage S screen found the shape envelope pinned at ~1 by t(2) at n = 500
+and the t(2) taper non-monotone, so no taper of this family is both safe
+and useful (§7.2(d)). The surviving deep-trim opportunity is
+interior-only (§7.2(e)).
 
 **Residual shape spread. [Empirical]** After any *level-only* remap, a
 $\pm$10–15pp spread across shapes remains at central $\alpha$ (the spread
 exists before recalibration too; the remap removes bias, not dispersion).
 Under the roughness account the spread is the shape-dependence of the
 roughness contrast; §12 lists the corresponding open problem.
+
+### 7.2 The Stage S screen (2026-08-29): a second failure channel at the tails, and where the C-headroom actually lives
+
+*All claims in this subsection are* **[Empirical]** *: the 27-cell Stage S
+screen of `c_calibration_spec.md` (10-shape library at n = 500; taper arm
+n = 100–50,000 on three shapes; imbalance arm at minority size 500;
+500–2,000 reps per cell via the ladder machinery, α = .05 primary), plus
+two follow-up analyses re-using its stored per-rep profiles. Data:
+`data/results/c_calibration_20260829/`; verdict:
+`stats/c_calibration_screening_report_stage_s.md`. The screen's
+pre-registered verdict was STOP: no shape-blind level map worth fitting.*
+
+**(a) $C = 1$ is not universally safe at small n — a validity failure the
+$C$ coordinate cannot express.** At the t(2)-shape, AUC .95, n = 100/100
+cell, the $C=1$ band covers **.802** at nominal .95 (.688 at nominal .80,
+.742 at nominal .90). (The cell's $C^\*(.05) = 0.084$ is a
+boundary-pinned artifact — the crossing lands one rung off the ladder
+top, where the coverage profile never reaches .95 without the trim
+collapsing entirely — so the D5 floor conjecture *as posed* is not
+falsified by it; see below for the trapezoid, which is what D5 actually
+asked about. The operative finding is the coverage deficit itself.)
+Mechanism, read from the per-rep records: the truth
+falls *outside the entire untrimmed cloud* in 1–2% of reps, and within the
+deepest 2 of ~6,700 draws in 5%; misses concentrate at the two grid
+corners (42% at FPR ≤ .02, 55% at FPR ≥ .90); the CP allowance contributes
+nothing (allowance attribution 0). This is a channel §7's roughness
+account does not describe: not a depth-law mismatch between smooth truth
+and rough draws, but *unseen tail mass* — with 100 samples per class, a
+heavy-tailed score distribution puts curve mass at the corners that no
+draw from the observed ranks reaches. The erosion law's "coverage
+$\ge 1-\alpha$ at $C=1$ for every $n$" consequence fails here because
+(A2)–(A3) fail: the truth's depth is not merely stochastically deeper, it
+exits the cloud's support. The effect is shape-specific at fixed n
+(binormal .95 covers .992 and the kink .985 at the same n = 100) and
+gone by n = 500 for t(2) (.958). Notably the *trapezoid* truth — the
+designed rough adversary, the shape D5's floor conjecture was actually
+about — sits comfortably at $C^\* = 2.01$: legitimate roughness is
+harmless; tail mass is not, and it breaks the band in a way no trim
+level can repair or express.
+
+**(b) Fixed $C=2$ is refuted as a default.** On t(2) cells it measures
+.932/.940/.924 at n = 500/5,000/50,000 and .918–.928 on the imbalance
+cells (all α = .05, 2,000 reps), and .917 on plain binormal .95 at
+n = 50,000. The §7.1 projection (.923 at $n = 5\cdot10^4$) is confirmed
+almost exactly — measured .914–.924 across the three taper shapes — which
+validates the erosion law's tail but retires the old default. **Production
+default changed to $C=1$** in both implementations (same commit as this
+revision).
+
+**(c) Status of $C=1$.** Measured $\ge .950$ at *every* screen cell with
+$\min(n_0,n_1) \ge 500$ (range .950–.981 over 10 shapes, 8 imbalance
+cells, and n up to 50,000), with the surplus shrinking to ~0 at
+n = 50,000 (.951/.954/.960) — the Theorem 7 approach-from-above with a
+vanishing cushion, now observed. The former claim "never measured below
+.967" is retired: .950–.958 at the large-n and imbalance cells, and the
+(a) failure below $\min(n_0,n_1) \approx 500$ (boundary unmeasured
+between 100 and 500). Until that boundary is located, small-$n_{\mathrm{eff}}$
+use should prefer the exact M3 band (Prop. 12).
+
+**(d) No shape-blind level map survives.** Per-shape $C^\*(.05)$ at
+n = 500 spans 1.17 (t(2); 2,000 reps — superseding the noisy 1.84 of the
+14-cell table) to 3.0 (binormal .60); the library lower envelope minus one
+bootstrap SE is 0.97. The t(2) taper is *non-monotone*
+(0.08 → 1.17 → 1.49 → 1.07 over n = 100 → 50,000), so the tapered-$C(n)$
+family cannot represent the envelope. Re-evaluating arbitrary exponents on
+the stored profiles: the largest C holding ≥ .95 point coverage on all
+three taper shapes is ≈ 1.5 at n = 5,000 (worth ~4% area) and 1.0 at
+n = 50,000 and at every minority-500 imbalance cell. The width a level
+map can recover shape-blind is a few percent in a mid-n window — far
+short of the per-shape oracle (9.5% mean at n = 500).
+
+**(e) The interior headroom survives; the binding constraint is
+corner-local.** Restricting attention to FPR ∈ (.05, .90): the fraction
+of reps whose *worst* miss under $C=2$ lies in that interior is ≤ 3.5% at
+every one of the 27 cells (nominal budget 5%) — including 1.0% at the
+catastrophic t(2) n = 100 cell — and the large shape spread of (d)
+compresses correspondingly. A union-bound composite (corners untrimmed,
+interior at $C=2$) clears .95 at every cell (worst ≈ .953). Caveat: the
+records log only each rep's worst-miss location, so interior miss rates
+are optimistic by an estimated ~0.1–0.3pp (independence heuristic); the
+definitive measurement builds the actual stitched band per rep (the
+follow-up plan in `c_calibration_spec.md`). Two limits bound the claim.
+First, **the Theorem 7 erosion applies to any fixed interior $C > 1$
+exactly as it did to the full-curve $C = 2$**: interior coverage tends to
+$(1-\alpha)^C$ (.926/.903/.880 at $C = 1.5/2/2.5$, $\alpha = .05$), so
+the headroom measured here is *finite-range* — flat over
+$n = 100$–$50{,}000$ because the erosion is slow (~1pp/decade), not
+absent — and a shipping composite must taper $C_{\mathrm{int}} \to 1$ or
+clamp to 1 above a declared range. Second, the corner treatment measured
+is the *untrimmed cloud envelope + allowances* — an empirical widening,
+not an exact distribution-free bound; a theorem-capable composite needs
+an exact (M3/Beta-style) corner arm or explicitly library-relative
+claims. With those bounds stated: **the deep-trim gains (~7–8% area at
+$C=2$ vs $C=1$) appear recoverable on the interior over a declared
+finite range if the corners are widened to carry the tail uncertainty**
+— a construction change (a composite band), not a level map; see
+`next_method_ideas.md` §5/§7.
+
+**(f) A hybrid router (M3 below n = 500, $C>1$ above) was tested and
+rejected on economics.** M3 measures 1.26–1.69× the $C=1$ band's area on
+the n ≤ 500 screen cells (realized coverage ~1.000 — the theorem holds
+with slack), while (d) caps the n > 500 side's gain at ~2–6% in a mid-n
+window: the hybrid pays its width where bands are widest and harvests
+where the headroom has tapered out. M3's correct role remains the
+small-$n_{\mathrm{eff}}$ / guarantee-demanding regime of (c).
 
 ---
 
@@ -1009,16 +1131,21 @@ main open *width* problem (§12), distinct from all coverage questions.
 
 ## 11. Behavior over n, AUC, and shape — assembled
 
-- **Broad stability in $n$ has structural support, but is not a theorem.**
-  The cloud pivots are exact at every $n$ (Prop. 3), the corner devices are
-  finite-sample constructions at the forced scale (§8), and Theorem 7
-  anchors the raw $C=1$ band at large $n$. Measured: $\alpha=.05$ coverage
-  $.967$–$.993$ from $n=25$ to $5000$. The envelope's drift
-  ($1.00 \to 0.83$) came precisely from asymptotics-based components whose
-  regimes shifted with $n$. The important counterweight is §7:
-  $C^\*(n)$ demonstrably drifts, so central-$\alpha$ calibration under fixed
-  $C=2$ is itself sample-size dependent and cannot be inferred from the
-  exact marginal pivots.
+- **Broad stability in $n$ has structural support, but is not a theorem —
+  and has one measured exception.** The cloud pivots are exact at every $n$
+  (Prop. 3), the corner devices are finite-sample constructions at the
+  forced scale (§8), and Theorem 7 anchors the raw $C=1$ band at large $n$.
+  Measured: $\alpha=.05$ coverage at $C=1$ of $.967$–$.993$ from $n=25$ to
+  $5000$ on the round 1–4 cells, and $.950$–$.981$ on every Stage S cell
+  with $\min(n_0,n_1) \ge 500$ up to $n = 50{,}000$. The exception is
+  §7.2(a): heavy-tailed high-AUC shapes below
+  $\min(n_0,n_1) \approx 500$, where the truth can exit the cloud's
+  support at the grid corners ($.802$ at t(2)/.95, $n=100$). The
+  envelope's drift ($1.00 \to 0.83$) came precisely from asymptotics-based
+  components whose regimes shifted with $n$. The important counterweight
+  is §7: $C^\*(n)$ demonstrably drifts, so central-$\alpha$ calibration
+  under a fixed $C>1$ is itself sample-size dependent and cannot be
+  inferred from the exact marginal pivots.
 - **AUC / early slope.** The envelope's AUC-degradation channel (threshold
   location at the first grid points × steep slope) is carried here by the
   F-side fiducial tail, whose marginals are the exact Beta laws
@@ -1242,7 +1369,12 @@ main open *width* problem (§12), distinct from all coverage questions.
    (§7), so the analysis must target deep tail excursions of the rank
    path.
 2. **A finite-sample coverage theorem** for the trimmed tube plus
-   allowances. The domination-by-M3 route is ruled out empirically; the
+   allowances. §7.2(a) sharpens what any such theorem must confront: at
+   small $n$ under heavy tails the truth exits the cloud's support at the
+   grid corners, so no theorem can hold for the current construction
+   without either a corner widening (the composite-band direction of
+   §7.2(e)) or an $n_{\mathrm{eff}}$ restriction. The domination-by-M3
+   route is ruled out empirically; the
    exchangeability/conformal embedding route remains (the construction
    conditions on $\Lambda$, which is exactly what breaks exchangeability;
    quantifying the gap is the problem). A constructive relaxation worth
