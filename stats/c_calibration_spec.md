@@ -132,13 +132,17 @@ escalation clause and invalidated the surface's mechanism.** Full results:
   to confirm are now the (AUC, n) wedge rule of the follow-up report §5,
   not a contour read off the smooth.
 - **Successor plan (2026-09-02):** the next round is specced in
-  `stats/hybrid_floor_spec.md` ("Stage F") — Study A learns the M3-floor
-  region geometry as a function of (n_pos, n_neg, AUC) and freezes a rule;
-  Study B derisks the frozen rule on fresh seeds (the E1 role); Study C
-  tests cross-family transfer (the E3 role). Item 5's router confirmation
-  is folded into its decision tree as the fallback branch. T0's doc
-  amendments (theory doc §7.3, both band docstrings, the roster in
-  `next_method_ideas.md` §7) landed 2026-09-02.
+  `stats/hybrid_floor_spec.md` ("Stage F") — an information-gathering
+  study, not an arbiter (the final suite and its authors decide methods).
+  Study A learns the M3-floor region geometry as a function of
+  (n_pos, n_neg, AUC) and records a fixed rule; Study B measures the
+  fixed rule's out-of-sample repair, price, and residual-miss geometry
+  (the improvement loop's raw material); Study C measures cross-family
+  transfer of the repair, the mechanism, and the geometry. Item 5's
+  router-cutoff confirmation stays on the books for whenever routing
+  language enters guidance. T0's doc amendments (theory doc §7.3, both
+  band docstrings, the roster in `next_method_ideas.md` §7) landed
+  2026-09-02.
 
 **FOLLOW-UP RUN PLAN (2026-08-30; revised 2026-08-31 after external
 review — the revision narrows the composite question to a finite range,

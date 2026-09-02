@@ -476,8 +476,8 @@ in production, none silently dropped:
   where C=1 is measured-valid, while the safe shape-blind gain above 500
   is ~2–6% in a mid-n window only); M3 remains the router target for the
   small-n_eff hole once its boundary is located.
-- **The (AUC, n) routing rule (roster #3) — measured, conservative, and
-  the fallback if the M3 floor disappoints.** Route on an *upper
+- **The (AUC, n) routing rule (roster #3) — measured, conservative; its
+  value relative to the M3 floor is an open empirical question.** Route on an *upper
   confidence bound* of the empirical AUC (per-dataset adaptivity is
   admissible here only because mis-routing to M3 costs width, never
   coverage): AUC_ub < .88 → fiducial band at any n; < .96 → iff n > 600;

@@ -148,9 +148,11 @@ item 5).
 
 ## Stage F (2026-09-02): the localized M3 floor
 
-The boundary study's successor is specced in `stats/hybrid_floor_spec.md`:
+The boundary study's successor is specced in `stats/hybrid_floor_spec.md`
+(an information-gathering study — the final suite arbitrates methods):
 region-geometry exploration over (n_pos, n_neg, AUC) with a pre-committed
-60/40 selection/holdout split, a frozen-rule derisk on fresh seeds, and a
-cross-family transfer test. It reuses this directory's seeding, band, and
+60/40 selection/holdout split, out-of-sample measurement of the recorded
+region rule (repair, price, residual-miss geometry), and a cross-family
+transfer test. It reuses this directory's seeding, band, and
 classification machinery; new code is the miss-interval recorder and the
 offline geometry/price analysis.
