@@ -1,0 +1,32 @@
+{
+ "cell": "heldout--lhs2_weibull--n500",
+ "arm": "m3",
+ "reps": 2000,
+ "per_alpha": {
+  "0.5": {
+   "coverage": 0.991,
+   "coverage_se": 0.002111752826445369,
+   "viol_low": 0.0035,
+   "area": 0.17671039277403458
+  },
+  "0.05": {
+   "coverage": 1.0,
+   "coverage_se": 0.0,
+   "viol_low": 0.0,
+   "area": 0.23787410906775983
+  }
+ },
+ "runtime_s": 15.5,
+ "provenance": {
+  "git_hash": "211692c76e2261897055d0cce5b26f02ddbd4df9",
+  "versions": {
+   "numpy": "2.3.5",
+   "scipy": "1.16.3",
+   "fiducial-core": "0.1.0",
+   "studroc_paper": "0.1.0"
+  },
+  "python": "3.12.11",
+  "study_seed": 20260822,
+  "created": "2026-09-01T09:37:14-0700"
+ }
+}

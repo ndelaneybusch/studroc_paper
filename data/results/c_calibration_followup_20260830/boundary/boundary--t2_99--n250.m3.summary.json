@@ -1,0 +1,32 @@
+{
+ "cell": "boundary--t2_99--n250",
+ "arm": "m3",
+ "reps": 1000,
+ "per_alpha": {
+  "0.5": {
+   "coverage": 0.985,
+   "coverage_se": 0.0038438262187565153,
+   "viol_low": 0.0,
+   "area": 0.05709767448657792
+  },
+  "0.05": {
+   "coverage": 1.0,
+   "coverage_se": 0.0,
+   "viol_low": 0.0,
+   "area": 0.08491309202313917
+  }
+ },
+ "runtime_s": 3.7,
+ "provenance": {
+  "git_hash": "211692c76e2261897055d0cce5b26f02ddbd4df9",
+  "versions": {
+   "numpy": "2.3.5",
+   "scipy": "1.16.3",
+   "fiducial-core": "0.1.0",
+   "studroc_paper": "0.1.0"
+  },
+  "python": "3.12.11",
+  "study_seed": 20260822,
+  "created": "2026-09-01T07:49:21-0700"
+ }
+}
