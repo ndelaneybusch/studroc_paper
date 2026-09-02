@@ -88,6 +88,50 @@ what remains worth running:
   (deliverable 2's report exists as the screening report; no map artifact
   will exist).
 
+**FOLLOW-UP OUTCOME (2026-09-01). Items 1-3 ran; item 1 fired its own
+escalation clause and invalidated the surface's mechanism.** Full results:
+`stats/c_calibration_followup_report.md`. Headlines:
+
+- **Item 1 escalated as pre-registered.** `t2_99` (df 2, AUC .99) covers
+  **.690 at n = 500** and .842 at n = 1000, passing only at n = 2500. The
+  spec's own trigger — "if an anchor fails at n = 500, the
+  min(n0,n1) >= 500 safety claim is library-limited and theory doc §7.2(c)
+  must be amended" — is met. Not an artifact: M3 covers .998-1.000 on the
+  same seeds, the ladder is unpinned (min_j 16-17), and misses are
+  lower-edge. Cross-family spot checks pass, so the t-family is binding.
+- **The (1b) surface is misspecified, not merely imprecise.** Its
+  sign constraint `b1 >= 0` (coverage nondecreasing in n) is **false**: at
+  fixed shape t(4.69)/.986, coverage runs .993, .947, .903, .823, .847 at
+  n = 150..2000. The unsafe set is a curved wedge in (AUC, n) reaching past
+  n = 6,000, not a small-n half-space, so no contour `n*(df, AUC)` and no
+  n-only routing threshold can express it. Refitting with thin-plate and GP
+  smooths improves holdout deviance 46%/59% but none is usable for routing
+  (all remain 15-27 points optimistic at the t2_99 anchors): of 95 LHS cells
+  exactly one sat in the cliff region, so the design, not the smoother, was
+  binding. The trim-grid thinning at K > 2001 was tested as an artifact
+  explanation and **rejected** (no discontinuity across the switch).
+- **Item 2 passed** (10/10 cells, worst .967) **with a scope limit that
+  must travel with the result**: the held-out library tops out at AUC .90
+  and never enters the failing region, so it validates C = 1 for
+  AUC <= .90 at n = 500, not at n = 500 generally.
+- **Item 3 has a finite-range candidate.** Parity holds on all 9 core
+  cells. The generated report's "no survivor" is driven entirely by the
+  n = 100 cell; on the declared range n >= 500, `b0.02-0.95_C2.5` PASSes
+  every cell at -6.8% pooled width. The n = 20,000 sentinels show the
+  saving inverting, supporting the Theorem-7 clamp. The implemented
+  decision rule pools all core cells and so cannot express a range lower
+  bound — a code limitation, not a finding.
+- **A localized M3 floor is the strongest new lead.** Replay shows the
+  misses concentrate at the *upper* FPR end (peak at 1-FPR ~ .002-.04) plus
+  a small left-corner cluster, and M3 covers at 100% of the miss points.
+  Unioning with M3 on `FPR in [0, .005] u [.5, 1]` lifts coverage to
+  .955-.990 on five failing cells at **+6.4% mean width against +28-46%
+  for full M3**, and provably cannot do worse than the C = 1 band. Five
+  cells, region selected in-sample — the validation run is the priority.
+- **Item 5 is unchanged in necessity and changed in target**: the cutoffs
+  to confirm are now the (AUC, n) wedge rule of the follow-up report §5,
+  not a contour read off the smooth.
+
 **FOLLOW-UP RUN PLAN (2026-08-30; revised 2026-08-31 after external
 review — the revision narrows the composite question to a finite range,
 replaces the top-up gate and acceptance rules with coverage-driven

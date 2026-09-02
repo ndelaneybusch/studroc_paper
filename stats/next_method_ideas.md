@@ -1,17 +1,21 @@
 # The Rank-Space Fiducial ROC Band: Working Model and Evidence
 
-*Status (2026-08-31): consolidated after four laptop experiment rounds plus
-the Stage S calibration screen (2026-08-29; 27 cells, 500–2,000 reps each,
-`data/results/c_calibration_20260829/`, theory-doc §7.2). Stage S changed
-the production default to **C = 1**, found a small-n heavy-tail validity
-failure that no trim level can express or repair (the D5 floor conjecture
-as posed stands), returned STOP on the shape-blind auto-C map, and
-relocated the surviving width opportunity to the band's interior over a
-finite range — see
-§5 items 1–3 and the composite-band entry at the top of §7. This
-document is a working model of what the full simulation suite should show,
-based on what has actually been measured — with the uncertainties stated. The
-full suite is the arbiter; nothing here is a result of that suite yet.*
+*Status (2026-09-01): consolidated after four laptop experiment rounds, the
+Stage S calibration screen (2026-08-29; 27 cells,
+`data/results/c_calibration_20260829/`, theory-doc §7.2), and the
+follow-up boundary study (2026-09-01; 257 student-t cells / 64,625 reps,
+`data/results/c_calibration_followup_20260830/`, report
+`stats/c_calibration_followup_report.md`). Stage S changed the production
+default to **C = 1**, returned STOP on the shape-blind auto-C map, and
+relocated the surviving width opportunity to the band's interior. The
+follow-up then **enlarged the validity failure from a small-n hole to a
+curved (AUC, n) wedge and falsified monotonicity of coverage in n**, which
+retires the "safe above min(n₀,n₁) = 500" framing throughout this document
+(§1, §3 P-A, §5 items 1 and 6) and promotes a localized M3 floor over the
+composite band as the lead fix (§7). This document is a working model of
+what the full simulation suite should show, based on what has actually been
+measured — with the uncertainties stated. The full suite is the arbiter;
+nothing here is a result of that suite yet.*
 
 *Theory companion: `stats/fiducial_band_theory.md` — guarantees, rates,
 corner impossibility results, and the analysis of the C-remap.*
@@ -67,10 +71,17 @@ when the realized trim depth j < 3; rule of thumb M ≳ 5/ℓ(K,α), ≈10,000 a
 n₀ = 5,000) and the exponent C = 1 (the identity map; values above 1 are a
 manual option, anti-conservative on heavy-tailed shapes — see §5 item 2).
 There are no variance floors, gates, jurisdiction constants, or ε
-regularizers. Known validity boundary: below min(n₀,n₁) ≈ 500 (exact
-boundary unmeasured between 100 and 500), heavy-tailed high-AUC shapes can
-under-cover badly even at C = 1 (80.2% at t(2)/.95, n = 100, α = .05 —
-theory doc §7.2a); the exact M3 band is the indicated method there.
+regularizers. **Known validity boundary (revised 2026-09-01 — it is not a
+sample-size threshold).** Heavy-tailed high-AUC shapes under-cover at C = 1
+inside a *curved wedge in (AUC, n)* that widens with AUC and reaches past
+n = 6,000: worst measured .645 (t(2)/.99, n = 250) and .690 at n = 500, and
+at AUC ≥ .975 no tested n up to 6,656 is safe. Coverage is **not monotone
+in n** — at fixed shape t(4.69)/.986 it falls .993 → .823 from n = 150 to
+1,200 — so the former "below min(n₀,n₁) ≈ 500" framing is wrong in kind,
+not just in its constant. The measured routing rule and the localized M3
+floor that repairs the failures are in
+`stats/c_calibration_followup_report.md` §5 and §7; the exact M3 band
+remains the indicated fallback inside the wedge.
 
 ---
 
@@ -133,18 +144,19 @@ binormal cells and 0.000 on bimodal, t(2), and kinked truths).
 Predictions, each with a confidence tag and what would falsify it. "Suite"
 means the existing 7-DGP × 6-n × LHS framework at α ∈ {0.05, 0.5}.
 
-**P-A. Coverage at α=.05 lands in ~0.94–0.99 in every (DGP, n) stratum with
-min class size ≥ 500, flat in n.** *(Confidence: moderate-high at C = 1,
-after Stage S.)* Basis: 14-cell flatness, the structural rank invariance,
-and now the Stage S screen (.950–.981 at C = 1 on every min-500+ cell up to
-n = 50,000, including n = 50,000 at α = .05 — the configuration this
-prediction previously flagged as never-run). **Known exception, measured:**
-small-n heavy-tail strata. The suite's student_t DGP at n ≤ ~300 per class
-should be *expected* to fall below nominal (t(2)/.95 measured .802 at
-n = 100), with misses at the FPR corners — this is now a prediction, not a
-falsifier. Elsewhere a stratum below ~0.93 at adequate M would contradict
-the model; a stratum at 1.00 would mean C = 1 is more conservative there
-than any tested shape.
+**P-A. Coverage at α=.05 lands in ~0.94–0.99 in every (DGP, n) stratum
+*outside the (AUC, n) wedge*; inside it, expect failures at any n up to at
+least 6,000.** *(Confidence: high on the wedge's existence, moderate on its
+edges.)* **Revised 2026-09-01 — the previous form of this prediction ("flat
+in n, safe above min class size 500") is falsified**, not merely
+qualified: 257 student-t cells / 64,625 reps locate failures from n = 102 to
+n = 6,656, and coverage falls with n at high AUC. Basis for the revision:
+`stats/c_calibration_followup_report.md` §2, §4. The suite's high-AUC
+student_t strata should be *expected* below nominal at every n the suite
+visits; its AUC ≤ .90 strata should be comfortably above it (65 cells, one
+failure). A stratum below ~0.93 at AUC ≤ .88 would contradict the current
+model; so would a *safe* stratum at AUC ≥ .985 at any n, which no cell has
+yet produced.
 
 **P-B. With the shipped default C=1, coverage at α=.5 is conservative and
 dispersed: expect 0.65–0.86 (valid everywhere, centred nowhere). Under the
@@ -213,27 +225,31 @@ conclusion.
 
 ## 5. Known weaknesses and open uncertainties (ranked)
 
-1. **The small-n heavy-tail hole (NEW, Stage S — the most serious finding
-   to date).** Below min(n₀,n₁) ≈ 500, heavy-tailed high-AUC shapes break
-   the band outright: t(2)/.95 at n = 100 covers .802 at α=.05 (.688 at
-   α=.2) under C = 1 — a validity failure the C coordinate cannot express
-   (the cell's sub-1 C* = 0.084 is a boundary-pinned ladder artifact, not
-   a shippable level; D5's floor conjecture as posed, about roughness,
-   stands — the trapezoid sailed through at C* = 2.01). Mechanism (theory
-   doc §7.2a): *unseen tail mass* — the truth exits the entire untrimmed
-   cloud in 1–2% of reps, misses concentrate at the FPR corners (≤ .02
-   and ≥ .90). No level map fixes reps where the truth is outside the
-   cloud's support; the fix is either a corner widening (the composite
-   band, §7 top) or routing small-n_eff users to M3. The failure boundary
-   is unmeasured between n = 100 (broken) and 500 (fine) — locating it is
-   a cheap, high-value next run (`scripts/c_calibration/followup_runs.py`
-   item 1, hybrid design: classification-grade anchors at the suite's
-   *achievable* design-box corners — t(1.1)/.97 and t(2)/.99; the literal
-   corner (1.1, .99) is unachievable under the mapper's shift cap — plus
-   an ~95-cell LHS surface sweep over (df, AUC, n) fitted with a
-   sign-constrained logistic smooth, and cross-family corner spot
-   checks; cutoffs the smooth proposes are confirmed classification-grade
-   by spec follow-up item 5 before routing guidance freezes).
+1. **The high-AUC validity wedge (revised 2026-09-01 — still the most
+   serious finding, and larger than it looked).** What Stage S saw as a
+   *small-n* heavy-tail hole is one edge of a curved unsafe region in
+   (AUC, n). Measured over 257 student-t cells / 64,625 reps
+   (`stats/c_calibration_followup_report.md`): failures span n = 102 to
+   n = 6,656, the n-range of failure widens monotonically with AUC, and at
+   AUC ≥ .975 **no tested n is safe**. Worst cells: t(2)/.99 covers .645 at
+   n = 250 and .690 at n = 500; t(6.62)/.988 covers .852 at n = 6,656.
+   **Coverage is not monotone in n** — at fixed shape t(4.69)/.986 it runs
+   .993, .947, .903, .823, .847 across n = 150…2,000 — which falsifies the
+   sign constraint the offline calibration surface was built on and means
+   no `n ≥ threshold` rule can express the boundary. Mechanism (theory doc
+   §7.2a) is unchanged in kind — *unseen tail mass*, misses lower-edge —
+   but replay locates them mostly at the **upper** FPR end (peak at
+   1−FPR ≈ .002–.04) plus a small left-corner cluster, not symmetrically at
+   both corners. A partial first-principles coordinate exists: failures
+   concentrate in a window of `m = n₀·t₅₀` (negatives above the median
+   positive), which explains the non-monotonicity — n carries a shape
+   *through* the window — but the window's upper edge grows with AUC, so m
+   compresses the boundary without linearizing it. Two live fixes, in
+   preference order: the **localized M3 floor** (§7, +6.4% width vs +28–46%
+   for routing, and provably never worse than C = 1) and the conservative
+   (AUC, n) **routing rule** (report §5; zero failures over all 257 cells).
+   Both are validated in-sample only; spec follow-up item 5 still gates
+   guidance.
 2. **No shape-blind level map is worth shipping — the Stage S screen
    returned its pre-registered STOP.** Per-shape C*(.05) at n = 500 spans
    1.17 (t(2), 2,000 reps) to 3.0; the library lower envelope minus one SE
@@ -241,8 +257,10 @@ conclusion.
    *no* safe C > 1. The former default C = 2 under-covers at α=.05 on t(2)
    at every n (.918–.940) and on binormal .95 at n = 50,000 (.917) —
    production default is now **C = 1** (measured ≥ .950 on every min-500+
-   cell; margin ~0 at n = 50,000, consistent with Theorem 7's
-   approach-from-above). The round-3 taper story survives only per-shape:
+   Stage S cell; margin ~0 at n = 50,000, consistent with Theorem 7's
+   approach-from-above — but note the 2026-09-01 follow-up found min-500+
+   cells that fail, so that Stage S summary describes its own library, not
+   a safety guarantee; see item 1). The round-3 taper story survives only per-shape:
    the *envelope* is non-monotone in n (t(2): 0.08 → 1.17 → 1.49 → 1.07),
    so the tapered-C(n) family is withdrawn; re-evaluating the stored
    profiles, the largest safe shape-blind C is ≈1.5 at n = 5,000 (~4%
@@ -278,11 +296,14 @@ conclusion.
    minority 500 in both directions × two shapes (C=1 fine at .950–.973;
    a real directional C* effect on binormal .90 — majority-negative
    4500×500 cuts C* to 1.69 vs 2.2–2.7 elsewhere — confirming round 4's
-   D2 concern). Still untested: the small-n failure boundary (n between
-   100 and 500 on heavy-tail shapes — item 1, the priority); imbalance
-   with min(n₀,n₁) > 500; the full LHS shape sweep; heavy-tail shapes at
-   AUC > .95 (the library's t(2) tops out at .95 — plausibly not the
-   worst case for item 1's mechanism).
+   D2 concern). The 2026-09-01 follow-up closed the largest gaps: the
+   failure boundary is mapped over AUC ∈ [.55, .99] × n ∈ [100, 7700] in
+   the student-t family, and heavy-tail shapes above AUC .95 — flagged
+   here as the likely worst case — are indeed where the failures
+   concentrate. Still untested: **n above ~8,000 at AUC ≥ .985**, where no
+   safe cell exists yet and the wedge may not close; the wedge outside the
+   student-t family (the cross-family spot checks cover only the corners);
+   imbalance with min(n₀,n₁) > 500; the full LHS shape sweep.
 7. **Compute scales with M·K.** ~11 s/band at n₀=5,000 single-core; the
    suite multiplies this by ~10⁴ bands. GPU batching of draws (already
    chunked in the implementation) or per-n M tuning will matter.
@@ -368,9 +389,36 @@ conclusion.
 
 ## 7. Backlog: ideas retained but not currently needed
 
+- **The localized M3 floor — the lead idea after the 2026-09-01 follow-up,
+  and it displaces the composite band below.** Replay of failing cells
+  (`c_calibration_followup_report.md` §7) shows the C = 1 band's misses are
+  localized in FPR, and that **M3 covers at 100% of the miss points**.
+  Taking the pointwise union with M3 on `FPR ∈ [0, .005] ∪ [.5, 1]` and
+  keeping C = 1 elsewhere lifts coverage from .720–.940 to .955–.990 on
+  five failing cells at **+6.4% mean width, against +28–46% for routing the
+  whole curve to M3**. Two structural properties make this stronger than
+  the composite band: the upper region is nearly free despite spanning half
+  the curve (both bands are compressed against TPR = 1 there), and the
+  hybrid **provably cannot do worse than C = 1** — the union is pointwise
+  wider and the running-max closure preserves that ordering, so its
+  coverage dominates identically rather than on average. That removes the
+  usual composite-band risk and makes unconditional application
+  defensible rather than routing-gated. Unlike the corner treatment below
+  it is also theorem-capable in principle, since M3 carries Prop. 12.
+  What it needs before shipping: the region was chosen on the five cells
+  that score it (100–200 reps each, student-t only); `tau_lo = .005` should
+  be re-expressed in grid points (at n = 130 it spans 0.65 of one); and the
+  width cost where C = 1 was already valid is unpriced. The validation run
+  is specified in the report §10 item 2 (~2–3 CPU-hours).
 - **The composite band — corner-patched interior trim over a declared
-  finite range (NEW after Stage S; the lead idea for both stated
-  objectives, validity and width).**
+  finite range (after Stage S; now the width play rather than the validity
+  play, since the M3 floor above addresses validity more cheaply and with a
+  domination guarantee). Derisk ran 2026-09-01: parity held on all 9 core
+  cells and `b0.02-0.95_C2.5` PASSes every cell on the declared range
+  n ≥ 500 at −6.8% pooled width, with the n = 20,000 sentinels showing the
+  saving invert as Theorem 7 requires. It is a genuine finite-range
+  candidate; the width surplus it harvests is real and distinct from
+  anything the M3 floor does.**
   Stage S's miss-location analysis found that everything blocking a deeper
   trim is corner-local: the small-n heavy-tail failure (§5 item 1) misses
   at FPR ≤ .02 / ≥ .90, the shape spread that pinned the level-map
@@ -560,11 +608,15 @@ conclusion.
    domination-by-M3 route was ruled out empirically in round 3 (no M3 band
    carrying a non-trivial guarantee fits inside the fiducial band, interior
    or otherwise); the exchangeability/conformal embedding route is untouched.
-   Stage S sharpened the target: no theorem can hold for the current
-   construction at small n (the truth measurably exits the cloud's support
-   at the corners — theory doc §7.2a), so the provable object is either the
-   composite band (§7, with exact corner treatment) or the current band
-   restricted to min(n₀,n₁) above the failure boundary.
+   Stage S sharpened the target and the 2026-09-01 follow-up sharpened it
+   again: no theorem can hold for the current construction inside the
+   (AUC, n) wedge (the truth measurably exits the cloud's support — theory
+   doc §7.2a), and since that region is *not* a small-n half-space, "the
+   current band above some n" is not a provable object either. The
+   candidates are the composite band (§7, with exact corner treatment) or —
+   more promising, because M3 already carries Prop. 12 — the localized M3
+   floor, whose union construction dominates C = 1 pointwise by
+   construction.
 3. The identifiability frontier at the corner, restated in rank space: no
    band can certify a nonvacuous lower bound below ~c/n₀ — connects to the
    old Beta-floor honesty result and bounds the achievable width in the
