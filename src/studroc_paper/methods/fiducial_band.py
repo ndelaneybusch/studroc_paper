@@ -22,15 +22,20 @@ The band is assembled in four steps:
    minimum over grid points of its rank from either end of the cloud) and
    trim to depth ``j`` = the ``alpha_eff``-quantile of the depths, where
    ``alpha_eff = 1 - (1 - alpha)**trim_exponent``. The default exponent 1
-   is the raw fiducial credible band — the identity level map, measured
-   safe at every Stage S screening cell with min(n0, n1) >= 500 and the
-   asymptotically calibrated choice (Theorem 7). Exponents above 1 trim
-   deeper and are anti-conservative on heavy-tailed shapes: the 2026-08
-   Stage S screen (``stats/c_calibration_screening_report_stage_s.md``;
-   ``stats/fiducial_band_theory.md`` section 7) measured C = 2 at
-   92-94% realized coverage at alpha = .05 on t(2)-shaped cells at every
-   n >= 500 (75% at n = 100), which retired the former default of 2. On
-   grids larger than
+   is the raw fiducial credible band — the identity level map, the
+   asymptotically calibrated choice (Theorem 7). VALIDITY CAVEAT
+   (2026-09-01 boundary study): at C = 1 the band under-covers inside a
+   curved (AUC, n) region — heavy-tailed high-AUC score distributions,
+   with failures measured from n = 102 to n = 6,656 and coverage NOT
+   monotone in n (worst .645 at t(2)-shaped AUC .99, n = 250); coverage
+   is solid at AUC <= ~.90 at every tested n. Inside that region use
+   ``m3_band_rs`` (exact) until the localized M3 floor ships — see
+   ``stats/fiducial_band_theory.md`` section 7.3 and
+   ``stats/c_calibration_followup_report.md``. Exponents above 1 trim
+   deeper and are anti-conservative on heavy-tailed shapes: Stage S
+   measured C = 2 at 92-94% realized coverage at alpha = .05 on
+   t(2)-shaped cells at every n >= 500 (75% at n = 100), which retired
+   the former default of 2. On grids larger than
    2001 points the depth minimum runs over the production thinned trim-grid
    (:func:`production_trim_rows`); the band itself is always built on the
    full grid.
@@ -308,11 +313,13 @@ def fiducial_band(
             the cloud.
         trim_exponent: Exponent ``C`` of the level remap
             ``alpha_eff = 1 - (1 - alpha)**C``. ``1.0`` (default) is the raw
-            fiducial credible band — measured safe on every Stage S
-            screening cell with ``min(n0, n1) >= 500`` and asymptotically
-            calibrated, but with no finite-sample coverage theorem (below
-            ``min(n0, n1) ~ 500`` heavy-tailed high-AUC shapes can
-            under-cover; use :func:`m3_band_rs` when a guarantee is needed).
+            fiducial credible band — asymptotically calibrated, but with no
+            finite-sample coverage theorem, and measurably anti-conservative
+            inside a curved (AUC, n) wedge (heavy tails x high AUC; failures
+            from n ~ 100 to beyond 6,000, coverage not monotone in n — see
+            ``stats/fiducial_band_theory.md`` section 7.3). Use
+            :func:`m3_band_rs` inside that region or when a guarantee is
+            needed.
             Values above 1 trim deeper and are anti-conservative on
             heavy-tailed shapes — the former default ``2.0`` measured
             92-94% at ``alpha = .05`` on t(2) cells at ``n >= 500`` (see

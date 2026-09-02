@@ -4,12 +4,12 @@
 `src/studroc_paper/methods/fiducial_band.py` (implementation). This document
 develops the probabilistic structure behind the method: what is exactly true,
 what is asymptotically true, what is finite-sample heuristic, and what is
-open. Last substantive revision 2026-08-30, folding in the Stage S
-calibration screen (§7.2: the small-n heavy-tail validity failure that
-the $C$ coordinate cannot express, the retirement of the $C=2$ default,
-and the interior-only, finite-range survival of the deep-trim headroom);
-previous major revision 2026-08-23, after a
-full-text reading of the key antecedent literature (§14).*
+open. Last substantive revision 2026-09-02, folding in the follow-up
+boundary study (§7.3: the validity failure is a curved (AUC, n) *wedge*,
+coverage is **not monotone in n**, misses concentrate at the upper-FPR
+end, and a localized M3 floor with a pointwise-domination property is the
+lead repair); previous revisions 2026-08-30 (§7.2, the Stage S screen and
+the C=1 default) and 2026-08-23 (the §14 literature pass).*
 
 **Status tags.** Every claim carries one of:
 - **[Exact]** — proved here or a one-step consequence of a classical result;
@@ -812,10 +812,10 @@ of *deep tail excursions* of the rank path, not its median-scale
 oscillation.
 
 **Production guidance derived from this section — revised by §7.2.**
-$C=1$ is the production default (asymptotically calibrated; measured
-$\ge .950$ at every Stage S cell with $\min(n_0,n_1) \ge 500$, but *not*
-universally conservative — see §7.2(a) for the small-$n$ heavy-tail
-failure, where M3 is the indicated method). Fixed $C=2$ — the former
+$C=1$ is the production default (asymptotically calibrated, but *not*
+universally conservative — see §7.2(a) and, decisively, §7.3: the
+under-coverage region is a curved (AUC, n) wedge, not a small-$n$ hole,
+and M3 or the §7.3 localized M3 floor is the indicated repair inside it). Fixed $C=2$ — the former
 default — is refuted: it measurably over-trims at central $\alpha$ for
 $n \ge 10^4$ (coverage .41/.38 at $n = 10^4/2\cdot10^4$ against nominal
 .50, at $C=2.2$, while $C=1$ gives .633/.583) *and* under-covers at
@@ -881,15 +881,18 @@ validates the erosion law's tail but retires the old default. **Production
 default changed to $C=1$** in both implementations (same commit as this
 revision).
 
-**(c) Status of $C=1$.** Measured $\ge .950$ at *every* screen cell with
+**(c) Status of $C=1$ — SUPERSEDED 2026-09-01 by §7.3; retained as the
+Stage S record.** Measured $\ge .950$ at *every* screen cell with
 $\min(n_0,n_1) \ge 500$ (range .950–.981 over 10 shapes, 8 imbalance
 cells, and n up to 50,000), with the surplus shrinking to ~0 at
 n = 50,000 (.951/.954/.960) — the Theorem 7 approach-from-above with a
 vanishing cushion, now observed. The former claim "never measured below
-.967" is retired: .950–.958 at the large-n and imbalance cells, and the
-(a) failure below $\min(n_0,n_1) \approx 500$ (boundary unmeasured
-between 100 and 500). Until that boundary is located, small-$n_{\mathrm{eff}}$
-use should prefer the exact M3 band (Prop. 12).
+.967" is retired: .950–.958 at the large-n and imbalance cells. **The
+"safe above $\min(n_0,n_1) \approx 500$" reading of this paragraph was
+falsified by the follow-up boundary study** — the Stage S library simply
+never entered the failing region (its heavy-tail members stop at AUC
+.95): see §7.3 for the wedge. Inside the wedge the exact M3 band
+(Prop. 12) remains the indicated fallback.
 
 **(d) No shape-blind level map survives.** Per-shape $C^\*(.05)$ at
 n = 500 spans 1.17 (t(2); 2,000 reps — superseding the noisy 1.84 of the
@@ -937,6 +940,72 @@ with slack), while (d) caps the n > 500 side's gain at ~2–6% in a mid-n
 window: the hybrid pays its width where bands are widest and harvests
 where the headroom has tapered out. M3's correct role remains the
 small-$n_{\mathrm{eff}}$ / guarantee-demanding regime of (c).
+
+### 7.3 The follow-up boundary study (2026-09-01): the wedge, non-monotone coverage, and the localized M3 floor
+
+*All claims* **[Empirical]** *unless marked: 257 student-t cells /
+64,625 reps (anchors with sequential replication, a 95-cell LHS sweep,
+and four active-learning rounds), plus a five-cell hybrid probe. Full
+report: `stats/c_calibration_followup_report.md`; data:
+`data/results/c_calibration_followup_20260830/`.*
+
+**(a) The unsafe set is a curved wedge in (AUC, n), and coverage is NOT
+monotone in n.** Worst-cased over df, $C=1$ failures at $\alpha=.05$ span
+n = 102 to n = 6,656; the failing n-range widens with AUC, and at
+AUC $\ge .975$ *no tested n up to 6,656 is safe*. Worst cells: t(2)/.99
+covers **.645** at n = 250 and .690 at n = 500 (M3 covers .998–1.000 on
+the same seeds; ladder unpinned — this is not the boundary-pinned
+artifact of §7.2(a)). At fixed shape t(4.69)/.986 coverage runs
+.993 → .947 → .903 → .823 → .847 over n = 150…2,000 (disjoint Wilson
+intervals at the ends), so **no `n ≥ threshold` rule and no
+monotone-in-n surface can express the boundary** — the sign constraint
+the §7.2-era calibration surface was built on is false. A trim-grid
+(K > 2001 thinning) artifact was tested and rejected. Cross-family spot
+checks at the Weibull/gamma/beta-opposing achievable corners all pass,
+so the t-family is binding at the corners tested; the wedge interior is
+unmeasured outside the t-family.
+
+**(b) A partial mechanism: the $m$-window.** With $t_q$ the FPR where the
+true ROC reaches TPR = q and $m = n_0 t_q$ (at q = .5: expected negatives
+scoring above the median positive), failures on the first 194 cells all
+fell in $m \in [0.89, 11.2]$, and the window held on 28 out-of-sample
+cells — the non-monotonicity in n is n carrying a shape *through* the
+window in either direction. Extending n falsified it as a universal rule
+(failures at m = 17.6 and 30.2 at n ≈ 5–6.7k): the window's upper edge
+grows with AUC, so m compresses the boundary without linearizing it. It
+is runtime-estimable without the truth, which makes it the candidate
+mechanistic routing/region statistic once its AUC drift is
+characterized.
+
+**(c) Miss geometry.** Replayed from seeds: misses are overwhelmingly
+lower-edge and concentrate at the *upper* FPR end (peak pointwise miss
+rate at $1-\mathrm{FPR} \approx .002$–$.04$; ~70% of missing reps in
+large-n cells miss only above FPR = .9), plus a secondary cluster at the
+extreme left corner (FPR ≲ .005). Mechanically: heavy-tailed positives
+make the true ROC approach 1 slowly, while the band's monotone lower
+edge, pinned to reach 1, overshoots it — the §7.2(a) unseen-tail-mass
+channel, localized.
+
+**(d) Repairs, in preference order.** *(i) The localized M3 floor:*
+pointwise union with M3 on FPR ∈ [0, .005] ∪ [.5, 1], C = 1 elsewhere,
+lifts the five probed failing cells from .645–.940 to **.955–.990 at
++6.4% mean width** (full M3: +28–46%). Two structural properties:
+the upper region is nearly free (both bands are compressed against
+TPR = 1 there), and the union **dominates C = 1 pointwise by
+construction** — it is never narrower, and monotone closure preserves the
+ordering, so hybrid coverage $\ge$ C = 1 coverage identically
+**[Exact]**. It is also theorem-capable: M3 at level $\alpha_2$ misses
+somewhere in *any* region with probability $\le \alpha_2$ (a sub-event
+of missing anywhere), so the floored region carries an exact miss cap
+and only the interior claim is empirical — the two-piece statement the
+composite band lacked. Caveats: five cells, 100–200 reps, region chosen
+in-sample, left cutoff mis-parameterized in FPR units (it should be grid
+points), width unpriced where C = 1 was already valid. *(ii) The
+conservative routing rule* (AUC upper bound × n; report §5): zero
+failures over all 257 cells with min coverage .944, but 65% of its
+M3-routals were unnecessary and the thresholds are read from the data
+that validates them. Both await fresh-seed confirmation; the floor study
+is specced separately.
 
 ---
 
@@ -1137,10 +1206,11 @@ main open *width* problem (§12), distinct from all coverage questions.
   forced scale (§8), and Theorem 7 anchors the raw $C=1$ band at large $n$.
   Measured: $\alpha=.05$ coverage at $C=1$ of $.967$–$.993$ from $n=25$ to
   $5000$ on the round 1–4 cells, and $.950$–$.981$ on every Stage S cell
-  with $\min(n_0,n_1) \ge 500$ up to $n = 50{,}000$. The exception is
-  §7.2(a): heavy-tailed high-AUC shapes below
-  $\min(n_0,n_1) \approx 500$, where the truth can exit the cloud's
-  support at the grid corners ($.802$ at t(2)/.95, $n=100$). The
+  with $\min(n_0,n_1) \ge 500$ up to $n = 50{,}000$. The exception —
+  larger than those sweeps could see — is the §7.3 wedge: heavy-tailed
+  high-AUC shapes under-cover at n from 102 to at least 6,656, with
+  coverage *non-monotone in n* (the truth exits the cloud's support at
+  the FPR ends; worst .645 at t(2)/.99, n = 250). The
   envelope's drift ($1.00 \to 0.83$) came precisely from asymptotics-based
   components whose regimes shifted with $n$. The important counterweight
   is §7: $C^\*(n)$ demonstrably drifts, so central-$\alpha$ calibration
@@ -1372,8 +1442,12 @@ main open *width* problem (§12), distinct from all coverage questions.
    allowances. §7.2(a) sharpens what any such theorem must confront: at
    small $n$ under heavy tails the truth exits the cloud's support at the
    grid corners, so no theorem can hold for the current construction
-   without either a corner widening (the composite-band direction of
-   §7.2(e)) or an $n_{\mathrm{eff}}$ restriction. The domination-by-M3
+   without either a corner widening (the localized-M3-floor direction of
+   §7.3(d), which is theorem-capable because M3's guarantee restricts to
+   any region, or the composite direction of §7.2(e)) or a domain
+   restriction — and §7.3 shows the excluded domain is a curved (AUC, n)
+   wedge, so "the current band above some $n_{\mathrm{eff}}$" is not a
+   provable object either. The full-band domination-by-M3
    route is ruled out empirically; the
    exchangeability/conformal embedding route remains (the construction
    conditions on $\Lambda$, which is exactly what breaks exchangeability;

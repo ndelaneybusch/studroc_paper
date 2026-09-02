@@ -145,3 +145,12 @@ table. Dry-run budget: ~8 idealized core-saturated hours plus top-ups
 (composite includes two n=20,000 Theorem-7 erosion sentinels; cutoffs
 proposed by the boundary smooth are confirmed later by spec follow-up
 item 5).
+
+## Stage F (2026-09-02): the localized M3 floor
+
+The boundary study's successor is specced in `stats/hybrid_floor_spec.md`:
+region-geometry exploration over (n_pos, n_neg, AUC) with a pre-committed
+60/40 selection/holdout split, a frozen-rule derisk on fresh seeds, and a
+cross-family transfer test. It reuses this directory's seeding, band, and
+classification machinery; new code is the miss-interval recorder and the
+offline geometry/price analysis.

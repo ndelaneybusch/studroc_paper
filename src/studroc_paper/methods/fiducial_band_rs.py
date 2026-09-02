@@ -77,9 +77,12 @@ def fiducial_band_rs(
             is raised when the realized trim depth falls below 3.
         trim_exponent: Exponent ``C`` of the level remap
             ``alpha_eff = 1 - (1 - alpha)**C``; ``1.0`` (default) is the raw
-            fiducial credible band, measured safe on every Stage S screening
-            cell with ``min(n0, n1) >= 500``. Values above 1 trim deeper and
-            are anti-conservative on heavy-tailed shapes (the former default
+            fiducial credible band. Validity caveat (2026-09-01): at C = 1
+            the band under-covers inside a curved (AUC, n) wedge — heavy
+            tails x high AUC, failures measured n ~ 100 to beyond 6,000,
+            coverage not monotone in n (theory doc section 7.3); use
+            :func:`m3_band_rs` there. Values above 1 trim deeper and are
+            anti-conservative on heavy-tailed shapes (the former default
             ``2.0`` measured 92-94% at ``alpha = .05`` on t(2) cells at
             ``n >= 500``, and 75% at ``n = 100``).
         k: Optional output grid size. ``None`` (default) returns the band on

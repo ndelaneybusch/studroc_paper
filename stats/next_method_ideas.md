@@ -389,6 +389,18 @@ conclusion.
 
 ## 7. Backlog: ideas retained but not currently needed
 
+**The candidate roster (status as of 2026-09-02).** Five method shapes are
+live for the paper's fiducial entry; every one of them is retained below or
+in production, none silently dropped:
+
+| # | method | status |
+|---|---|---|
+| 1 | Full fiducial C = 1 | Shipped default. Valid for AUC ≤ .90 at every tested n; invalid inside the (AUC, n) wedge (§5 item 1). Cannot headline alone. |
+| 2 | Full M3 | Production, theorem-carrying, validated to 1.000 inside the wedge; +26–69% width. The certification layer and fallback. |
+| 3 | C = 1 + (AUC, n) router to M3 | Measured rule with zero failures over 257 cells (in-sample); expensive exactly at high AUC (65% unnecessary routals). Entry below. |
+| 4 | M3 floor in the FPR tails, trimmed center | Lead idea. The M3-floor half is measured (+6.4% width repairing the wedge, domination property); the trimmed-interior half (composite) is a finite-range candidate at −6.8%. Their composition is unmeasured. Entries below; study spec `stats/hybrid_floor_spec.md`. |
+| 5 | Continuous blend of M3 and C\* over (n, AUC, FPR) | Deferred by assessment, not falsified. Entry below. |
+
 - **The localized M3 floor — the lead idea after the 2026-09-01 follow-up,
   and it displaces the composite band below.** Replay of failing cells
   (`c_calibration_followup_report.md` §7) shows the C = 1 band's misses are
@@ -464,6 +476,41 @@ conclusion.
   where C=1 is measured-valid, while the safe shape-blind gain above 500
   is ~2–6% in a mid-n window only); M3 remains the router target for the
   small-n_eff hole once its boundary is located.
+- **The (AUC, n) routing rule (roster #3) — measured, conservative, and
+  the fallback if the M3 floor disappoints.** Route on an *upper
+  confidence bound* of the empirical AUC (per-dataset adaptivity is
+  admissible here only because mis-routing to M3 costs width, never
+  coverage): AUC_ub < .88 → fiducial band at any n; < .96 → iff n > 600;
+  < .975 → iff n > 1500; ≥ .975 → M3
+  (`c_calibration_followup_report.md` §5). Zero failures over all 257
+  boundary cells, min coverage .944 — but in-sample (the thresholds were
+  read from the cells that validate them), 65% of its M3-routals were
+  unnecessary, and it pays +28–46% width exactly in the high-AUC regime
+  users care most about. n-only routing is dead (the wedge is
+  non-monotone in n). The runtime-estimable m-statistic (negatives above
+  the median positive) is the candidate for a tighter second-generation
+  rule once its AUC drift is characterized (report §4). Fresh-seed
+  confirmation (spec item 5) required before any threshold freezes.
+- **Continuous blend of M3 and C\* over (n, AUC, FPR) (roster #5) —
+  deferred by assessment, not falsified.** The generalization of the M3
+  floor: pointwise band edges interpolating between the trimmed fiducial
+  and M3 edges with weights varying over FPR, conditioned on (n, AUC).
+  What bears on it: the miss geometry *is* strongly FPR-localized (so the
+  FPR axis has measured support), but the hard-region union already
+  captures essentially all of that gain at +6.4%; every continuously
+  *fitted* calibration surface in this project's history failed out of
+  sample exactly where it mattered (C(n) map, 32 functionals, plug-in,
+  predictive, and the boundary smooths — §6 and report §8); and the
+  validity split is sharp — a blend that only ever *widens* relative to
+  C = 1 inherits the domination property (safe, but then the hard-region
+  floor is its simplest member), while any component that *narrows*
+  re-enters the calibrated-map territory the Stage S STOP covers. The one
+  principled continuous form is theory-side, not fit-side: an
+  **FPR-weighted equal-local-levels trim** (spend less depth budget at
+  the tails, more in the center — a depth-functional change with content
+  control via Lemma 6b; see the depth-functional entry below). Revisit
+  only if the discrete floor validates and its width still looks
+  meaningfully improvable.
 - **M3 — composition of two exact one-sample (Berk–Jones/equal-local-level)
   bands. Now a production method** —
   `src/studroc_paper/methods/m3_band_rs.py` (tests
@@ -560,7 +607,11 @@ conclusion.
   Untried; a 3-cell derisk (C2/C5/C4 at α ∈ {.5,.2,.05}) covering both is
   cheap on the Rust core and would show whether either equalizes the
   truth-vs-draw depth laws. See `fiducial_band_theory.md` §12 open
-  problem 3.
+  problem 3. A third candidate joined after the 2026-09-01 miss-geometry
+  finding: (c) **FPR-weighted ELL trimming** — non-uniform local levels
+  over the grid, spending less depth budget at the FPR ends and more in
+  the center; the principled continuous version of the M3-floor/blend
+  idea (roster #5), with the same Lemma 6b content control.
 - **Exact-test spinoffs (NEW after round 4).** The named-curve test
   (`r4_report.md` §3, theory doc Prop. 11) opens three cheap deliverables:
   (i) non-inferiority testing against a named benchmark curve (exact,
