@@ -20,7 +20,7 @@ Usage from the repository root::
 
     uv run python scripts/c_calibration/corner_mechanism.py <command>
 
-Commands are ``cells``, ``closed``, ``simulate``, ``real``, ``router``, and
+Commands are ``cells``, ``closed``, ``simulate``, ``real``, ``sliver``, ``router``, and
 ``compare``. Run the module without a command to see their argument syntax.
 
 All three predictors take the true ROC as input; they are tools for predicting
@@ -822,6 +822,68 @@ def compare(*, closed_path: Path, simulation_paths: list[Path]) -> None:
             )
 
 
+
+# ---------------------------------------------------------------------------
+# Proposition 14 made concrete: a continuous DGP with any prescribed AUC on
+# which the C = 1 band fails at the right end and M3 does not.
+# ---------------------------------------------------------------------------
+
+
+def make_sliver(auc: float, n0: int, c: float, s1: float):
+    """A "sliver" ROC: tau(s) = 1 - R(1-s) equals c*s on [0, 1/n0] (positive mass c/n0
+    in the extreme lower tail, likelihood ratio c there), is flat on [1/n0, s1] (no
+    positive mass), and a concave binormal body on [0, 1 - s1] is scaled so that the
+    total area is ``auc``. Returns (R, Rinv, body_auc)."""
+    s0 = 1.0 / n0
+    h = 1 - c * s0
+    tail_area = (s1 - s0) * h + s0 * (1 - c * s0 / 2)
+    auc_b = (auc - tail_area) / (h * (1 - s1))
+    if not 0.5 < auc_b < 1:
+        raise ValueError(f"body AUC {auc_b:.3f} not attainable for auc={auc}, s1={s1}")
+    d = np.sqrt(2) * stats.norm.ppf(auc_b)
+
+    def body(u):
+        return stats.norm.cdf(d + stats.norm.ppf(np.clip(u, 1e-300, 1 - 1e-16)))
+
+    def R(t):
+        t = np.asarray(t, float); out = np.empty_like(t)
+        m1 = t <= 1 - s1; m3 = t >= 1 - s0; m2 = ~m1 & ~m3
+        out[m1] = h * body(t[m1] / (1 - s1)); out[m2] = h; out[m3] = 1 - c * (1 - t[m3])
+        return out
+
+    tt = np.unique(np.concatenate([np.linspace(0, 1, 200001), 1 - np.geomspace(1e-9, 2 * s1, 20000),
+                                   np.geomspace(1e-9, .1, 20000)]))
+    rr = np.maximum.accumulate(R(tt))
+    return R, (lambda y: np.interp(y, rr, tt)), float(auc_b)
+
+
+def sliver_check(auc: float, n: int, c: float, s1: float, reps: int, M: int, seed: int = 7) -> dict:
+    """Production C = 1 band and M3 on ``reps`` datasets from the sliver DGP (balanced n)."""
+    from studroc_paper.methods.fiducial_band_rs import fiducial_band_rs
+    from studroc_paper.methods.m3_band_rs import m3_band_rs
+    R, Rinv, auc_b = make_sliver(auc, n, c, s1)
+    rng = np.random.default_rng(seed)
+    grid = np.arange(n + 1) / n; truth = R(grid); truth[0] = 0; truth[-1] = 1
+    tg = np.linspace(0, 1, 100001); auc_num = float(np.trapezoid(R(tg), tg))
+    miss_f = miss_m = 0; ksat = []; miss_ksat = []
+    for _ in range(reps):
+        u = rng.random(n); w = Rinv(rng.random(n))
+        y = np.concatenate([np.zeros(n, int), np.ones(n, int)]); score = -np.concatenate([u, w])
+        k = int(np.sum(u > w.max())); ksat.append(k)
+        _, lo, hi = fiducial_band_rs(y, score, alpha=0.05, n_draws=M, trim_exponent=1.0,
+                                     random_state=int(rng.integers(2 ** 31)))
+        mf = bool(np.any(truth < lo - 1e-12) or np.any(truth > hi + 1e-12)); miss_f += mf
+        if mf:
+            miss_ksat.append(k)
+        _, lo2, hi2 = m3_band_rs(y, score, alpha=0.05)
+        miss_m += bool(np.any(truth < lo2 - 1e-12) or np.any(truth > hi2 + 1e-12))
+    out = dict(auc=auc, auc_numerical=auc_num, body_auc=auc_b, n0=n, n1=n, c=c, s1=s1, reps=reps, M=M,
+               cov_c1=1 - miss_f / reps, cov_m3=1 - miss_m / reps, k_sat_median=float(np.median(ksat)),
+               k_sat_of_missing=sorted(miss_ksat))
+    print(f"AUC {auc} (num {auc_num:.4f}, body {auc_b:.3f}) n={n} c={c} s1={s1}: C=1 cov {out['cov_c1']:.3f}, "
+          f"M3 cov {out['cov_m3']:.3f}, k_sat median {out['k_sat_median']:.0f}", flush=True)
+    return out
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         raise SystemExit(__doc__)
@@ -900,6 +962,12 @@ if __name__ == "__main__":
         output_path = Path(f"real_band_{sys.argv[2]}_{sys.argv[3]}_{sys.argv[4]}.json")
         with output_path.open("w", encoding="utf-8") as file:
             json.dump(rows, file, indent=2)
+    elif cmd == "sliver":
+        # sliver <n> <reps> <M> [out.json]: AUC in {.6,.8,.95}; see theory doc 7.4(f)
+        n, reps, M = int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4])
+        res = [sliver_check(a, n, c, s1, reps, M) for a, c, s1 in ((0.60, 1.0, 0.12), (0.80, 0.8, 0.25), (0.95, 0.8, 0.25))]
+        if len(sys.argv) > 5:
+            json.dump(res, open(sys.argv[5], "w"), indent=1)
     elif cmd == "router":
         router_table()
     elif cmd == "compare":

@@ -146,52 +146,41 @@ table. Dry-run budget: ~8 idealized core-saturated hours plus top-ups
 proposed by the boundary smooth are confirmed later by spec follow-up
 item 5).
 
-## Stage F (2026-09-02): the localized M3 floor
+## Stage F (2026-09-02): the frontier M3 floor
 
-The boundary study's successor is specced in `stats/hybrid_floor_spec.md`
-(an information-gathering study — the final suite arbitrates methods):
-region-geometry exploration over (n_pos, n_neg, AUC) with a pre-committed
-60/40 selection/holdout split, out-of-sample measurement of the recorded
-region rule (repair, price, residual-miss geometry), and a cross-family
-transfer test. It reuses this directory's seeding, band, and
-classification machinery; new code is the miss-interval recorder and the
-offline geometry/price analysis.
+The theory-driven revision in `stats/hybrid_floor_spec.md` supersedes the
+current Stage F learned-region path. Proposition 14 / Corollary 14.1 rule
+out treating an `(AUC_ub,n0,n1)`-conditioned fit as distribution-free. The
+new primary object is a fixed rank-only frontier floor: the left honesty
+frontier plus the empirical-TPR-1 run and a predeclared square-root margin.
 
-Implementation is split into `stage_f_core.py` (statistical/persistence
-contracts), `stage_f_design.py` (frozen manifests and seeds),
-`stage_f_run.py` (one-cloud paired runner), and `stage_f_analysis.py`
-(offline selection and scoring). The guarded run order is:
+The migration checklist in the revised spec §7 is complete. No Stage F
+manifest or result was generated during implementation. Generate the three
+plain JSON design manifests, then review the cell lists and dry-run budgets:
 
 ```bash
-# 1. Freeze A/B/C manifests together, before any Stage A outcome exists.
-uv run python scripts/c_calibration/stage_f_run.py manifests
+uv run python scripts/c_calibration/stage_f_run.py design
 
-# 2. Inspect cost only, then run Study A from its frozen manifest.
-uv run python scripts/c_calibration/stage_f_run.py run --study A \
-    --manifest data/results/hybrid_floor_20260902/manifests/study_a.json --dry-run
-uv run python scripts/c_calibration/stage_f_run.py run --study A \
-    --manifest data/results/hybrid_floor_20260902/manifests/study_a.json
-
-# 3. Select/refit and freeze stage_f_v1. Review both the JSON selection
-#    record and generated spec-amendment text before continuing.
-uv run python scripts/c_calibration/stage_f_run.py fit
-
-# 4. Run B/C against that exact artifact hash. They may run concurrently.
-uv run python scripts/c_calibration/stage_f_run.py run --study B \
-    --manifest data/results/hybrid_floor_20260902/manifests/study_b.json \
-    --artifact data/results/hybrid_floor_20260902/rules/stage_f_v1.json
-uv run python scripts/c_calibration/stage_f_run.py run --study C \
-    --manifest data/results/hybrid_floor_20260902/manifests/study_c.json \
-    --artifact data/results/hybrid_floor_20260902/rules/stage_f_v1.json
-
-# 5. Produce deterministic offline summaries; no clouds are regenerated.
-uv run python scripts/c_calibration/stage_f_run.py summarize --study B \
-    --artifact data/results/hybrid_floor_20260902/rules/stage_f_v1.json
-uv run python scripts/c_calibration/stage_f_run.py summarize --study C \
-    --artifact data/results/hybrid_floor_20260902/rules/stage_f_v1.json
+uv run python scripts/c_calibration/stage_f_run.py run --dry-run \
+  --manifest data/results/hybrid_floor_20260902/manifests/study_a.json
+uv run python scripts/c_calibration/stage_f_run.py run --dry-run \
+  --manifest data/results/hybrid_floor_20260902/manifests/study_b.json
+uv run python scripts/c_calibration/stage_f_run.py run --dry-run \
+  --manifest data/results/hybrid_floor_20260902/manifests/study_c.json
 ```
 
-Cells checkpoint every 100 replicates. Resume refuses mismatched manifests,
-rule hashes, implementation fingerprints, M3 parameters, alpha grids, or
-trim-grid rules. `--force` starts the selected cell from replicate zero;
-`--select` supports explicit sharding by cell-name substring.
+After review, remove `--dry-run` from each command. A is a mechanism/price
+study and does not fit or update the rule; B and C may therefore run in
+parallel with it. Summaries use only stored paired parents:
+
+```bash
+uv run python scripts/c_calibration/stage_f_run.py summarize --study A
+uv run python scripts/c_calibration/stage_f_run.py summarize --study B
+uv run python scripts/c_calibration/stage_f_run.py summarize --study C
+```
+
+There is no `fit` action or separate rule artifact. The frontier rule is the
+small deterministic function in `stage_f_core.py`; it uses each cell's
+`n0`, `n1`, cloud budget, and empirical count map. Manifests are overwriteable
+design snapshots during exploration. A checkpoint can resume only when its
+stored cell definition matches the requested cell.

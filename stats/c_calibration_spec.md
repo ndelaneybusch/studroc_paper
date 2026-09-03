@@ -128,21 +128,20 @@ escalation clause and invalidated the surface's mechanism.** Full results:
   .955-.990 on five failing cells at **+6.4% mean width against +28-46%
   for full M3**, and provably cannot do worse than the C = 1 band. Five
   cells, region selected in-sample — the validation run is the priority.
-- **Item 5 is unchanged in necessity and changed in target**: the cutoffs
-  to confirm are now the (AUC, n) wedge rule of the follow-up report §5,
-  not a contour read off the smooth.
-- **Successor plan (2026-09-02):** the next round is specced in
-  `stats/hybrid_floor_spec.md` ("Stage F") — an information-gathering
-  study, not an arbiter (the final suite and its authors decide methods).
-  Study A learns the M3-floor region geometry as a function of
-  (n_pos, n_neg, AUC) and records a fixed rule; Study B measures the
-  fixed rule's out-of-sample repair, price, and residual-miss geometry
-  (the improvement loop's raw material); Study C measures cross-family
-  transfer of the repair, the mechanism, and the geometry. Item 5's
-  router-cutoff confirmation stays on the books for whenever routing
-  language enters guidance. T0's doc amendments (theory doc §7.3, both
-  band docstrings, the roster in `next_method_ideas.md` §7) landed
-  2026-09-02.
+- **Item 5 is superseded by the later theory:** the measured (AUC, n)
+  cutoffs remain a library-relative diagnostic, but Prop. 14 / Cor. 14.1
+  rule them out as distribution-free guidance. Confirmation is deferred
+  until a declared class and class-test contract exist.
+- **Successor plan (2026-09-02; theory-revised after Prop. 14 / Cor.
+  14.1):** the next round is specced in `stats/hybrid_floor_spec.md`
+  ("Stage F") — an information-gathering study, not an arbiter. The old
+  plan to learn an `(AUC_ub,n0,n1)` region is retired before running:
+  those variables cannot identify endpoint risk over continuous ROCs.
+  Stage F now freezes a rank-only frontier floor before all outcomes,
+  uses A only for mechanism/price auditing, measures the fixed rule on
+  ordinary and fresh sliver cells in B, and tests curvature-class transfer
+  in C. Router confirmation is deferred until a declared class and class
+  test are specified; it is not part of the distribution-free floor study.
 
 **FOLLOW-UP RUN PLAN (2026-08-30; revised 2026-08-31 after external
 review — the revision narrows the composite question to a finite range,

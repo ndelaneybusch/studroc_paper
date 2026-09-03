@@ -5,8 +5,9 @@
 develops the probabilistic structure behind the method: what is exactly true,
 what is asymptotically true, what is finite-sample heuristic, and what is
 open. Last substantive revision 2026-09-02: §7.4 derives the convex-corner
-failure mechanism, a finite-grid risk score and shape-class router, and
-principled M3 floor regions; §7.3 records the 257-cell empirical wedge and
+failure mechanism, a finite-grid risk score, a shape-class router, and
+principled M3 floor regions; §7.4(h) separates the rank-only floor from the
+declared-class case. Section 7.3 records the 257-cell empirical wedge and
 localized-floor probe. Previous revisions: 2026-08-30 (§7.2, Stage S and
 the $C=1$ default) and 2026-08-23 (§14 literature pass).*
 
@@ -118,6 +119,9 @@ the offline calibration of `c_calibration_spec.md`.
 
 The implementation is a function of $\Lambda$ plus independent randomization
 (tie-breaking, Monte Carlo draws), so Proposition 2 applies to it verbatim.
+Every calibration cell since round 1 is simulated in rank space, so the
+theorem is exercised rather than tested; consistent with it, the 257
+student-t cells of §7.3 organize by (AUC, tail index, n) alone.
 
 ---
 
@@ -1017,31 +1021,30 @@ heavy-tailed truth's deficit at the outermost grid points is of order
 $1/n_1$ (its likelihood ratio is largest at the extreme end). The left
 cluster is the mirror image on the F-axis at the first grid point.
 
-**(d) Repairs, in preference order.** *(i) The localized M3 floor:*
-pointwise union with M3 on FPR ∈ [0, .005] ∪ [.5, 1], C = 1 elsewhere,
-lifts the five probed failing cells from .645–.940 to **.955–.990 at
-+6.4% mean width** (full M3: +28–46%). Two structural properties:
-the upper region is nearly free (both bands are compressed against
-TPR = 1 there), and the union **dominates C = 1 pointwise by
-construction** — it is never narrower, and monotone closure preserves the
-ordering, so hybrid coverage $\ge$ C = 1 coverage identically
-**[Exact]**. It is also theorem-capable: M3 at level $\alpha_2$ misses
-somewhere in *any* region with probability $\le \alpha_2$ (a sub-event
-of missing anywhere), so the floored region carries an exact miss cap
-and only the interior claim is empirical — the two-piece statement the
-composite band lacked. Caveats: five cells, 100–200 reps, region chosen
-in-sample, left cutoff mis-parameterized in FPR units (it should be grid
-points), width unpriced where C = 1 was already valid. *(ii) The
-conservative routing rule* (AUC upper bound × n; report §5): zero
-failures over all 257 cells with min coverage .944, but 65% of its
-M3-routals were unnecessary and the thresholds are read from the data
-that validates them. Both await fresh-seed confirmation; the floor study
-is specced separately. **Theory-side update (§7.4(e)–(f)):** the derived
-base region is the first $\lceil\ln(1/\ell)\rceil$ left-grid points plus
-the complete empirical-TPR-1 run on the right. Extending the right floor to
-$j>0$ positive-tail counts remains one integer to calibrate. M3 implements
-the same no-interpolation bracketing principle with a simultaneous
-finite-sample theorem.
+**(d) Repairs, in preference order.** *(i) Historical localized-floor
+probe:* pointwise union with M3 on FPR ∈ [0, .005] ∪ [.5, 1], C = 1
+elsewhere, lifts the five probed failing cells from .645–.940 to
+**.955–.990 at +6.4% mean width** (full M3: +28–46%). Those measurements
+are development evidence because the region was chosen on the same cells.
+The revised closure only widens, so the hybrid dominates C = 1 pointwise
+and contains M3 on its random region **[Exact]**. Consequently the region
+has the exact M3 miss cap and the whole-curve bound splits into that cap
+plus an empirical exterior term.
+
+*(ii) Frontier floor after §7.4:* the Stage F primary rule is fixed before
+outcomes. On the left it uses a budget-derived grid schedule that
+upper-bounds $\lceil Q\rceil$; on the right it uses the complete empirical
+TPR-1 run plus a predeclared $2\sqrt K$ inward margin. This rule is a
+function of class sizes and ranks only. Stage F prospectively tests its
+capture, price, sliver behavior, imbalance, and geometry-class transfer;
+it does not fit an AUC-conditioned region.
+
+*(iii) Router:* the measured AUC-upper-bound × n rule had zero failures
+over the 257 development cells (minimum .944) but routed 65% of its M3
+cases unnecessarily. Proposition 14 now classifies it correctly: it is a
+student-t/library-relative diagnostic, not a distribution-free rule. Any
+router successor must declare a curvature/shape class and maximize the
+finite-grid risk over its complete AUC uncertainty set.
 
 ### 7.4 Endpoint curvature, a finite-grid risk score, and principled floors
 
@@ -1291,7 +1294,9 @@ and $\nu=10$ returns toward the boundary. At AUC .975, changing
 $n_0\times n_1$ from $500\times5000$ to $5000\times500$ raises worst-case
 risk from about .09 to .25. A one-heavy-tail family should fail only at
 the corresponding endpoint; a concave-corner family should not exhibit
-this channel. Stage F is the external test of all three predictions.
+this channel (the follow-up's Weibull, gamma and beta-opposing corner spot
+checks, all .977–.992, are consistent with this). Stage F is the external
+test of all three predictions.
 
 **(e) The floor from first principles.** Where the convention is wrong,
 the honest replacement is the *bracket* completion of Prop. 3b(1): use the
@@ -1319,9 +1324,15 @@ The endpoint calculation gives a minimal, observable base region:
   entire random run is the smallest endpoint-connected, data-measurable
   region that removes the dominant right end-gap mechanism. Extending to
   $j\le j_{\max}$ protects the first interior gaps, whose relative
-  interpolation effect is $O(1/(j+1))$; theory fixes the base
-  $j_{\max}=0$, while Stage F must choose any larger integer from exterior
-  escape versus width.
+  interpolation effect is $O(1/(j+1))$; theory fixes the unmargined base
+  at $j_{\max}=0$. One margin is not optional: the cloud re-randomizes
+  the negatives' F-positions, so the *fiducial* saturated zone ends
+  $\pm\sqrt{K}$ grid points from the observed run's end and the end-gap
+  spread leaks that far past $j=0$. Either $j_{\max}=1$ or a
+  $2\sqrt{K}$-grid-point extension of the run absorbs it. The revised
+  Stage F primary rule upper-bounds the realized $Q$ by
+  $\log(M+1)$, predeclares the square-root extension, and leaves $j=0$ and
+  $j\le1$ as mechanism/price comparators rather than fitted choices.
 
 There is also a larger **curvature-complete** floor when a shape class is
 declared. For the shifted common-scale Student-t family the likelihood
@@ -1349,7 +1360,7 @@ be cheap. Three choices remain, and should not be conflated:
    but leaves no formal budget for exterior misses, while
    $\alpha_2=\alpha/2$ leaves half the union-bound budget; and
 3. M3's class split $\rho$. Any split fixed independently of the observed
-   ranks preserves Proposition 12. A first-order width calculation gives
+   ranks preserves Proposition 12. A first-order width calculation **[Heuristic; untested]** gives
    $\rho^*\approx A_F/(A_F+A_G)$, where
 
    $$A_F={1\over\sqrt{n_0}}\int_{\mathcal R}
@@ -1366,17 +1377,50 @@ be cheap. Three choices remain, and should not be conflated:
 **(f) What an optimal router boundary can—and cannot—use.**
 
 **Proposition 14 (AUC and sample sizes do not identify endpoint risk).
-[Exact construction; coverage consequence is a conjecture.]** Fix
-$A\in(1/2,1)$ and $(n_0,n_1)$. The class of continuous increasing ROC
+[Exact construction; coverage consequence measured — Corollary 14.1.]**
+Fix $A\in(0,1)$ and $(n_0,n_1)$. The class of continuous increasing ROC
 curves with integral $A$ contains curves with arbitrarily different
-$\rho_0$ and $\rho$ on intervals shorter than $1/n_0$: insert a convex
-endpoint hook of width $\varepsilon$ and compensate its $O(\varepsilon)$
-area by an arbitrarily small interior perturbation. Therefore AUC and the
-two sample sizes cannot bound either hook ratio, and no nontrivial
-distribution-free router boundary in those three variables can be derived.
+$\rho_0$ and $\rho$ near the endpoints, at negligible cost in area:
+the perturbation that drives Lemma 13 is a *sliver* of positive mass
+$\pi \asymp 1/n_1$ in the extreme lower tail together with an interval
+of width $s_1 \gtrsim Q/(n_0 p_*)$ carrying no positive mass, whose joint
+area cost is $O(\pi) + O(\pi s_1)$ and is compensated by an arbitrarily
+small interior change. (The narrowness is in the sliver, not in the hook
+as a whole: a hook confined to one grid cell is invisible to the band, and
+a useful counterexample needs the wide empty stretch.) Therefore AUC and
+the two sample sizes cannot bound either hook ratio, and no nontrivial
+distribution-free router boundary in those three variables exists.
 Uniform validity over all continuous ROCs routes everything to M3. Any
-useful boundary must declare a shape/curvature class or use additional
-tail information.
+useful *router* must declare a shape/curvature class or use additional
+tail information; the distribution-free alternative is not a router at
+all but the conservative floor of (h).
+
+**Corollary 14.1 (the sliver DGP; the depth–probability frontier of the
+C = 1 band). [Sketch + Empirical]** Take $\tau(s) = c\,s$ on
+$[0, 1/n_0]$, $\tau(s) = c/n_0$ on $[1/n_0, s_1]$, and any concave body
+on $[0, 1-s_1]$ scaled to the target AUC. The sliver is unsampled with
+probability $(1 - c/n_0)^{n_1} \approx e^{-c\,n_1/n_0}$; on that event
+the empirical-TPR-1 run has $K \approx n_0 s_1$ grid points, the truth's
+deficit there is $\pi = c/n_0$, and by Lemma 13 the band misses at every
+grid point $k$ with $K > q_{k,\ell}\,k/(n_1 \pi)$ — for any $s_1 > 0$ once
+$n_1 \pi \gtrsim q\,k\,/(n_0 s_1)$. Writing the sliver mass in frontier
+units, $\pi = d/n_1$: **for every AUC and every $(n_0, n_1)$ with
+$\min(n_0,n_1) \gtrsim 100$ there is a continuous DGP on which the C = 1
+band misses by depth $\approx d/n_1$ with probability $\ge e^{-d}(1-o(1))$.**
+This is the Lemma 9.1-mirror frontier read as a coverage statement: at
+depth $1/n_1$ the forced miss probability is $\ge .37$, at $3/n_1$ it is
+$\ge .05$ — so the band is not valid at level .95 against misses of the
+frontier scale at any sample size — while M3's deficit in the same run is
+$\approx \ln(1/\gamma)/n_1 \ge 6/n_1$ and it cannot be forced there.
+Measured (production band, $n_0 = n_1 = 500$, 100 replicates each,
+`corner_mechanism.py sliver`): C = 1 coverage **.54** at AUC .80 and
+**.56** at AUC .95 (both $c = .8$, $s_1 = .25$; predicted saturation
+$e^{-.8} = .45$) and **.64** at AUC .60 ($c = 1$, $s_1 = .12$; predicted
+$e^{-1} = .37$), against M3 coverage 1.000 on the same data — the
+saturation probability accounts for the whole deficit. The construction
+scales: with $n_1\pi$ held fixed the
+miss probability is $n$-independent, so the C = 1 band's distribution-free
+worst case does not improve with $n$.
 
 For a declared class $\mathcal C$ and an AUC uncertainty set $\mathcal A$,
 the hard-coverage router furnished by the approximation is
@@ -1415,6 +1459,95 @@ Poissonized endpoint simulator correlates .90 with coverage (RMSE .025);
 its $\le.01$ screen clears 103 cells with no observed failure. A 40-rep
 production-band spot check at t(6.62)/.988, $n=6656$, directly reproduced
 the predicted first-point, mid-zone, and whole-saturated-zone miss modes.
+
+**(h) The distribution-free case: what a heuristic may rely on.** Prop. 14
+closes the door on routers that read $(\widehat{\mathrm{AUC}}, n_0, n_1)$
+without a declared class. It does not close the door on adaptivity. Two
+kinds survive, and they are different objects.
+
+*Declared class: the natural declaration is curvature, not a tail index.*
+**Corollary 13.1 (corner concavity suffices). [Sketch]** If $R$ is concave
+on $[0, Q/n_0]$ and on $[1-s_*, 1]$ — in particular if the likelihood
+ratio is monotone, the classical "proper ROC" assumption — then $h_0 \le 1$
+and $h_k \ge 1$, so both corner channels of Lemma 13 are *conservative*:
+$r_L, r_R \le \ell$. Together with the interior roughness surplus (§7.1)
+this is the leading-order **candidate** for the class-relative validity
+statement that has been missing: the corner mechanism is conservative on
+the proper-ROC class and anti-conservative off it, and every wedge cell is
+off it. The declaration "corners concave" is weaker than a parametric tail
+class and is what binormal, bimodal-negative and the tested Weibull/gamma
+corners satisfy; the shifted-$t$ family violates it at both ends. Within
+the declaration the corner mechanism predicts that no router is needed,
+but full-band finite-sample safety still requires proof or prospective
+validation. A practical router would therefore be a *class declaration or
+class test*, and Prop. 14 says such a test cannot be run from three summary
+numbers.
+
+*No class: the conservative floor, and the properties that keep its rule
+library-independent.* Absent a declaration the only admissible adaptivity
+is widening, and the following properties give the floor exact domination
+and a distribution-free regional cap. They do not, without control of the
+exterior term, prove full-band $1-\alpha$ coverage:
+
+1. **Widening-only.** The rule may enlarge the C = 1 band and never narrow
+   it. Then coverage $\ge$ C = 1 coverage for every DGP and every
+   replicate (§7.3(d), exact). Anything that narrows re-enters the
+   calibrated-map territory of §7 and inherits the plug-in pathology.
+2. **Rank-measurable.** The region is a function of the merged label
+   sequence $\Lambda$ alone (Prop. 2). Its law under any DGP is then the
+   law of the rank experiment; nothing about the score scale, the family,
+   or an estimated AUC enters.
+3. **An exact cap inside.** The widening component carries its own
+   distribution-free guarantee (M3, Prop. 12), so $P(\text{miss inside the
+   region}) \le \alpha_2$ whatever the region's selection rule (the
+   sub-event argument of the Stage F spec §1.3).
+4. **Frontier honesty as the trigger — not curvature estimation.** The
+   conservative design principle is to contain every grid point at which
+   the C = 1 edge claims more than the Lemma 9 frontier permits of *any*
+   distribution-free band. Both identified places are rank-observable:
+   the first $\lceil Q \rceil$ grid points (the band's
+   $L(t_k) > 0$ there is a frontier violation whenever $p_1 > 0$), and the
+   empirical-TPR-1 run of length $K$ (the band's deficit $\approx Q k/(K n_1)$
+   is below the $c/n_1$ frontier for $k < cK/Q$, i.e. over most of the run
+   whenever $K > Q/c$). This is exactly the region Lemma 13 produces, but
+   derived without any statement about the truth: the rule compares the
+   band's own claim against the minimax frontier, and Prop. 2 makes that
+   comparison a function of the ranks. Curvature signatures (the growing
+   inter-positive gaps and $p_2 - p_1 \gg p_1$ of (e)) may *narrow* the
+   region as conservative-only economies; they must not be needed to
+   *find* it.
+5. **An a-priori width scale.** The *unmargined base* frontier region costs
+   at most
+   $\lceil Q\rceil/n_0$ (left; heights $\le 1$) plus $K \cdot Q/(n_0 n_1)
+   \le Q/n_1$ (right; both deficits are $\le Q/n_1$ on the run) in area:
+   $\Delta\text{area} \le Q\,(1/n_0 + 1/n_1)$, with the typical cost far
+   below the bound (the probe's +5–7%; the right run is cheap because both
+   bands are within $O(Q/n_1)$ of 1 there). The required
+   $2\sqrt K$ margin adds at most its grid fraction in the vacuous
+   height-one bound; its sharper price remains to be derived and is
+   measured separately in Stage F. No fitted price surface is required.
+6. **No fitted $(\mathrm{AUC}, n)$ surface in the distribution-free
+   floor.** Any such surface encodes the library's shape class (Prop. 14),
+   and a rule that depends on $\widehat{\mathrm{AUC}}$ through it is
+   class-relative however it is labeled. AUC may enter only as a
+   declared-class input — a supremum over the class, per (f) — never as an
+   estimated trigger; and because risk is non-monotone in AUC, not merely
+   through a one-sided bound.
+7. **The residual is the ordinary interior claim.** With 1–4 in place,
+   $P(\text{miss}) \le \alpha_2 + P(E_{\mathrm{out}})$ and the corner part
+   of $E_{\mathrm{out}}$ is $\ell$-level at leading order (the $j \ge 1$
+   gaps are calibrated: their anchors $\Gamma_j$ carry the exact law and one
+   misallocated spacing cannot reach the $\ell$-quantile of $\Gamma_j + SV$
+   for $j \ge 1$), so what remains empirical is the same interior surplus
+   that Theorem 7 and §7.1 already describe. Making that residual a theorem
+   is open problem 6, not a routing question.
+
+The two objects should be named separately in guidance: **the floor is the
+rank-only, library-independent heuristic with an exact regional cap; the
+router is the declared-class heuristic.**
+A router that reads $(\widehat{\mathrm{AUC}}, n_0, n_1)$ and nothing else
+is not a weaker distribution-free rule — by Prop. 14 it is a class
+assumption written in three numbers.
 
 
 ---
@@ -1954,6 +2087,7 @@ is, at the price of conservatism).
 | $C$-remap of the trim level | Finite-sample centring at central $\alpha$; asymptotically the trim level is the coverage (Thm 7), so fixed $C>1$ is a finite-sample device with a known asymptotic liability; erosion law §7.1 | [Empirical + Sketch] |
 | CP-form upper allowance at level $j^\*/(M+1)$ | Matches the plateau scale forced by Lemma 9.1; pure widening (Lemma 8); parameter-free. Not a standalone exact device — the level is data-selected | [Sketch necessity; Exact widening] |
 | Degenerate lower allowance | The forced lower-left mirror, at zero width cost; full mirror provably not worth it | [Exact + Empirical] |
+| Rank-only frontier M3 floor | Restores the left and saturated-run honesty frontiers with a predeclared margin; dominates C = 1 and has an exact M3 cap inside the random region | [Exact containment/cap; Sketch extent; external test pending] |
 | Random tie-breaking | Exact reduction under ties with trapezoidal estimand; no conservatism needed | [Exact] |
 
 **The method space in one taxonomy.** The GET package's envelope types map
@@ -1962,10 +2096,13 @@ choice (what cloud): `'unscaled'` (constant-width MAD) = the KS-type band;
 `'st'` (studentized MAD) = the old envelope method's interior statistic;
 `'rank'` (extreme rank / min-p) = this method's trim; `'erl'` = the §5.1
 refinement. The envelope era applied a `'st'`-type ordering to a *resampling
-bootstrap* cloud and needed two exact floors to patch that cloud's corner
-failures; the current method applies a `'rank'` ordering to the *fiducial*
-cloud, whose corners are exact by construction. The cloud, not the
-ordering, was the load-bearing change.
+bootstrap* cloud and needed two exact floors to patch that cloud's support
+collapse; the current method applies a `'rank'` ordering to the *fiducial*
+cloud. Its own-class spacings and mass beyond the extremes are exact, but
+§7.4 shows that transporting the other class through an end gap is
+anti-conservative at convex corners. The cloud was the load-bearing
+improvement; the frontier M3 floor repairs the remaining within-gap
+convention.
 
 ---
 

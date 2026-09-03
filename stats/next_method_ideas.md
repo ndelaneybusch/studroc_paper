@@ -15,7 +15,10 @@ retires the "safe above min(n₀,n₁) = 500" framing throughout this document
 composite band as the lead fix (§7). This document is a working model of
 what the full simulation suite should show, based on what has actually been
 measured — with the uncertainties stated. The full suite is the arbiter;
-nothing here is a result of that suite yet.*
+nothing here is a result of that suite yet. **Theory revision 2026-09-02:**
+Prop. 14 / Cor. 14.1 show that no (AUC, n₀, n₁) rule is distribution-free;
+the Stage F lead is now the fixed, rank-only frontier floor, while routing
+is explicitly class-relative.*
 
 *Theory companion: `stats/fiducial_band_theory.md` — guarantees, rates,
 corner impossibility results, and the analysis of the C-remap.*
@@ -78,10 +81,11 @@ n = 6,000: worst measured .645 (t(2)/.99, n = 250) and .690 at n = 500, and
 at AUC ≥ .975 no tested n up to 6,656 is safe. Coverage is **not monotone
 in n** — at fixed shape t(4.69)/.986 it falls .993 → .823 from n = 150 to
 1,200 — so the former "below min(n₀,n₁) ≈ 500" framing is wrong in kind,
-not just in its constant. The measured routing rule and the localized M3
-floor that repairs the failures are in
-`stats/c_calibration_followup_report.md` §5 and §7; the exact M3 band
-remains the indicated fallback inside the wedge. **Mechanism derived
+not just in its constant. The measured routing rule and localized-floor
+probe are in `stats/c_calibration_followup_report.md` §5 and §7; the
+router is now class-relative, while the revised rank-only frontier floor
+is specified in `stats/hybrid_floor_spec.md`. The exact M3 band remains
+the certification fallback. **Mechanism derived
 2026-09-02** (theory doc §7.4): the within-gap law is calibrated to local
 ROC linearity and becomes anti-conservative at a convex heavy-tail hook. A
 finite-grid endpoint score screens 122 of 257 cells with no observed
@@ -248,12 +252,12 @@ conclusion.
    concentrate in a window of `m = n₀·t₅₀` (negatives above the median
    positive), which explains the non-monotonicity — n carries a shape
    *through* the window — but the window's upper edge grows with AUC, so m
-   compresses the boundary without linearizing it. Two live fixes, in
-   preference order: the **localized M3 floor** (§7, +6.4% width vs +28–46%
-   for routing, and provably never worse than C = 1) and the conservative
-   (AUC, n) **routing rule** (report §5; zero failures over all 257 cells).
-   Both are validated in-sample only; spec follow-up item 5 still gates
-   guidance. **Mechanism resolved 2026-09-02** (theory doc §7.4, Lemma 13):
+   compresses the boundary without linearizing it. The live fix is the
+   **rank-only frontier M3 floor** (§7, +6.4% width for its precursor vs
+   +28–46% for full M3, and provably never worse than C = 1); full M3 is
+   the theorem-carrying certification fallback. The old (AUC, n) router is
+   now only a class-relative diagnostic. **Mechanism resolved 2026-09-02**
+   (theory doc §7.4, Lemma 13):
    the within-gap sorted-uniform convention is an implicit *linear-ROC*
    assumption; it transports the exact corner pivots to the TPR axis
    without loss when the corner is linear, and inflates the lower-edge miss
@@ -411,14 +415,14 @@ in production, none silently dropped:
 
 | # | method | status |
 |---|---|---|
-| 1 | Full fiducial C = 1 | Shipped default. Valid for AUC ≤ .90 at every tested n; invalid inside the (AUC, n) wedge (§5 item 1). Cannot headline alone. |
+| 1 | Full fiducial C = 1 | Shipped default. Passed the ordinary tested library at AUC ≤ .90, but the sliver sketch constructs counterexamples at any AUC/sample-size scale (measured at three AUCs, n=500). A proper-ROC restriction is a theory candidate, not yet a finite-sample theorem. |
 | 2 | Full M3 | Production, theorem-carrying, validated to 1.000 inside the wedge; +26–69% width. The certification layer and fallback. |
-| 3 | C = 1 + (AUC, n) router to M3 | Measured rule with zero failures over 257 cells (in-sample); expensive exactly at high AUC (65% unnecessary routals). Entry below. |
-| 4 | M3 floor in the FPR tails, trimmed center | Lead idea. The M3-floor half is measured (+6.4% width repairing the wedge, domination property); the trimmed-interior half (composite) is a finite-range candidate at −6.8%. Their composition is unmeasured. Entries below; study spec `stats/hybrid_floor_spec.md`. |
-| 5 | Continuous blend of M3 and C\* over (n, AUC, FPR) | Deferred by assessment, not falsified. Entry below. |
+| 3 | C = 1 + declared-class router to M3 | The old (AUC, n) thresholds are an in-sample student-t/library rule, not a distribution-free candidate. Any successor must declare curvature/shape and maximize risk over its full uncertainty set. |
+| 4 | Rank-only frontier M3 floor, optionally plus a trimmed center | Lead idea. The fixed floor uses the left honesty frontier plus the empirical saturated run and a predeclared margin; exact domination/regional cap, full coverage still empirical. The trimmed-interior half remains a separate finite-range width candidate. |
+| 5 | Continuous blend of M3 and C\* over (class, FPR) | Deferred. Any AUC/n-conditioned version is class-relative; a widening-only rank rule remains the admissible distribution-free direction. |
 
-- **The localized M3 floor — the lead idea after the 2026-09-01 follow-up,
-  and it displaces the composite band below.** Replay of failing cells
+- **The frontier M3 floor — the lead idea after the 2026-09-01 follow-up,
+  revised after Prop. 14 / Cor. 14.1.** Replay of failing cells
   (`c_calibration_followup_report.md` §7) shows the C = 1 band's misses are
   localized in FPR, and that **M3 covers at 100% of the miss points**.
   Taking the pointwise union with M3 on `FPR ∈ [0, .005] ∪ [.5, 1]` and
@@ -427,25 +431,28 @@ in production, none silently dropped:
   whole curve to M3**. Two structural properties make this stronger than
   the composite band: the upper region is nearly free despite spanning half
   the curve (both bands are compressed against TPR = 1 there), and the
-  hybrid **provably cannot do worse than C = 1** — the union is pointwise
-  wider and the running-max closure preserves that ordering, so its
-  coverage dominates identically rather than on average. That removes the
-  usual composite-band risk and makes unconditional application
-  defensible rather than routing-gated. Unlike the corner treatment below
-  it is also theorem-capable in principle, since M3 carries Prop. 12.
-  What it needs before shipping: the region was chosen on the five cells
-  that score it (100–200 reps each, student-t only); `tau_lo = .005` should
-  be re-expressed in grid points (at n = 130 it spans 0.65 of one); and the
-  width cost where C = 1 was already valid is unpriced. The validation run
-  is specified in the report §10 item 2 (~2–3 CPU-hours). **Theory
-  (2026-09-02, theory doc §7.4(e)):** M3 implements the bracket's
-  no-interpolation principle with a simultaneous theorem. The derived base
-  region is the first $\lceil\ln(1/\ell)\rceil\approx7$ left-grid points
-  plus the complete empirical-TPR-1 run on the right. Extending the latter
-  to the first interior positive gaps leaves one integer `j_max` for
-  Stage F to calibrate; it is not fixed at 2–3 by theory. The
-  "upper half is nearly free" is structural
-  (M3's and the fiducial's tail deficits differ by $O(1/n_1)$ per point).
+  hybrid **provably cannot do worse than C = 1**. The production stitch now
+  uses the widening-only reverse-minimum lower closure, which additionally
+  preserves M3 pointwise on the random region. Thus the floor has exact
+  domination and an exact regional miss cap; its exterior term remains
+  empirical.
+
+  The theory now fixes the primary rule before outcomes. Its left region
+  uses the deterministic schedule
+  $k\le\min[n_0,\lceil\log\{M(n_0,.05)+1\}\rceil]$, which upper-bounds
+  the typical $\lceil Q\rceil\approx7$ frontier without reading the realized cloud.
+  Its right region is the complete empirical-TPR-1 run extended inward by
+  $\lceil2\sqrt K\rceil$ negative-grid points, where $K$ is the observed run
+  length; `j=0` and the full `j<=1` preimage are mechanism/price ablations.
+  The rule is a function of ranks and class sizes only. AUC, $m_q$, fitted
+  surfaces, and true geometry may explain outcomes but cannot select the
+  region. The old 60/40 AUC-conditioned fit is therefore retired before it
+  runs. Revised Stage F freezes this rule and every manifest up front,
+  retains the ordinary wedge/safe/imbalance/transfer cells, and adds fresh
+  sliver confirmations at multiple AUCs, scales, and imbalance directions.
+  The archived n=500 sliver evidence (.54–.64 C=1 coverage, M3 1.000) is
+  theory-development evidence, not prospective validation. Full details and
+  the code-migration gate are in `stats/hybrid_floor_spec.md`.
 - **The composite band — corner-patched interior trim over a declared
   finite range (after Stage S; now the width play rather than the validity
   play, since the M3 floor above addresses validity more cheaply and with a
@@ -498,13 +505,12 @@ in production, none silently dropped:
   dead (Stage S STOP); an M3-below-n≤500 / auto-above hybrid was tested
   and rejected on economics (M3 costs 1.26–1.69× the C=1 band at n ≤ 500
   where C=1 is measured-valid, while the safe shape-blind gain above 500
-  is ~2–6% in a mid-n window only); M3 remains the router target for the
-  small-n_eff hole once its boundary is located.
-- **The (AUC, n) routing rule (roster #3) — measured, conservative; its
-  value relative to the M3 floor is an open empirical question.** Route on an *upper
-  confidence bound* of the empirical AUC (per-dataset adaptivity is
-  admissible here only because mis-routing to M3 costs width, never
-  coverage): AUC_ub < .88 → fiducial band at any n; < .96 → iff n > 600;
+  is ~2–6% in a mid-n window only); M3 remains the exact parent and
+  certification fallback, but there is no distribution-free sample-size
+  routing boundary to locate.
+- **The old (AUC, n) routing rule (roster #3) — retained only as a measured,
+  class-relative diagnostic.** Its in-sample thresholds were
+  AUC_ub < .88 → fiducial band at any n; < .96 → iff n > 600;
   < .975 → iff n > 1500; ≥ .975 → M3
   (`c_calibration_followup_report.md` §5). Zero failures over all 257
   boundary cells, min coverage .944 — but in-sample (the thresholds were
@@ -514,18 +520,27 @@ in production, none silently dropped:
   non-monotone in n). The runtime-estimable m-statistic (negatives above
   the median positive) is the candidate for a tighter second-generation
   rule once its AUC drift is characterized (report §4). Fresh-seed
-  confirmation (spec item 5) required before any threshold freezes.
-  **Theory (2026-09-02, theory doc §7.4(f)):** AUC and class sizes cannot
-  identify endpoint curvature, so no nontrivial distribution-free router
-  exists in those variables alone. For a declared shape class, route by
-  the worst finite-grid endpoint risk over the full AUC uncertainty set;
-  do not merely plug in an AUC upper endpoint because the risk is
-  nonmonotone. The m-statistic is approximately
-  $N_0=n_0(1-\mathrm{AUC})/2$, explaining its useful compression.
-- **Continuous blend of M3 and C\* over (n, AUC, FPR) (roster #5) —
+  confirmation would have been required before any threshold froze.
+  **Superseding theory (Prop. 14 / Cor. 14.1, §7.4(h)):** no router
+  reading (AUC, n₀, n₁) alone can be distribution-free — for every AUC and
+  sample size a continuous "sliver" DGP forces the C = 1 band to miss by
+  ≥ d/n₁ with probability ≥ e^{−d} (measured: coverage .54–.64 at
+  AUC .6/.8/.95, n = 500, M3 1.000). The floor is the rank-only,
+  library-independent heuristic (widening-only, frontier-triggered, exact
+  cap inside); the router is the declared-class heuristic. Corner concavity
+  (proper ROC) is the natural weak declaration, but Cor. 13.1 is presently
+  a leading-order sketch, not a finite-sample safety theorem. For a declared
+  class, route by the worst finite-grid endpoint risk over the full AUC
+  uncertainty set; never plug in only an AUC upper endpoint because risk is
+  nonmonotone. The m-statistic remains useful mechanism compression, not a
+  distribution-free gate. Router confirmation is removed from Stage F and
+  deferred until a class and class-test contract are specified.
+- **Continuous blend of M3 and C\* over (class, FPR) (roster #5) —
   deferred by assessment, not falsified.** The generalization of the M3
   floor: pointwise band edges interpolating between the trimmed fiducial
-  and M3 edges with weights varying over FPR, conditioned on (n, AUC).
+  and M3 edges with weights varying over FPR. Any conditioning on (n, AUC)
+  is explicitly class-relative after Proposition 14; the only
+  library-independent version is rank-measurable and widening-only.
   What bears on it: the miss geometry *is* strongly FPR-localized (so the
   FPR axis has measured support), but the hard-region union already
   captures essentially all of that gain at +6.4%; every continuously

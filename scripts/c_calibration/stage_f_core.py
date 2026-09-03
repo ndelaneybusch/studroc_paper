@@ -1,39 +1,32 @@
-"""Statistical and persistence primitives for the Stage F M3-floor study.
+"""Statistical and persistence primitives for the Stage F frontier-floor study.
 
-This module contains no simulation design and performs no I/O beyond explicit
-artifact helpers.  It is the shared contract between the Stage F runner and
-offline analysis: observable summaries, region evaluation, both stitch
-closures, exact array serialization, and lossless violation-set encoding.
+This module contains no simulation design or I/O. It provides observable
+summaries, region evaluation, both stitch closures, exact array serialization,
+and lossless violation-set encoding.
 """
 
 from __future__ import annotations
 
 import base64
-import hashlib
-import json
-from dataclasses import asdict, dataclass, field, replace
-from pathlib import Path
+import math
+from dataclasses import asdict, dataclass
 from typing import Literal
 
 import numpy as np
 from numpy.typing import NDArray
 from scipy.stats import norm
 
-ARTIFACT_SCHEMA = "stage-f-region/v1"
 RECORD_SCHEMA = "stage-f-replicate/v1"
 MAX_RLE_INTERVALS = 64
 AUC_BOUND_DELTA = 0.05
 
-Coordinate = Literal[
-    "fpr", "negative_count", "fpr_distance", "negative_distance", "positive_tail"
-]
-ModelFamily = Literal["constant", "auc_binned", "linear_hinge"]
 Closure = Literal["widening", "legacy"]
+FrontierRule = Literal["frontier_floor_v1", "frontier_run0", "frontier_j1"]
 
 
 @dataclass(frozen=True)
 class ObservableSummary:
-    """Dataset-only quantities available to a frozen region rule.
+    """Dataset-only quantities retained for diagnostics and rank routing.
 
     Args:
         n0: Number of negative observations.
@@ -55,220 +48,20 @@ class ObservableSummary:
     m50: int
     m70: int
 
-    def features(self) -> dict[str, float]:
-        """Return the covariates understood by linear edge models."""
-        return {
-            "log_n0": float(np.log(self.n0)),
-            "log_n1": float(np.log(self.n1)),
-            "auc_ub": self.auc_ub,
-            "m30": float(self.m30),
-            "m50": float(self.m50),
-            "m70": float(self.m70),
-        }
 
+def frontier_left_cutoff(*, n0: int, m_draws: int) -> int:
+    """Return the last left-frontier count resolved by a cloud of size ``M``.
 
-@dataclass(frozen=True)
-class SupportBox:
-    """Closed observable support of a fitted Stage F rule."""
+    Args:
+        n0: Number of negative observations.
+        m_draws: Fiducial Monte Carlo cloud size.
 
-    n0: tuple[int, int]
-    n1: tuple[int, int]
-    auc_ub: tuple[float, float]
-
-    def contains(self, observables: ObservableSummary) -> bool:
-        """Return whether an observable vector lies inside fitted support."""
-        return (
-            self.n0[0] <= observables.n0 <= self.n0[1]
-            and self.n1[0] <= observables.n1 <= self.n1[1]
-            and self.auc_ub[0] <= observables.auc_ub <= self.auc_ub[1]
-        )
-
-
-@dataclass(frozen=True)
-class EdgeRule:
-    """One endpoint-connected region component.
-
-    Every coordinate is a nonnegative distance from its endpoint, so a larger
-    predicted cutoff always enlarges the region.  ``linear_hinge`` models are
-    nested outward in ``auc_ub`` because the direct AUC coefficient and every
-    hinge slope must be nonnegative.  ``auc_binned`` cutoffs must likewise be
-    nondecreasing.
+    Returns:
+        Inclusive native-grid cutoff ``min(n0, ceil(log(M + 1)))``.
     """
-
-    coordinate: Coordinate
-    family: ModelFamily
-    intercept: float = 0.0
-    coefficients: dict[str, float] = field(default_factory=dict)
-    auc_knots: tuple[float, ...] = ()
-    auc_slopes: tuple[float, ...] = ()
-    auc_bin_upper: tuple[float, ...] = ()
-    auc_bin_cutoffs: tuple[float, ...] = ()
-
-    def validate(self, *, side: Literal["left", "right"]) -> None:
-        """Validate model shape, coordinate side, and AUC nesting."""
-        left_coordinates = {"fpr", "negative_count"}
-        right_coordinates = {"fpr_distance", "negative_distance", "positive_tail"}
-        allowed = left_coordinates if side == "left" else right_coordinates
-        if self.coordinate not in allowed:
-            raise ValueError(f"{self.coordinate!r} is not a {side}-edge coordinate")
-        if self.intercept < 0.0:
-            raise ValueError("edge intercept must be nonnegative")
-        if self.family == "constant":
-            return
-        if self.family == "linear_hinge":
-            if len(self.auc_knots) != len(self.auc_slopes):
-                raise ValueError("auc_knots and auc_slopes must have equal length")
-            if tuple(sorted(self.auc_knots)) != self.auc_knots:
-                raise ValueError("auc_knots must be sorted")
-            if self.coefficients.get("auc_ub", 0.0) < 0.0 or any(
-                slope < 0.0 for slope in self.auc_slopes
-            ):
-                raise ValueError("AUC effects must be nonnegative")
-            unknown = set(self.coefficients) - {
-                "log_n0",
-                "log_n1",
-                "auc_ub",
-                "m30",
-                "m50",
-                "m70",
-            }
-            if unknown:
-                raise ValueError(f"Unknown edge-model coefficients: {sorted(unknown)}")
-            return
-        if self.family == "auc_binned":
-            if not self.auc_bin_upper or len(self.auc_bin_upper) != len(
-                self.auc_bin_cutoffs
-            ):
-                raise ValueError("AUC bins and cutoffs must be non-empty and aligned")
-            if tuple(sorted(self.auc_bin_upper)) != self.auc_bin_upper:
-                raise ValueError("AUC bin upper bounds must be sorted")
-            if any(np.diff(self.auc_bin_cutoffs) < 0.0):
-                raise ValueError("AUC-bin cutoffs must be nondecreasing")
-            return
-        raise ValueError(f"Unknown edge model family: {self.family!r}")
-
-    def cutoff(self, observables: ObservableSummary) -> float:
-        """Evaluate the nonnegative edge cutoff for one dataset."""
-        if self.family == "constant":
-            return self.intercept
-        if self.family == "auc_binned":
-            index = int(np.searchsorted(self.auc_bin_upper, observables.auc_ub))
-            index = min(index, len(self.auc_bin_cutoffs) - 1)
-            return self.auc_bin_cutoffs[index]
-        features = observables.features()
-        value = self.intercept + sum(
-            coefficient * features[name]
-            for name, coefficient in self.coefficients.items()
-        )
-        value += sum(
-            slope * max(observables.auc_ub - knot, 0.0)
-            for knot, slope in zip(self.auc_knots, self.auc_slopes, strict=True)
-        )
-        return max(float(value), 0.0)
-
-
-@dataclass(frozen=True)
-class RegionArtifact:
-    """Frozen observable-only Stage F region rule."""
-
-    rule_id: str
-    left: EdgeRule
-    right: EdgeRule
-    support: SupportBox
-    alpha: float = 0.05
-    auc_delta: float = AUC_BOUND_DELTA
-    tie_break: str = "random"
-    m3_split_ratio: float = 0.5
-    outside_support: str = "full_region"
-    study_seed: int = 20260902
-    training: dict = field(default_factory=dict)
-    provenance: dict = field(default_factory=dict)
-    schema: str = ARTIFACT_SCHEMA
-    content_hash: str = ""
-
-    def validate(self, *, verify_hash: bool = True) -> None:
-        """Raise if the artifact violates the frozen Stage F contract."""
-        if self.schema != ARTIFACT_SCHEMA:
-            raise ValueError(f"Unknown Stage F artifact schema: {self.schema!r}")
-        if self.rule_id != "stage_f_v1":
-            raise ValueError(f"Unexpected rule_id: {self.rule_id!r}")
-        if not 0.0 < self.alpha < 1.0 or not 0.0 < self.auc_delta < 1.0:
-            raise ValueError("alpha and auc_delta must lie in (0, 1)")
-        if self.tie_break != "random":
-            raise ValueError("Stage F v1 requires shared random tie-breaking")
-        if not 0.0 < self.m3_split_ratio < 1.0:
-            raise ValueError("m3_split_ratio must lie in (0, 1)")
-        if self.outside_support != "full_region":
-            raise ValueError("Unsupported extrapolation policy")
-        self.left.validate(side="left")
-        self.right.validate(side="right")
-        if verify_hash and self.content_hash != artifact_hash(self):
-            raise ValueError("Stage F artifact content hash does not match its payload")
-
-
-def artifact_payload(artifact: RegionArtifact, *, include_hash: bool = True) -> dict:
-    """Convert an artifact to its canonical JSON-native representation."""
-    payload = asdict(artifact)
-    if not include_hash:
-        payload.pop("content_hash", None)
-    return payload
-
-
-def artifact_hash(artifact: RegionArtifact) -> str:
-    """Return the SHA-256 hash of an artifact excluding its hash field."""
-    canonical = json.dumps(
-        artifact_payload(artifact, include_hash=False),
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-    return hashlib.sha256(canonical.encode()).hexdigest()
-
-
-def freeze_artifact(artifact: RegionArtifact) -> RegionArtifact:
-    """Return a validated artifact with its canonical content hash filled."""
-    candidate = replace(artifact, content_hash=artifact_hash(artifact))
-    candidate.validate()
-    return candidate
-
-
-def write_artifact(artifact: RegionArtifact, path: Path) -> None:
-    """Validate and write a frozen artifact as stable JSON."""
-    artifact.validate()
-    if path.exists():
-        existing = load_artifact(path)
-        if existing.content_hash != artifact.content_hash:
-            raise RuntimeError(
-                f"Refusing to replace frozen Stage F rule at {path} with a "
-                "different artifact"
-            )
-        return
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(artifact_payload(artifact), indent=2, sort_keys=True) + "\n"
-    )
-
-
-def load_artifact(path: Path) -> RegionArtifact:
-    """Load and validate a frozen Stage F rule artifact."""
-    payload = json.loads(path.read_text())
-
-    def load_edge(values: dict) -> EdgeRule:
-        """Normalize JSON lists back to immutable edge-rule tuples."""
-        for key in ("auc_knots", "auc_slopes", "auc_bin_upper", "auc_bin_cutoffs"):
-            values[key] = tuple(values.get(key, ()))
-        return EdgeRule(**values)
-
-    payload["left"] = load_edge(payload["left"])
-    payload["right"] = load_edge(payload["right"])
-    support = payload["support"]
-    payload["support"] = SupportBox(
-        n0=tuple(support["n0"]),
-        n1=tuple(support["n1"]),
-        auc_ub=tuple(support["auc_ub"]),
-    )
-    artifact = RegionArtifact(**payload)
-    artifact.validate()
-    return artifact
+    if n0 < 1 or m_draws < 1:
+        raise ValueError("n0 and m_draws must be positive")
+    return min(n0, math.ceil(math.log(m_draws + 1)))
 
 
 def khat_from_labels(labels: NDArray) -> NDArray[np.int64]:
@@ -343,37 +136,57 @@ def empirical_observables(
     )
 
 
-def coordinate_values(
-    coordinate: Coordinate, *, observables: ObservableSummary, khat: NDArray
-) -> NDArray[np.float64]:
-    """Evaluate one endpoint-distance coordinate on the native FPR grid."""
-    grid = np.arange(observables.n0 + 1, dtype=np.float64) / observables.n0
-    if coordinate == "fpr":
-        return grid
-    if coordinate == "negative_count":
-        return np.arange(observables.n0 + 1, dtype=np.float64)
-    if coordinate == "fpr_distance":
-        return 1.0 - grid
-    if coordinate == "negative_distance":
-        return np.arange(observables.n0, -1, -1, dtype=np.float64)
-    if coordinate == "positive_tail":
-        return observables.n1 - np.asarray(khat, dtype=np.float64)
-    raise ValueError(f"Unknown region coordinate: {coordinate!r}")
-
-
 def component_masks(
-    artifact: RegionArtifact, *, observables: ObservableSummary, khat: NDArray
+    *, observables: ObservableSummary, khat: NDArray, m_draws: int
 ) -> tuple[NDArray[np.bool_], NDArray[np.bool_]]:
-    """Return left and right endpoint components for a frozen rule."""
-    if not artifact.support.contains(observables):
-        full = np.ones(observables.n0 + 1, dtype=bool)
-        return full, full.copy()
-    left = coordinate_values(
-        artifact.left.coordinate, observables=observables, khat=khat
-    ) <= artifact.left.cutoff(observables)
-    right = coordinate_values(
-        artifact.right.coordinate, observables=observables, khat=khat
-    ) <= artifact.right.cutoff(observables)
+    """Return components of the primary frontier rule."""
+    return frontier_region_masks(
+        "frontier_floor_v1", observables=observables, khat=khat, m_draws=m_draws
+    )
+
+
+def frontier_region_masks(
+    rule: FrontierRule, *, observables: ObservableSummary, khat: NDArray, m_draws: int
+) -> tuple[NDArray[np.bool_], NDArray[np.bool_]]:
+    """Return the left frontier and selected saturated-run component.
+
+    Args:
+        rule: Primary rule or one of its two prespecified right-edge ablations.
+        observables: Rank-derived sample summary; only class sizes are consumed.
+        khat: Empirical positive-count map on the native negative grid.
+        m_draws: Fiducial cloud size, which fixes the left cutoff.
+
+    Returns:
+        Boolean left and right component masks.
+
+    Raises:
+        ValueError: If the empirical rank map is malformed.
+    """
+    khat = np.asarray(khat, dtype=np.int64)
+    if (
+        khat.shape != (observables.n0 + 1,)
+        or khat[0] < 0
+        or khat[-1] != observables.n1
+        or np.any(np.diff(khat) < 0)
+        or np.any(khat > observables.n1)
+    ):
+        raise ValueError("khat must be a valid empirical count map")
+    indices = np.arange(observables.n0 + 1)
+    left = indices <= frontier_left_cutoff(n0=observables.n0, m_draws=m_draws)
+    positive_tail = observables.n1 - khat
+    if rule == "frontier_run0":
+        return left, positive_tail == 0
+    if rule == "frontier_j1":
+        return left, positive_tail <= 1
+    if rule != "frontier_floor_v1":
+        raise ValueError(f"Unknown frontier rule: {rule!r}")
+    saturated = np.flatnonzero(positive_tail == 0)
+    if not len(saturated):
+        raise ValueError("khat must reach n1 at the final native-grid point")
+    k_sat = int(saturated[0])
+    run_length = observables.n0 - k_sat
+    margin = math.ceil(2.0 * math.sqrt(max(run_length, 1)))
+    right = indices >= max(0, k_sat - margin)
     return left, right
 
 

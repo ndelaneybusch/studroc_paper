@@ -1,8 +1,8 @@
-"""Frozen cell designs, manifests, and seed streams for Stage F.
+"""Cell designs, manifests, and seed streams for Stage F.
 
 Manifest creation is intentionally separate from simulation execution.  Study
 B/C cells are defined here from pre-Stage-F evidence; Study A's replay corpus
-is selected mechanically from existing summaries and combined with a frozen
+is selected mechanically from existing summaries and combined with an
 imbalance LHS and four extent-stress cells.
 """
 
@@ -20,8 +20,10 @@ from design import STUDY_SEED as LEGACY_STUDY_SEED
 from design import m_budget
 from scipy.stats import norm, qmc
 from shapes import (
+    Curve,
     ShapeSpec,
     _lhs_curve,
+    fine_grid,
     get_curve,
     lhs_heldout_specs,
     make_bimodal_negative,
@@ -33,9 +35,10 @@ from shapes import (
     quantize_jitter,
     shape_registry,
 )
+from stage_f_core import frontier_left_cutoff
 
 STAGE_F_SEED = 20260902
-MANIFEST_SCHEMA = "stage-f-manifest/v1"
+MANIFEST_SCHEMA = "stage-f-manifest/v2"
 DEFAULT_SOURCE = Path("data/results/c_calibration_followup_20260830")
 DEFAULT_OUT = Path("data/results/hybrid_floor_20260902")
 PRIMARY_ALPHA = 0.05
@@ -47,12 +50,11 @@ IMBALANCE_LHS_SEED = 20260902
 IMBALANCE_LHS_SIZE = 24
 
 Study = Literal["A", "B", "C"]
-Partition = Literal["selection", "internal_validation", "stress", "external"]
 
 
 @dataclass(frozen=True)
 class StageFCell:
-    """One frozen Stage F simulation cell."""
+    """One Stage F simulation cell."""
 
     name: str
     study: Study
@@ -63,7 +65,6 @@ class StageFCell:
     n1: int
     reps: int
     reps_max: int
-    partition: Partition
     alphas: tuple[float, ...] = (PRIMARY_ALPHA, TRANSFER_ALPHA)
     quantize: int | None = None
     m_draws: int = 0
@@ -86,6 +87,15 @@ class StageFCell:
         return replace(self, m_draws=m_budget(self.n0, PRIMARY_ALPHA))
 
 
+@dataclass(frozen=True)
+class RankSample:
+    """One shared rank ordering and its pre-outcome simulation diagnostics."""
+
+    labels: np.ndarray
+    cloud_seed: int
+    diagnostics: dict[str, int | bool | float]
+
+
 def _stable_hash(text: str) -> int:
     """Map text to a stable unsigned 64-bit integer."""
     return int.from_bytes(hashlib.sha256(text.encode()).digest()[:8], "little")
@@ -98,8 +108,62 @@ def _shape(
     return name, {"family": family, "auc": auc, **(params or {})}
 
 
+def make_sliver_curve(
+    *, auc: float, n0: int, n1: int, expected_sliver_count: float, tail_extent: float
+) -> Curve:
+    """Construct the unequal-size continuous sliver ROC from Proposition 14.
+
+    Args:
+        auc: Requested total ROC area.
+        n0: Negative sample size defining the sliver width ``1 / n0``.
+        n1: Positive sample size defining its mass.
+        expected_sliver_count: Expected number of sampled positives in the sliver.
+        tail_extent: Right-tail extent ``s1`` containing the sliver and plateau.
+
+    Returns:
+        Monotone continuous ROC curve with the requested area.
+
+    Raises:
+        ValueError: If the requested parameters do not define a valid curve.
+    """
+    if n0 < 1 or n1 < 1 or expected_sliver_count <= 0.0:
+        raise ValueError("sliver sizes and mass must be positive")
+    sliver_width = 1.0 / n0
+    sliver_mass = expected_sliver_count / n1
+    slope = sliver_mass / sliver_width
+    plateau_height = 1.0 - sliver_mass
+    body_width = 1.0 - tail_extent
+    sliver_hinge = 1.0 - sliver_width
+    if not sliver_width < tail_extent < 1.0:
+        raise ValueError("tail_extent must exceed 1 / n0 and be smaller than one")
+    if not 0.0 < plateau_height < 1.0:
+        raise ValueError("expected sliver count must be smaller than n1")
+    tail_area = (tail_extent - sliver_width) * plateau_height
+    tail_area += sliver_width * (1.0 - 0.5 * sliver_mass)
+    body_auc = (auc - tail_area) / (body_width * plateau_height)
+    if not 0.5 < body_auc < 1.0:
+        raise ValueError("requested sliver AUC leaves no valid binormal body")
+    location = np.sqrt(2.0) * norm.ppf(body_auc)
+    unit_grid = fine_grid()
+    grid = np.unique(
+        np.concatenate((unit_grid, body_width * unit_grid, [body_width, sliver_hinge]))
+    )
+    normalized = np.clip(grid / body_width, 1e-15, 1.0 - 1e-15)
+    body = plateau_height * norm.cdf(location + norm.ppf(normalized))
+    values = np.where(grid <= body_width, body, plateau_height)
+    values = np.where(
+        grid >= sliver_hinge, plateau_height + slope * (grid - sliver_hinge), values
+    )
+    values[grid == 0.0] = 0.0
+    values[grid == 1.0] = 1.0
+    curve = Curve(grid, values)
+    if not np.isclose(curve.auc(), auc, atol=3e-5):
+        raise ValueError("constructed sliver curve misses its requested AUC")
+    return curve
+
+
 def register_cell_shape(cell: StageFCell) -> None:
-    """Register a cell's curve from its frozen, JSON-native shape metadata."""
+    """Register a cell's curve from its JSON-native shape metadata."""
     registry = shape_registry()
     if cell.shape in registry:
         return
@@ -123,8 +187,17 @@ def register_cell_shape(cell: StageFCell) -> None:
             t_kink=float(meta.get("t_kink", 0.004)),
             tpr_kink=float(meta.get("tpr_kink", 0.6)),
         )
+    elif family == "sliver":
+        build = partial(
+            make_sliver_curve,
+            auc=auc,
+            n0=int(meta["n0"]),
+            n1=int(meta["n1"]),
+            expected_sliver_count=float(meta["expected_sliver_count"]),
+            tail_extent=float(meta["tail_extent"]),
+        )
     elif family in {"weibull", "gamma", "beta_opposing"}:
-        excluded = {"family", "auc", "note", "lhs_seed", "lhs_index"}
+        excluded = {"family", "auc", "note", "lhs_seed", "lhs_index", "corner_geometry"}
         params = {
             key: float(value) for key, value in meta.items() if key not in excluded
         }
@@ -144,7 +217,7 @@ def cell_curve(cell: StageFCell):
 
 
 def rep_seed_sequence(cell: StageFCell, rep: int) -> np.random.SeedSequence:
-    """Return the frozen per-(study, cell, replicate) seed sequence."""
+    """Return the deterministic per-(study, cell, replicate) seed sequence."""
     if cell.seed_mode == "legacy_replay":
         if cell.source_name is None or cell.source_stage is None:
             raise ValueError("legacy replay cells require source_name and source_stage")
@@ -155,13 +228,18 @@ def rep_seed_sequence(cell: StageFCell, rep: int) -> np.random.SeedSequence:
     return np.random.SeedSequence(entropy=entropy)
 
 
-def sample_labels(cell: StageFCell, rep: int) -> tuple[np.ndarray, int]:
-    """Draw one shared tie-resolved label order and fiducial-cloud seed."""
+def sample_labels(cell: StageFCell, rep: int) -> RankSample:
+    """Draw one shared tie-resolved label order and cloud seed."""
     register_cell_shape(cell)
     rng = np.random.default_rng(rep_seed_sequence(cell, rep))
     curve = get_curve(cell.shape)
     negative = rng.random(cell.n0)
     positive = curve.inv(rng.random(cell.n1))
+    diagnostics: dict[str, int | bool | float] = {}
+    if cell.shape_meta["family"] == "sliver":
+        hinge = 1.0 - 1.0 / cell.n0
+        count = int(np.count_nonzero(positive >= hinge))
+        diagnostics = {"sliver_count": count, "sliver_sampled": count > 0}
     if cell.quantize is not None:
         negative, positive = quantize_jitter(negative, positive, cell.quantize, rng)
     labels = np.concatenate(
@@ -169,7 +247,7 @@ def sample_labels(cell: StageFCell, rep: int) -> tuple[np.ndarray, int]:
     )
     order = np.argsort(np.concatenate([negative, positive]), kind="stable")
     seed = int(rng.integers(0, 2**64, dtype=np.uint64))
-    return labels[order], seed
+    return RankSample(labels=labels[order], cloud_seed=seed, diagnostics=diagnostics)
 
 
 def _new_cell(
@@ -180,7 +258,6 @@ def _new_cell(
     shape: tuple[str, dict],
     n0: int,
     n1: int,
-    partition: Partition,
     reps: int,
     reps_max: int,
     quantize: int | None = None,
@@ -198,14 +275,13 @@ def _new_cell(
         n1=n1,
         reps=reps,
         reps_max=reps_max,
-        partition=partition,
         quantize=quantize,
         notes=notes,
     ).with_budget()
 
 
 def imbalance_lhs_cells() -> list[StageFCell]:
-    """Return the frozen, achievable 24-cell Study A imbalance LHS."""
+    """Return the achievable 24-cell Study A imbalance LHS."""
     from studroc_paper.datagen.roc_to_dgp import StudentTSolver
 
     sampler = qmc.LatinHypercube(d=4, seed=IMBALANCE_LHS_SEED)
@@ -262,7 +338,6 @@ def imbalance_lhs_cells() -> list[StageFCell]:
                 shape=shape,
                 n0=n0,
                 n1=n1,
-                partition="selection",
                 reps=BASE_REPS_A,
                 reps_max=BASE_REPS_A,
             )
@@ -293,7 +368,6 @@ def extent_stress_cells() -> list[StageFCell]:
             ),
             n0=n,
             n1=n,
-            partition="stress",
             reps=BASE_REPS_A,
             reps_max=BASE_REPS_A,
         )
@@ -322,7 +396,6 @@ def _external_cell(
         shape=_shape(name=shape_name, family=family, auc=auc, params=params),
         n0=n0,
         n1=n1,
-        partition="external",
         reps=BASE_REPS_EXTERNAL,
         reps_max=MAX_REPS_EXTERNAL,
         quantize=quantize,
@@ -330,7 +403,7 @@ def _external_cell(
 
 
 def study_b_cells() -> list[StageFCell]:
-    """Return the completely frozen 24-cell external student-t/safe design."""
+    """Return the 24-cell external design plus six fresh sliver cells."""
     specs: list[
         tuple[str, str, float, int, int, dict[str, float] | None, int | None]
     ] = []
@@ -390,6 +463,34 @@ def study_b_cells() -> list[StageFCell]:
             ),
         ]
     )
+    for auc, n0, n1, expected_count, tail_extent in (
+        (0.60, 250, 250, 1.0, 0.12),
+        (0.60, 2_000, 2_000, 1.0, 0.12),
+        (0.80, 250, 250, 0.8, 0.25),
+        (0.95, 2_000, 2_000, 0.8, 0.25),
+        (0.80, 2_000, 500, 0.8, 0.25),
+        (0.80, 500, 2_000, 0.8, 0.25),
+    ):
+        specs.append(
+            (
+                "sliver_fresh",
+                "sliver",
+                auc,
+                n0,
+                n1,
+                {
+                    "n0": n0,
+                    "n1": n1,
+                    "expected_sliver_count": expected_count,
+                    "sliver_width": 1.0 / n0,
+                    "sliver_mass": expected_count / n1,
+                    "predicted_unsampled_probability": (1.0 - expected_count / n1)
+                    ** n1,
+                    "tail_extent": tail_extent,
+                },
+                None,
+            )
+        )
     return [
         _external_cell(
             study="B",
@@ -407,7 +508,7 @@ def study_b_cells() -> list[StageFCell]:
 
 
 def study_c_cells() -> list[StageFCell]:
-    """Return 14 frozen cross-family transfer cells as inside/control pairs."""
+    """Return 14 cross-family cells with pre-outcome corner labels."""
     families = [
         ("weibull", 0.985, {"shape": 0.5}),
         ("gamma", 0.925, {"shape": 0.5}),
@@ -426,19 +527,58 @@ def study_c_cells() -> list[StageFCell]:
     cells = []
     for pair, (family, auc, params) in enumerate(families):
         for member, n in enumerate((500, 8_000)):
+            cell = _external_cell(
+                study="C",
+                index=2 * pair + member,
+                source=f"{family}_{'small' if member == 0 else 'large'}",
+                family=family,
+                auc=auc,
+                n0=n,
+                n1=n,
+                params=params,
+            )
+            geometry = classify_corner_geometry(cell)
             cells.append(
-                _external_cell(
-                    study="C",
-                    index=2 * pair + member,
-                    source=f"{family}_{'inside' if member == 0 else 'control'}",
-                    family=family,
-                    auc=auc,
-                    n0=n,
-                    n1=n,
-                    params=params,
+                replace(
+                    cell, shape_meta={**cell.shape_meta, "corner_geometry": geometry}
                 )
             )
     return cells
+
+
+def classify_corner_geometry(cell: StageFCell) -> str:
+    """Classify native-scale corner curvature without simulated outcomes.
+
+    Args:
+        cell: Frozen design cell whose exact ROC truth is available.
+
+    Returns:
+        ``corner-concave``, ``corner-convex``, or ``ambiguous``.
+    """
+    curve = cell_curve(cell)
+    left_stop = frontier_left_cutoff(n0=cell.n0, m_draws=cell.m_draws) / cell.n0
+    right_start = float(curve.inv(np.array([1.0 - 1.0 / cell.n1]))[0])
+
+    def interval_label(start: float, stop: float) -> str:
+        """Classify slope changes on one nondegenerate corner interval."""
+        if stop - start <= np.finfo(float).eps:
+            return "ambiguous"
+        grid = np.linspace(start, stop, 257)
+        slopes = np.diff(curve.eval(grid)) / np.diff(grid)
+        changes = np.diff(slopes)
+        tolerance = 1e-7 * max(1.0, float(np.max(np.abs(slopes))))
+        if np.all(changes <= tolerance):
+            return "concave"
+        if np.all(changes >= -tolerance):
+            return "convex"
+        return "ambiguous"
+
+    labels = (interval_label(0.0, left_stop), interval_label(right_start, 1.0))
+    if labels == ("concave", "concave"):
+        return "corner-concave"
+    if labels == ("convex", "convex"):
+        return "corner-convex"
+    return "ambiguous"
 
 
 def _coverage_from_summary(summary: dict) -> float:
@@ -493,7 +633,6 @@ def replay_corpus_cells(source_root: Path = DEFAULT_SOURCE) -> list[StageFCell]:
             n1=int(meta["n1"]),
             reps=BASE_REPS_A,
             reps_max=BASE_REPS_A,
-            partition="selection",
             quantize=meta.get("quantize"),
             seed_mode="legacy_replay",
             source_name=name,
@@ -506,73 +645,26 @@ def replay_corpus_cells(source_root: Path = DEFAULT_SOURCE) -> list[StageFCell]:
     return cells
 
 
-def _partition_study_a(cells: list[StageFCell]) -> list[StageFCell]:
-    """Apply a deterministic approximately 60/40 stratified split."""
-    strata: dict[tuple, list[StageFCell]] = {}
-    for cell in cells:
-        if cell.partition == "stress":
-            continue
-        auc = float(cell.shape_meta.get("auc", 0.0))
-        auc_band = int(np.searchsorted([0.90, 0.94, 0.97, 0.985], auc))
-        prior = cell.prior_coverage
-        coverage_band = (
-            "new"
-            if prior is None
-            else ("fail" if prior < 0.94 else "near" if prior < 0.97 else "safe")
-        )
-        orientation = (
-            "balanced"
-            if cell.n0 == cell.n1
-            else ("n0_gt" if cell.n0 > cell.n1 else "n1_gt")
-        )
-        strata.setdefault(
-            (cell.source, auc_band, coverage_band, orientation), []
-        ).append(cell)
-    assignments = {}
-    for rows in strata.values():
-        rows = sorted(rows, key=lambda cell: _stable_hash(f"stage-f-split:{cell.name}"))
-        n_selection = max(1, int(np.ceil(0.6 * len(rows))))
-        assignments.update(
-            (cell.name, "selection" if index < n_selection else "internal_validation")
-            for index, cell in enumerate(rows)
-        )
-    return [
-        replace(cell, partition=assignments.get(cell.name, cell.partition))
-        for cell in cells
-    ]
-
-
 def study_a_cells(source_root: Path = DEFAULT_SOURCE) -> list[StageFCell]:
     """Return the complete replay + imbalance + stress Study A design."""
-    return _partition_study_a(
+    return (
         replay_corpus_cells(source_root) + imbalance_lhs_cells() + extent_stress_cells()
     )
 
 
 def manifest_payload(*, study: Study, cells: list[StageFCell]) -> dict:
-    """Build a stable manifest and its content hash."""
-    body = {
+    """Build a JSON-native study manifest."""
+    return {
         "schema": MANIFEST_SCHEMA,
         "study": study,
-        "study_seed": STAGE_F_SEED,
-        "design_constants": {
-            "primary_alpha": PRIMARY_ALPHA,
-            "transfer_alpha": TRANSFER_ALPHA,
-            "auc_delta": 0.05,
-            "m3_split_ratio": 0.5,
-            "tie_break": "random",
-            "trim_grid": "production",
-        },
         "cells": [asdict(cell) for cell in cells],
     }
-    canonical = json.dumps(body, sort_keys=True, separators=(",", ":"))
-    return {**body, "content_hash": hashlib.sha256(canonical.encode()).hexdigest()}
 
 
 def write_manifests(
     out_dir: Path = DEFAULT_OUT, *, source_root: Path = DEFAULT_SOURCE
 ) -> dict[str, Path]:
-    """Freeze all three Stage F manifests without running a replicate."""
+    """Write all three study manifests without running simulations."""
     designs: dict[Study, list[StageFCell]] = {
         "A": study_a_cells(source_root),
         "B": study_b_cells(),
@@ -583,30 +675,21 @@ def write_manifests(
     paths = {}
     for study, cells in designs.items():
         path = manifest_dir / f"study_{study.lower()}.json"
-        proposed = manifest_payload(study=study, cells=cells)
-        if path.exists():
-            existing, _ = load_manifest(path)
-            if existing["content_hash"] != proposed["content_hash"]:
-                raise RuntimeError(
-                    f"Refusing to replace frozen Stage F manifest at {path}"
-                )
-        else:
-            path.write_text(json.dumps(proposed, indent=2, sort_keys=True) + "\n")
+        path.write_text(
+            json.dumps(
+                manifest_payload(study=study, cells=cells), indent=2, sort_keys=True
+            )
+            + "\n"
+        )
         paths[study] = path
     return paths
 
 
 def load_manifest(path: Path) -> tuple[dict, list[StageFCell]]:
-    """Load a frozen manifest and verify its content hash."""
+    """Load a Stage F manifest."""
     payload = json.loads(path.read_text())
     if payload.get("schema") != MANIFEST_SCHEMA:
         raise ValueError(f"Unknown Stage F manifest schema: {payload.get('schema')!r}")
-    expected = payload.pop("content_hash")
-    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-    actual = hashlib.sha256(canonical.encode()).hexdigest()
-    if actual != expected:
-        raise ValueError("Stage F manifest content hash does not match its payload")
-    payload["content_hash"] = expected
     cells = []
     for stored_item in payload["cells"]:
         item = dict(stored_item)

@@ -11,6 +11,7 @@ from the true ROC; the risk scores are not fitted to measured coverage.
 | `tail_sim_predictions.json` | `corner_mechanism.py simulate` (6 shards, 150 reps x 2,500 draws) | Poissonized endpoint-simulator miss rates, depths, and per-grid-point profiles |
 | `real_band_6.62_0.988_6656.json` | `corner_mechanism.py real 6.62 0.988 6656 12000 40` | the production band (`fiducial_band_rs`, C = 1) on 40 simulated datasets: per replicate `k_sat`, miss flags, grid indices (from the top) of lower-edge violations, max depth |
 | `router_table.txt` | historical `corner_mechanism.py router` output | superseded large-k screen; use the finite-grid table in theory §7.4(d) |
+| `sliver_check.json` | `corner_mechanism.py sliver 500 100 8000 <out>` | Corollary 14.1: the production C = 1 band and M3 on the constructed sliver DGP at AUC .60/.80/.95, n = 500/500 (C = 1 covers .64/.54/.56, M3 1.000) |
 
 Headline numbers (all 257 cells, failure = coverage < .94, 65 cells):
 
@@ -20,6 +21,8 @@ Headline numbers (all 257 cells, failure = coverage < .94, 65 cells):
   mean residual +.014, none off by more than .10); predicted lower-edge miss rate vs
   measured: slope .82, intercept .005, correlation .905; predicted excess <= .01 selects
   103 cells with 0 failures (min coverage .944), > .01 contains all 65 failures.
+- sliver DGP (Prop. 14 / Cor. 14.1): at every AUC tested the C = 1 band can be forced to
+  cover ~.55-.65 at n = 500 while M3 covers 1.000; AUC and sample sizes cannot bound corner risk.
 - production band on t(6.62)/.988, n = 6656: 3/40 lower-edge misses, at k_sat = 94, 142,
   1274 (the three regimes of Lemma 13); covering replicates had k_sat up to 281.
 

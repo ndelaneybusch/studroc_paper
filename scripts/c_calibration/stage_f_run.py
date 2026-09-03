@@ -1,6 +1,6 @@
 """Resumable paired execution engine for Stage F.
 
-The runner consumes previously frozen manifests.  Each replicate draws one
+The runner consumes a study manifest. Each replicate draws one
 tie-resolved rank ordering and one fiducial cloud; all fiducial levels are
 read from that cloud, and all M3/hybrid arms are paired to the same ordering.
 Hybrid rules are scored offline from lossless parent-band records.
@@ -10,10 +10,8 @@ from __future__ import annotations
 
 import argparse
 import gzip
-import hashlib
 import json
 import os
-import subprocess
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -28,15 +26,13 @@ from stage_f_analysis import (  # noqa: E402
     load_complete_study,
     score_record,
     wilson_interval,
-    write_external_summary,
+    write_study_summary,
 )
 from stage_f_core import (  # noqa: E402
     ObservableSummary,
-    RegionArtifact,
     build_record,
     decode_violations,
     empirical_observables,
-    load_artifact,
 )
 from stage_f_design import (  # noqa: E402
     DEFAULT_OUT,
@@ -54,46 +50,11 @@ from studroc_paper.methods.fiducial_band_rs import (  # noqa: E402
 from studroc_paper.methods.fiducial_ladder import ladder_profile  # noqa: E402
 from studroc_paper.methods.m3_band_rs import _m3_band_from_labels_rs  # noqa: E402
 
-CELL_SCHEMA = "stage-f-cell/v1"
+CELL_SCHEMA = "stage-f-cell/v2"
 TOPUP_BATCH = 400
 CHECKPOINT_BATCH = 100
 BAR = 0.94
 COMPOSITE_EXPONENT = 2.5
-CODE_FILES = (
-    "scripts/c_calibration/stage_f_core.py",
-    "scripts/c_calibration/stage_f_design.py",
-    "scripts/c_calibration/stage_f_analysis.py",
-    "scripts/c_calibration/stage_f_run.py",
-    "src/studroc_paper/methods/fiducial_band_rs.py",
-    "src/studroc_paper/methods/fiducial_ladder.py",
-    "src/studroc_paper/methods/m3_band_rs.py",
-)
-
-
-def code_fingerprint(root: Path | None = None) -> str:
-    """Hash every implementation file that can change stored Stage F values."""
-    root = root or Path(__file__).resolve().parents[2]
-    digest = hashlib.sha256()
-    for relative in CODE_FILES:
-        path = root / relative
-        digest.update(relative.encode())
-        digest.update(path.read_bytes())
-    return digest.hexdigest()
-
-
-def git_hash(root: Path | None = None) -> str:
-    """Return the checked-out commit hash for output provenance."""
-    root = root or Path(__file__).resolve().parents[2]
-    try:
-        return subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=root,
-            capture_output=True,
-            check=True,
-            text=True,
-        ).stdout.strip()
-    except (FileNotFoundError, subprocess.CalledProcessError):
-        return "unknown"
 
 
 def _level_key(value: float) -> str:
@@ -159,7 +120,8 @@ def _fiducial_bands(
 
 def run_replicate(cell: StageFCell, rep: int, *, n_threads: int) -> dict:
     """Generate one lossless paired Stage F replicate record."""
-    labels, seed = sample_labels(cell, rep)
+    sample = sample_labels(cell, rep)
+    labels = sample.labels
     grid = np.arange(cell.n_grid, dtype=np.float64) / cell.n0
     truth = np.clip(cell_curve(cell).eval(grid), 0.0, 1.0)
     observables, khat = empirical_observables(labels)
@@ -169,7 +131,7 @@ def run_replicate(cell: StageFCell, rep: int, *, n_threads: int) -> dict:
         truth=truth,
         observables=observables,
         khat=khat,
-        seed=seed,
+        seed=sample.cloud_seed,
         n_threads=n_threads,
     )
     m3_levels = sorted(
@@ -185,6 +147,7 @@ def run_replicate(cell: StageFCell, rep: int, *, n_threads: int) -> dict:
         observables=observables, khat=khat, truth=truth, fiducial=fiducial, m3=m3
     )
     record["rep"] = rep
+    record["simulation_diagnostics"] = sample.diagnostics
     if composite is not None:
         from stage_f_core import encode_array
 
@@ -195,45 +158,28 @@ def run_replicate(cell: StageFCell, rep: int, *, n_threads: int) -> dict:
     return record
 
 
-def compatibility_payload(
-    *, cell: StageFCell, manifest: dict, artifact: RegionArtifact | None
-) -> dict:
-    """Return all constants that must match before records may be resumed."""
-    return {
-        "manifest_hash": manifest["content_hash"],
-        "rule_artifact_hash": artifact.content_hash if artifact else None,
-        "code_fingerprint": code_fingerprint(),
-        "cell": asdict(cell),
-        "m3_split_ratio": 0.5,
-        "tie_break": "random",
-        "trim_grid": "production",
-        "alpha_grid": list(cell.alphas),
-        "auc_delta": 0.05,
-        "composite_exponent": COMPOSITE_EXPONENT if cell.study == "B" else None,
-    }
-
-
 def cell_path(root: Path, cell: StageFCell) -> Path:
     """Return a cell's compressed record path."""
     return root / cell.study / f"{cell.name}.json.gz"
 
 
+def cell_metadata(cell: StageFCell) -> dict:
+    """Return a cell definition in the form stored by JSON."""
+    return json.loads(json.dumps(asdict(cell)))
+
+
 def load_existing(
-    path: Path, *, expected_compatibility: dict
+    path: Path, *, expected_cell: StageFCell
 ) -> tuple[list[dict], dict | None]:
-    """Load resumable records, refusing every provenance mismatch."""
+    """Load resumable records for the requested cell."""
     if not path.exists():
         return [], None
     with gzip.open(path, "rt") as handle:
         payload = json.load(handle)
     if payload.get("schema") != CELL_SCHEMA:
         raise RuntimeError(f"Unknown Stage F cell schema in {path}")
-    actual = payload["meta"].get("compatibility")
-    if actual != expected_compatibility:
-        raise RuntimeError(
-            f"Refusing to mix {path} with different manifest, rule, code, "
-            "or design constants"
-        )
+    if payload["meta"].get("cell") != cell_metadata(expected_cell):
+        raise RuntimeError(f"Existing output does not match cell {expected_cell.name}")
     records = payload["records"]
     if [row.get("rep") for row in records] != list(range(len(records))):
         raise RuntimeError(f"Non-contiguous replicate sequence in {path}")
@@ -272,9 +218,15 @@ def check_replay_parity(cell: StageFCell, records: list[dict]) -> None:
         )
 
 
-def needs_topup(records: list[dict], *, artifact: RegionArtifact) -> bool:
+def needs_topup(records: list[dict], *, m_draws: int) -> bool:
     """Return whether any prespecified alpha=.05 floor arm straddles .94."""
-    for rule in ("probe_fpr", "count5", "stage_f_v1"):
+    for rule in (
+        "probe_fpr",
+        "count5",
+        "frontier_run0",
+        "frontier_j1",
+        "frontier_floor_v1",
+    ):
         for alpha2_key in ("0.05", "0.025"):
             successes = sum(
                 score_record(
@@ -282,7 +234,7 @@ def needs_topup(records: list[dict], *, artifact: RegionArtifact) -> bool:
                     rule=rule,
                     alpha=PRIMARY_ALPHA,
                     alpha2_key=alpha2_key,
-                    artifact=artifact,
+                    m_draws=m_draws,
                 )["covered"]
                 for record in records
             )
@@ -295,9 +247,7 @@ def needs_topup(records: list[dict], *, artifact: RegionArtifact) -> bool:
 def run_cell(
     cell: StageFCell,
     *,
-    manifest: dict,
     root: Path,
-    artifact: RegionArtifact | None,
     workers: int,
     threads_per_call: int,
     mem_gb: float,
@@ -305,14 +255,11 @@ def run_cell(
     verbose: bool = True,
 ) -> dict:
     """Run or resume one cell, including the external-study top-up rule."""
-    compatibility = compatibility_payload(
-        cell=cell, manifest=manifest, artifact=artifact
-    )
     path = cell_path(root, cell)
     if force:
         records, previous = [], None
     else:
-        records, previous = load_existing(path, expected_compatibility=compatibility)
+        records, previous = load_existing(path, expected_cell=cell)
     cloud_gb = 4 * cell.m_draws * cell.n_grid / 2**30
     effective_workers = max(1, min(workers, int(mem_gb / max(cloud_gb, 1e-12))))
     started = time.time()
@@ -321,12 +268,8 @@ def run_cell(
     def checkpoint() -> dict:
         """Persist all completed records as an atomic resumable checkpoint."""
         meta = {
-            "cell": asdict(cell),
-            "compatibility": compatibility,
-            "reps_done": len(records),
+            "cell": cell_metadata(cell),
             "runtime_s": round(time.time() - started, 1) + previous_runtime,
-            "git_hash": git_hash(),
-            "created": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         }
         _write_cell(path, meta=meta, records=records)
         return meta
@@ -348,9 +291,9 @@ def run_cell(
 
     extend(cell.reps)
     if cell.study in {"B", "C"}:
-        if artifact is None:
-            raise ValueError("Studies B/C require the frozen stage_f_v1 artifact")
-        while len(records) < cell.reps_max and needs_topup(records, artifact=artifact):
+        while len(records) < cell.reps_max and needs_topup(
+            records, m_draws=cell.m_draws
+        ):
             extend(min(len(records) + TOPUP_BATCH, cell.reps_max))
 
     check_replay_parity(cell, records)
@@ -364,33 +307,21 @@ def run_study(
     *,
     manifest_path: Path,
     root: Path,
-    artifact_path: Path | None,
     workers: int,
     threads_per_call: int,
     mem_gb: float,
     select: str | None = None,
     force: bool = False,
 ) -> None:
-    """Execute every selected cell in one already-frozen manifest."""
-    manifest, cells = load_manifest(manifest_path)
-    artifact = load_artifact(artifact_path) if artifact_path else None
-    if manifest["study"] in {"B", "C"} and artifact is None:
-        raise ValueError("Studies B/C require --artifact rules/stage_f_v1.json")
-    if (
-        manifest["study"] in {"B", "C"}
-        and artifact is not None
-        and artifact.training.get("phase") != "refit"
-    ):
-        raise ValueError("Studies B/C require the final refit Stage F artifact")
+    """Execute every selected cell in a study manifest."""
+    _, cells = load_manifest(manifest_path)
     if select:
         cells = [cell for cell in cells if select in cell.name]
     for index, cell in enumerate(cells, start=1):
         print(f"[{index}/{len(cells)}] {cell.name}", flush=True)
         run_cell(
             cell,
-            manifest=manifest,
             root=root,
-            artifact=artifact,
             workers=workers,
             threads_per_call=threads_per_call,
             mem_gb=mem_gb,
@@ -401,11 +332,10 @@ def run_study(
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse the Stage F command line."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("action", choices=("manifests", "run", "fit", "summarize"))
+    parser.add_argument("action", choices=("design", "run", "summarize"))
     parser.add_argument("--study", choices=("A", "B", "C"))
     parser.add_argument("--root", type=Path, default=DEFAULT_OUT)
     parser.add_argument("--manifest", type=Path)
-    parser.add_argument("--artifact", type=Path)
     parser.add_argument("--source-root", type=Path)
     parser.add_argument(
         "--workers", type=int, default=max(1, (os.cpu_count() or 8) // 4)
@@ -421,39 +351,26 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     """Stage F CLI entry point."""
     args = parse_args(argv)
-    if args.action == "manifests":
+    if args.action == "design":
         kwargs = {"out_dir": args.root}
         if args.source_root is not None:
             kwargs["source_root"] = args.source_root
         paths = write_manifests(**kwargs)
-        for study, path in paths.items():
-            print(f"Study {study}: {path}")
-        return 0
-    if args.action == "fit":
-        from stage_f_analysis import default_stage_a_fit
-
-        artifact = default_stage_a_fit(args.root)
-        print(f"froze {artifact.rule_id}: {artifact.content_hash}")
+        for item, path in paths.items():
+            print(f"{item}: {path}")
         return 0
     if args.action == "summarize":
-        if args.study not in {"B", "C"} or args.artifact is None:
-            parser_error = "summarize requires --study B|C and --artifact"
-            raise ValueError(parser_error)
-        artifact = load_artifact(args.artifact)
-        if artifact.training.get("phase") != "refit":
-            raise ValueError("summarize requires the final refit Stage F artifact")
+        if args.study not in {"A", "B", "C"}:
+            raise ValueError("summarize requires --study A|B|C")
         cells = load_complete_study(args.root, study=args.study)
-        write_external_summary(
+        write_study_summary(
             cells,
-            artifact=artifact,
             path=args.root / "analysis" / f"study_{args.study.lower()}_summary.json",
         )
         return 0
-    if args.study is None or args.manifest is None:
-        raise ValueError("run requires --study and --manifest")
-    manifest, cells = load_manifest(args.manifest)
-    if manifest["study"] != args.study:
-        raise ValueError("--study does not match the supplied manifest")
+    if args.manifest is None:
+        raise ValueError("run requires --manifest")
+    _, cells = load_manifest(args.manifest)
     if args.dry_run:
         for cell in cells:
             if args.select is None or args.select in cell.name:
@@ -465,7 +382,6 @@ def main(argv: list[str] | None = None) -> int:
     run_study(
         manifest_path=args.manifest,
         root=args.root,
-        artifact_path=args.artifact,
         workers=args.workers,
         threads_per_call=args.threads,
         mem_gb=args.mem_gb,

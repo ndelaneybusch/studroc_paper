@@ -1,541 +1,438 @@
-# Study Spec: The Localized M3 Floor — Geometry, External Behavior, and Transfer ("Stage F")
+# Study Spec: The Frontier M3 Floor — Geometry, External Behavior, and Transfer ("Stage F")
 
-*2026-09-02. Companion to `stats/c_calibration_followup_report.md` (the
-boundary study), `stats/fiducial_band_theory.md` §7.3 (the wedge, miss
-geometry, and exact statements), `stats/next_method_ideas.md` §7 (the
-candidate roster), and `stats/c_calibration_spec.md` (study discipline and
-reporting conventions). Stage F is an information-gathering and
-technique-improvement study. It does not choose the paper's final method;
-that decision belongs to the full suite and the authors.*
+*Theory-driven revision 2026-09-02. Companion to
+`stats/fiducial_band_theory.md` §7.3–7.4,
+`stats/c_calibration_followup_report.md`, `stats/next_method_ideas.md` §7,
+and `stats/c_calibration_spec.md`. Stage F remains an
+information-gathering and method-improvement study; the final suite and the
+authors choose the paper's method.*
+
+> **Pre-run status.** No Stage F manifest or result directory has been
+> created. The current implementation evaluates the rank-only frontier rule
+> directly. It supersedes the older `(AUC_ub, n0,n1)`-conditioned path.
 
 ---
 
-## 0. Purpose, scope, and guardrails
+## 0. Decision revision
 
-The follow-up study established a serious failure and a promising repair.
-At `C = 1`, the fiducial band under-covers inside a curved (AUC, n) wedge:
-the worst measured coverage is .645, failures extend to n = 6,656, and
-coverage is not monotone in n. Its misses are strongly FPR-localized: mostly
-near the upper FPR endpoint, with a smaller left-corner cluster. On five
-student-t cells, M3 covered every observed fiducial miss point, and unioning
-the two bands on `FPR in [0, .005] union [.5, 1]` raised coverage to
-.955-.990 at +6.4% mean width, versus +28-46% for full M3.
+The follow-up established a curved student-t failure wedge and a promising
+localized M3 repair. The newer corner theory changes what should be learned
+from those observations:
 
-That probe does not identify a production rule. Its region was selected and
-scored on the same five cells, its left cutoff is below one native grid
-interval at the smallest n, and its price outside the wedge is unknown.
-Stage F therefore has three jobs:
+- Proposition 14 and the sliver construction show that AUC and sample sizes
+  cannot bound endpoint risk over continuous ROCs. An AUC-conditioned region
+  can be a declared-class rule, but not a distribution-free floor.
+- Lemma 13 identifies a rank-observable frontier region before Stage F data:
+  the first `ceil(Q)` negative-grid points and the empirical-TPR-1 run.
+  Fiducial re-randomization requires a predeclared inward margin at the right
+  boundary.
+- Corollary 13.1 supplies a separate, class-relative prediction: corner
+  concavity should make the two end-gap channels conservative. It is a
+  sketch/leading-order claim, not yet a finite-sample coverage theorem.
 
-1. learn a simple, observable region rule and understand its mechanism;
-2. measure fixed rules on fresh data, including the original probe as an
-   untuned benchmark; and
-3. determine whether the miss geometry and repair transfer beyond the
-   student-t family.
+Accordingly:
 
-The following guardrails apply throughout:
+| previous plan | revised disposition | reason |
+|---|---|---|
+| Fit `stage_f_v1` from `(AUC_ub,n0,n1,m_q)` | Retire as the primary floor | It encodes the development library's shape class |
+| Use a 60/40 split to select coordinates and surfaces | Remove | The primary region is theory-fixed before outcomes |
+| Choose the rule after Study A | Define the rule before Study A | B/C no longer depend on an A fit |
+| Treat AUC upper bounds as conservative routing inputs | Use AUC only for design and reporting | Risk is nonmonotone and not identified by AUC |
+| Use cross-family `m_50` windows | Classify cells by corner geometry | Curvature/gap structure is the theory's operative distinction |
+| Validate only ordinary library cells | Add fresh sliver confirmations | The constructed failure is the relevant distribution-free stress |
 
-- Every empirical statement is library- and range-relative. Only the M3
-  theorem and the set-containment statements in §1 are exact.
-- True AUC, true ROC values, and true miss locations may select simulation
-  cells and score a rule, but may never be inputs to the evaluated rule.
-- A data-adaptive rule is evaluated as one procedure, replicate by
-  replicate. Marginal band coverage and marginal routing/region frequencies
-  are not combined as though selection were independent.
-- The simple fixed-region benchmarks remain in Studies B/C even if Study A
-  finds a more elaborate rule. This separates validation of the observed
-  lead from validation of a fitted successor.
-- Study A may select and refit a rule. Studies B/C do not alter it. Any rule
-  revised after inspecting B or C is a new version and requires new external
-  data before receiving out-of-sample language.
+Stage F now has three jobs:
 
-The familiar A1-letter bar (coverage point estimate at least .94 and
-Wilson-95 lower bound at least .925) and the strict .95 point bar are
-reported for comparability with earlier studies. They are descriptive
+1. test the fixed frontier floor's capture and width, including the required
+   right-edge margin;
+2. measure it prospectively on wedge, safe, sliver, imbalance, large-n, and
+   cross-family cells; and
+3. test the corner-concavity prediction separately from the
+   distribution-free floor.
+
+The familiar A1-letter bar and strict .95 point bar remain descriptive
 yardsticks, not method-selection gates.
 
 ---
 
-## 1. Statistical object and exact statements
+## 1. Statistical object and exact scope
 
-### 1.1 Construction
+### 1.1 Parent bands and widening closure
 
-Work on the native grid `t_k = k / n0`, `k = 0, ..., n0`. For the same
-rank realization and tie break, construct:
+On the native grid `t_k = k/n0`, construct from one shared rank/tie
+realization:
 
-- `fid`: the production fiducial band with `C = 1`;
-- `M3(alpha2)`: `m3_band_rs` with its distribution-free defaults, including
-  `assume_r0_zero=False`; and
-- a possibly data-adaptive region `R(D)` computed only from the observed
-  dataset `D`.
+- production fiducial `C = 1`;
+- `M3(alpha2)` with `assume_r0_zero=False`; and
+- a rank-measurable endpoint region `R(D)`.
 
-Construct both parent bands with their production closures first, then
-stitch them pointwise:
+Inside `R(D)`, take the pointwise union of the parent intervals; outside,
+retain `C = 1`. Close only by widening:
 
 ```text
-L_hyb(t) = min(L_fid(t), L_M3(t))   and
-U_hyb(t) = max(U_fid(t), U_M3(t))   for t in R(D),
-
-L_hyb(t) = L_fid(t) and U_hyb(t) = U_fid(t) otherwise.
+L_closed[k] = min(L_raw[j] for j >= k)
+U_closed[k] = max(U_raw[j] for j <= k)
 ```
 
-The stitch need not be monotone at a region boundary. Close it using only
-widening operations:
+and clip to `[0,1]`. The legacy running-maximum lower closure remains a
+replication comparator only.
+
+### 1.2 Frontier region
+
+Let `M` be the fiducial cloud budget for the cell. The realized
+local level is `ell=j/(M+1)` with `j>=1`, so deterministically
+`log(1/ell)<=log(M+1)`. Define
 
 ```text
-L_hyb_closed[k] = min(L_hyb[j] for j >= k)   # reverse cumulative minimum
-U_hyb_closed[k] = max(U_hyb[j] for j <= k)   # cumulative maximum
+k_left(n0, M) = min(n0, ceil(log(M + 1))).
 ```
 
-then clip to `[0, 1]`. This produces nondecreasing edges without raising the
-lower edge or lowering the upper edge. The distinction is essential: the
-earlier probe's running-maximum lower closure preserves the whole-curve
-coverage event and `C = 1` domination, but an unfloored lower-edge miss can
-propagate across a region boundary, so it does not by itself preserve the
-regional M3 cap. The widening-only closure preserves both parent
-containments pointwise. Tests must verify those containments directly for
-every arm and tie convention.
+The typical theory value remains `ceil(Q)≈7`. This bound deliberately uses
+the cell's budget rather than reading a realized `Q` from the cloud, so the
+region depends only on the planned budget, class sizes, and ranks.
 
-The learned region has two components, fitted separately because their
-mechanisms and resolutions differ:
+For each dataset define
 
 ```text
-R(D) = R_left(D) union R_right(D).
+j_k = n1 - khat_k
+k_sat = min{k: j_k = 0}
+K = n0 - k_sat
+m(K) = ceil(2 * sqrt(max(K, 1))).
 ```
 
-Each component is an endpoint-connected set after mapping back to the FPR
-grid. Flat empirical-ROC preimages are included in full, so inversion of a
-count coordinate cannot create data-dependent holes.
-
-The primary level is `alpha = .05`. Both `alpha2 = alpha` and
-`alpha2 = alpha / 2` are retained as named variants. The same region learned
-at `.05` is applied unchanged at `alpha = .5` as a transfer diagnostic; no
-alpha-dependent edge model is fitted from one level and described as
-general.
-
-### 1.2 Observable rule contract
-
-The evaluated rule has the form
+Here `j_k` is the empirical number of positives below the threshold and
+`K` is the number of negative-grid intervals in the empirical-TPR-1 run.
+The primary region is
 
 ```text
-R = R(n0, n1, AUC_ub, empirical ROC summaries; frozen parameters).
+R_left  = {t_k: k <= k_left}
+R_right = {t_k: k >= max(0, k_sat - m(K))}
+R_frontier = R_left union R_right.
 ```
 
-Its primary AUC input is the following one-sided, distribution-free
-bounded-differences upper bound, clipped to one:
+This is `frontier_floor_v1`. It uses only class sizes and the merged label
+sequence. It does not use `AUC_hat`, `AUC_ub`, a fitted surface, a true
+curve, or a declared DGP class. Flat empirical-ROC preimages are included
+in full.
 
-```text
-AUC_ub = min(1, AUC_hat
-                + sqrt(0.5 * (1 / n0 + 1 / n1) * log(1 / delta))),
-delta = .05.
-```
+Two predeclared ablations identify the cost of the margin:
 
-This bound is a conservative design covariate, not an additional coverage
-guarantee and not part of the `alpha` budget. A DeLong upper bound and the
-point estimate are reported as sensitivity analyses but cannot silently
-replace the primary input. For tied scores, `AUC_hat`, the empirical ROC,
-and both bands use the same random tie-break realization.
+- `frontier_run0`: the same left region and exactly `j_k=0` on the
+  right;
+- `frontier_j1`: the same left region and the complete `j_k<=1`
+  preimage on the right.
 
-The fitted region must be nested outward in `AUC_ub`: increasing the upper
-bound may leave the region unchanged or enlarge it, but may not shrink it.
-Outside the sampled `(n0, n1, AUC_ub)` support, the frozen rule uses
-`R = [0, 1]`. That fallback is potentially expensive but contains the full
-M3 band and avoids unsupported extrapolation.
+`frontier_run0` is not a shipping candidate because the theory says a
+margin is required. `frontier_j1` is a conservative alternative whose
+random length may be much larger than the square-root margin. Outcomes may
+motivate a future version, but they do not revise `frontier_floor_v1`.
 
-### 1.3 What is exact
+The same .05-derived region is applied unchanged at `alpha=.5` as a
+transfer diagnostic. Both `alpha2=alpha` and `alpha2=alpha/2` remain
+separate reported variants.
 
-For any fixed or data-adaptive `R(D)` and any `alpha2`:
+### 1.3 Exact statements and labels
 
-1. **Domination.** The final hybrid contains the final `C = 1` band
-   pointwise. Consequently, its simultaneous coverage is at least the
-   `C = 1` coverage for every DGP and every replicate.
-2. **Regional miss cap.** If the hybrid misses the true ROC anywhere in
-   `R(D)`, M3 must miss there too. Because the event that M3 covers the
-   entire curve implies coverage on every random subset,
-   `P(hybrid misses somewhere in R(D)) <= alpha2`. No independence between
-   `R(D)` and M3 is required.
-3. **Two-piece decomposition.** Let `E_out` be the event that the `C = 1`
-   band misses somewhere outside `R(D)`. Then
+For any fixed or data-adaptive region and either M3 level:
+
+1. **Domination.** The widening hybrid contains `C = 1` pointwise, so its
+   coverage is never lower than `C = 1` for any DGP or replicate.
+2. **Regional cap.** A hybrid miss inside the random region implies a
+   full-curve M3 miss. Therefore
+   `P(miss somewhere inside R(D)) <= alpha2` without independence.
+3. **Two-piece decomposition.** If `E_out` is a `C = 1` miss outside
+   the region, then
 
    ```text
-   P(hybrid misses) <= alpha2 + P(E_out).
+   P(hybrid miss) <= alpha2 + P(E_out).
    ```
 
-   Stage F estimates `P(E_out)`; it does not turn that term into a theorem.
-   The hybrid has a full finite-sample guarantee only in the degenerate
-   full-region case (or after a future argument controls the exterior
-   term).
+These are exact. The claim that the frontier region removes every dangerous
+corner miss is theory-motivated but not yet a theorem because Lemma 9,
+Lemma 13, and Corollary 13.1 retain sketch/leading-order steps. In this
+document, **distribution-free heuristic** means that the rule itself is
+rank-only and library-independent and carries the exact domination and
+regional-cap statements. It does not mean that the whole hybrid already
+has a `1-alpha` finite-sample theorem.
 
-These statements distinguish the localized floor from the earlier
-composite band: the floor never narrows `C = 1`, and the floored piece has
-an exact cap, while the unfloored piece remains empirically justified.
+The unmargined theory base has provisional area-price scale
+`Q(1/n0+1/n1)`. The operational left envelope replaces its `Q/n0` term by
+the conservative `log(M+1)/n0` term. The mandatory square-root margin adds
+a worst-case grid fraction at most `m(K)/(n0+1)`; Stage F reports its actual
+union-width cost separately. No stronger deterministic price bound is
+claimed until the margin calculation is completed.
 
 ---
 
-## 2. Rules carried into external evaluation
+## 2. Frozen arms
 
-Studies B/C evaluate all of the following; none is dropped after seeing
-Study A:
+Every B/C arm below is retained regardless of Study A:
 
-1. **Legacy replication comparator (`probe_legacy`).**
-   `R = [0, .005] union [.5, 1]`, followed by the probe's original running
-   maximum of both edges. This is the exact construction behind the
-   five-cell +6.4% result. It is retained only to test replication; it has
-   `C = 1` domination but not the regional-cap claim in §1.3.
-2. **Theorem-preserving probe (`probe_fpr`).**
-   The same region with the widening-only closure in §1.1. This isolates
-   the price of preserving M3 containment from the price of changing the
-   region.
-3. **Count-normalized benchmark (`count5`).**
-   `R_left = {t_k: k = 0, ..., 5}` and `R_right = {t >= .5}`, with the §1.1
-   closure. This implements the follow-up report's pre-data recommendation
-   to express the left piece in grid points; it is a benchmark, not a fitted
-   optimum.
-4. **Learned rule (`stage_f_v1`).**
-   Study A selects its coordinates and model form, refits numeric parameters
-   on all Study A cells, and serializes the result before B/C begin.
+1. `C = 1`;
+2. full M3 at `alpha2=alpha` and `alpha/2`;
+3. `probe_legacy`: `[0,.005] union [.5,1]` with the historical
+   running-maximum closure;
+4. `probe_fpr`: the same fixed region with widening closure;
+5. `count5`: first six grid points plus `t>=.5`, widening closure;
+6. `frontier_run0`, mechanism ablation;
+7. `frontier_j1`, conservative-margin comparator; and
+8. `frontier_floor_v1`, the primary fixed frontier rule.
 
-Each rule is evaluated with both M3 levels from §1.1. Full `C = 1` and full
-M3 are the parent references. Exact regional-cap language is restricted to
-the three widening-closure rules.
+Study B also keeps the explicitly exploratory composite piggyback:
+`frontier_floor_v1` applied over the declared finite-range
+`b0.02-0.95_C2.5` interior construction. It cannot revise conclusions
+about the floor-only arms.
+
+No AUC-conditioned learned rule is an arm of the primary Stage F
+comparison. Offline AUC, `m_q`, finite-grid risk scores, and curvature
+summaries remain mechanism diagnostics. A later declared-class router must
+have its own name, class declaration, specification, and confirmation data.
+
+M3's class split remains `rho=.5` in Stage F. The theory's proposed
+size-only split optimization is a useful separate width study, but adding
+it now would confound region and M3-level economics. Any future split must
+be chosen independently of observed ranks to retain Proposition 12.
 
 ---
 
 ## 3. Estimands and records
 
-For replicate `r`, let
-
-```text
-V_r = {t_k: the true ROC is below L_fid or above U_fid at t_k}
-```
-
-after the production closure. `V_r` is simulation-only scoring information.
-The primary region-sufficiency estimand in cell `c` is the **exterior escape
-rate**
+For replicate `r`, let `V_r` be the complete post-closure `C = 1`
+violation set. The primary region-sufficiency estimand in cell `c` is
 
 ```text
 q_c(R) = P(V_r is nonempty and V_r is not a subset of R(D_r)).
 ```
 
-This is the part of the fiducial failure probability that a perfect floor
-inside `R` could not repair. It is preferable to pooled "miss mass": a
-region that captures 99.5% of pointwise violations can still miss many
-replicates if each has one violation just outside the edge. The conditional
-capture rate `P(V_r subset R | V_r nonempty)` and pointwise miss-intensity
-quantiles are secondary geometry summaries.
+Report, per cell and complete procedure:
 
-For every rule and level, report:
+- simultaneous coverage and Wilson interval;
+- exterior escape, conditional capture, and floor-region failure;
+- edge versus far exterior escape;
+- mean area and paired differences versus `C = 1` and full M3;
+- left, saturated-run, and square-root-margin width contributions;
+- miss direction, depth, and complete violation intervals;
+- `K`, margin length, `j_k` boundary, and realized region fraction; and
+- diagnostic associations with class sizes, AUC summaries, `m_30,m_50,m_70`,
+  finite-grid risk, and precomputed corner-geometry labels.
 
-- realized simultaneous coverage of the complete data-adaptive procedure,
-  cell by cell, with Wilson intervals;
-- `q_c(R)`, conditional capture, and the fraction of floor-region failures;
-- mean area (project convention: mean grid-point width), paired area
-  difference and ratio versus `C = 1`, and paired difference versus full M3;
-- width cost split into the left and right components, plus overlap;
-- miss direction, maximum depth, and violation intervals; and
-- region size and selection summaries versus `(n0, n1, AUC_hat, AUC_ub,
-  m_30, m_50, m_70)`.
+AUC and true geometry may stratify or explain results but may not determine
+the frontier rule. Macro summaries weight cells equally. Width uncertainty
+uses paired cell-cluster bootstrap intervals.
 
-Macro summaries weight cells equally. Pooled replicate summaries are shown
-only alongside them, never as substitutes. Width uncertainty uses paired
-cell-cluster bootstrap intervals; coverage intervals remain cellwise.
-
-For offline evaluation of an adaptive rule, cell-mean width profiles are
-insufficient. Store per-replicate union-width increments and lossless
-cumulative summaries for every candidate left/right coordinate (or the full
-compressed profile), together with the empirical coordinate maps. Store
-miss sets as run-length intervals; if a replicate exceeds 64 intervals,
-fall back to a packed bitset and set an overflow flag rather than truncating
-the truth.
+Store lossless parent bands, truth, `khat`, violation sets, coordinate maps,
+and cumulative union-width increments. Violation encoding falls back from
+run-length intervals to a packed bitset rather than truncating.
 
 ---
 
-## 4. Study A — geometry and rule learning
+## 4. Study A — mechanism and price audit
 
-### 4.1 Questions
+Study A no longer selects or refits a rule. It asks:
 
-- **A-Q1: endpoint coordinates.** Which coordinates transfer the left and
-  right edge with the smallest exterior escape rate at a given width price?
-  The two endpoints are selected independently.
-- **A-Q2: edge dependence.** How do the selected cutoffs vary with `n0`,
-  `n1`, and `AUC_ub`, and does imbalance support separate class-size
-  scaling?
-- **A-Q3: price curves.** What width is paid for moving either edge, and
-  where does the observed "upper half is nearly free" behavior fail?
-- **A-Q4: floor level.** What extra width and reduction in floor-region
-  misses result from `alpha2 = alpha / 2` versus `alpha`?
-- **A-Q5: mechanistic covariates.** Do empirical `m_q` summaries improve
-  external prediction after `AUC_ub` and class sizes, or repeat the failed
-  history of fitted rank functionals?
+- **A-Q1:** Does the fixed left frontier plus saturated-run region capture
+  the observed corner mechanisms?
+- **A-Q2:** How much capture is lost by `run0`, and how do the square-root
+  and `j<=1` margins compare in capture and width?
+- **A-Q3:** Does the predicted right-channel imbalance direction appear?
+- **A-Q4:** What is the `alpha2=alpha` versus `alpha/2` frontier?
+- **A-Q5:** Do AUC, `m_q`, and curvature summaries explain residuals?
+  This is diagnosis, not rule fitting.
 
-### 4.2 Candidate coordinates and model forms
+Retain the previously designed sources:
 
-Left-edge coordinates:
+1. about 40 mechanically selected replay cells, 200 replicates, with the
+   original-seed three-combined-SE parity gate;
+2. the 24-cell achievable imbalance LHS, 200 replicates, with both
+   orientations in each coarse AUC band; and
+3. four balanced high-AUC extent-stress cells at `n=8000,12000`, 200
+   replicates.
 
-- raw FPR `t`;
-- negative-grid count `k_left = n0 * t`.
+All are one analysis partition. The archived `n=500` sliver runs informed
+the theory and are labeled development evidence; they are not counted as
+prospective Stage F validation.
 
-Right-edge coordinates:
-
-- raw distance `1 - t`;
-- negative-grid distance `k_right = n0 * (1 - t)`;
-- empirical positive-tail count
-  `p_right = n1 * (1 - TPR_hat(t))`.
-
-The `m_q = n0 * t_q_hat` quantities are cell/replicate-level covariates,
-not pointwise coordinates; they may condition an edge cutoff but cannot be
-used as though they locate an arbitrary `t`. The primary model excludes
-them. An `m_q`-augmented model is promoted only if it improves the internal
-validation objective beyond its cell-bootstrap uncertainty.
-
-**Theory prior (2026-09-02; `fiducial_band_theory.md` §7.4).** The corner
-mechanism predicts the answers to A-Q1/A-Q2 before the data: left edge in
-*grid points*, with the derived default
-`k_left <= ceil(ln(1/ell)) ~ 7`. The minimal right end-gap region is
-`p_right = 0`, the complete empirical-TPR-1 run. Extending it to
-`p_right <= j_max` covers the first interior positive gaps; `j_max` is
-one integer for Study A to choose rather than a theoretically fixed 2–3.
-The curvature-complete shifted-t floor is `[t_hook, 1]`. The
-right-end channel worsens with `n0 / n1` (negative-majority), so separate
-class-size scaling is expected in A-Q2. The `m_q` covariates are ≈
-`n0 (1 - AUC) / 2` for heavy tails and should add little beyond `AUC_ub`
-and the count coordinate (A-Q5). These are priors for the fit, not
-constraints on it; a fit that lands elsewhere is a finding.
-
-Candidate edge models are deliberately low-complexity: constant cutoffs;
-piecewise-linear surfaces in `(log n0, log n1, AUC_ub)` with extra knots
-near one; and conservative binned outer envelopes. The untransformed upper
-bound avoids an infinite covariate when the distribution-free bound clips
-to one. Models must be nested outward in
-`AUC_ub`, may use separate `n0` and `n1` terms, and may not extrapolate
-outside Study A support. Flexible GP/thin-plate fits are diagnostics only;
-the boundary study showed that good average deviance does not protect a
-cliff.
-
-### 4.3 Cells and replication
-
-Study A uses three sources:
-
-1. **Replay corpus:** about 40 cells from the existing 257: every cell with
-   measured `C = 1` coverage below .94, about 15 cells in .94-.97, and
-   about 8 comfortably safe cells for price. Re-run 200 replicates with the
-   original seeds and refuse the replay if parity with the stored `C = 1`
-   result fails beyond three combined Monte Carlo SEs.
-2. **Imbalance LHS:** 24 new cells from a frozen, achievability-filtered LHS
-   over probit-AUC in `[.85, .99]`, log df in `[log(1.1), log(30)]`, log
-   total sample size in `[log(400), log(10000)]`, and
-   `log(n0 / n1)` in `[log(1/5), log(5)]`; 200 replicates. Both imbalance
-   orientations must occur in every coarse AUC band.
-3. **Extent stress cells:** four balanced cells at AUC at least .985 and
-   `n per class in {8000, 12000}`; 200 replicates. These are reserved for
-   range stress and are not used to fit edge parameters.
-
-The exact cell manifest, LHS seed, tie policy, and split assignment are
-written before outcomes are generated. In balanced-cell notation, `n`
-always means observations per class; otherwise `n0`, `n1`, or `n_total` is
-written explicitly.
-
-### 4.4 Selection discipline and frozen artifact
-
-Non-stress cells are assigned by a deterministic hash to 60% model-selection
-and 40% internal-validation partitions, stratified by AUC band, coverage
-band, data source, and imbalance orientation. The replay corpus was itself
-chosen using earlier results, so the 40% partition is internal validation,
-not new external evidence.
-
-Coordinate, model-form, and complexity choices use the 60/40 split. Among
-candidate rules, first retain those with cell-macro exterior escape at most
-.005 among evaluable geometry cells and no such cell above .02 on the
-internal-validation partition. A cell is evaluable for this criterion when
-it has at least ten fiducial failures; other cells still contribute to the
-width objective. Choose the retained rule with the lowest macro width cost;
-paired-cell bootstrap uncertainty breaks statistical ties toward the
-simpler coordinate and model. If no rule meets the escape target, choose
-lexicographically by worst-cell escape, macro escape, width, and then
-simplicity. These are fitting targets, not coverage guarantees.
-
-After model form and complexity are selected, refit only its numeric edge
-parameters on all non-stress Study A cells. Freeze a machine-readable
-`stage_f_v1` artifact containing formulas, coefficients/cutoffs, training
-support, out-of-support behavior, M3 split ratio, tie semantics, code commit,
-study seed, and a content hash. A dated amendment to this spec records the
-same information before any Study B/C outcome is inspected.
-
-`alpha2 = alpha` and `alpha / 2` remain separate frozen variants; Study A
-reports their frontier but does not select one by an invented utility
-threshold.
+Study A can falsify the proposed margin or show it is too expensive. It
+cannot tune `frontier_floor_v1` and pass the tuned version to B/C under
+the same name.
 
 ---
 
-## 5. Study B — external behavior of fixed rules
+## 5. Study B — prospective external behavior and sliver stress
 
-Use fresh cell names and seed streams. The §2 rules are applied verbatim to
-24 cells at 400 replicates, with `alpha = .05` primary and `.5`
-secondary:
+Freeze Study B before Study A outcomes. Retain the original 24 cells:
 
-- **10 wedge cells:** t(2)/.99 at `n = 250, 500, 1000`; the
-  t(4.69)/.986 traversal at `n = 400, 1200, 2000`; and four frozen cells
-  spanning both directions through the empirical m-window;
-- **6 safe cells:** mechanism-diverse binormal, bimodal, kink,
-  heteroscedastic, and t-family shapes at a mix of `n = 250, 1000`;
-- **4 imbalanced cells:** both orientations with minority class size
-  300-1500, placed in the wedge-adjacent regime;
-- **2 large-n cells:** AUC at least .985 and `n per class = 8000-12000`;
-  and
-- **2 regression cells:** the `Q = 20` random-tie cell and one frozen
-  held-out-library shape.
+- 10 student-t wedge/traversal cells;
+- 6 mechanism-diverse safe cells;
+- 4 imbalance cells in both orientations;
+- 2 large-n high-AUC cells; and
+- 2 regression cells, including `Q=20` ties and a held-out-library shape.
 
-The complete B manifest is frozen before Study A outcomes are inspected.
-Known cells above are mandatory; the remaining parameter values are chosen
-from the pre-Stage-F boundary report and feasibility mapper, not from the
-learned region.
+Add a six-cell **fresh sliver confirmation block**. Its exact continuous
+DGP formulas, AUCs, `(n0,n1)`, `d=n1*pi`, gap widths, names, and
+predicted saturation probabilities are defined before Study A. It must:
 
-Paired arms use the same rank/tie realization:
+- use new names and seed streams, not the 100-replicate development runs;
+- include AUC .60, .80, and .95;
+- include at least two sample-size scales to test the predicted
+  n-independence at fixed `d`; and
+- include both imbalance orientations with sliver mass parameterized as
+  `pi=d/n1`.
 
-- `C = 1`;
-- full M3 at `alpha` and `alpha / 2`;
-- `probe_legacy`, `probe_fpr`, `count5`, and `stage_f_v1`, each at both M3
-  levels; and
-- one explicitly exploratory piggyback arm: `stage_f_v1` plus composite
-  interior trim `b0.02-0.95_C2.5` on its declared finite range only.
+The implemented unequal-size construction preserves the theory's wide
+zero-mass stretch. For `s0=1/n0`, `pi=d/n1`, `h=1-pi`, `c=pi/s0`, and
+the stated tail extent `s1`, use
 
-The composite arm cannot affect the floor rule or its conclusions. It
-answers the roster's separate question of whether the +floor and -trim
-width effects compose without losing the floor's repair.
+```text
+R(t) = h Phi(mu + Phi^-1(t/(1-s1))),   0 <= t <= 1-s1,
+R(t) = h,                              1-s1 < t < 1-s0,
+R(t) = 1-c(1-t),                       1-s0 <= t <= 1,
+A_tail = (s1-s0)h + s0(1-pi/2),
+A_body = (AUC-A_tail)/((1-s1)h),
+mu = sqrt(2) Phi^-1(A_body).
+```
 
-At `.05`, top up 400 to 1,200 replicates while the Wilson interval for any
-prespecified floor-only hybrid straddles .94. A cell still unresolved at the
-cap is reported as such; no pooled result overwrites it. The `.5` arm is not
-topped up solely to meet a `.05` reporting convention.
+This parameterization keeps sliver width `s0`, sliver mass `pi`, expected
+sampled count `d`, and total AUC distinct under imbalance. The cells
+are:
 
-For every widening-closure hybrid failure, classify violations as:
+| name suffix | AUC | n0 | n1 | d | s1 | predicted no-sliver probability |
+|---|---:|---:|---:|---:|---:|---:|
+| `24--n250x250` | .60 | 250 | 250 | 1.0 | .12 | `(1-1/250)^250` |
+| `25--n2000x2000` | .60 | 2000 | 2000 | 1.0 | .12 | `(1-1/2000)^2000` |
+| `26--n250x250` | .80 | 250 | 250 | .8 | .25 | `(1-.8/250)^250` |
+| `27--n2000x2000` | .95 | 2000 | 2000 | .8 | .25 | `(1-.8/2000)^2000` |
+| `28--n2000x500` | .80 | 2000 | 500 | .8 | .25 | `(1-.8/500)^500` |
+| `29--n500x2000` | .80 | 500 | 2000 | .8 | .25 | `(1-.8/2000)^2000` |
 
-- **inside R:** the union, and therefore M3, missed inside the floored
-  region;
-- **edge escape:** an exterior violation is within one native grid step of
-  a region edge; or
-- **far escape:** an exterior violation lies farther away, indicating a
-  coordinate or channel failure rather than a one-step margin error.
+The sliver block is a theory stress test, not evidence that arbitrary
+continuous ROCs are represented by six cells. Its central prediction is
+that `C = 1` failure tracks the unsampled-sliver event, the adaptive
+frontier region expands on those same realizations, and M3/floored bands
+cover.
 
-Classify `probe_legacy` separately, including whether a failure inside its
-nominal region was propagated there by the running-maximum lower closure;
-do not interpret its inside-region rate through the M3 cap.
+Run 400 replicates initially. At `alpha=.05`, top up a cell to 1,200 while
+the Wilson interval of any prespecified floor-only hybrid straddles .94.
+The .5 arm is not topped up solely for a .05 reporting convention.
 
-Report the classification before proposing any revision. Selection effects
-are assessed directly from realized hybrid coverage per cell and from
-coverage conditional on region-size bins; unconditional parent-band
-coverage is never substituted for the adaptive procedure's coverage.
-
----
-
-## 6. Study C — transfer beyond student-t
-
-Use 14 fresh cells: paired inside-window/control placements for seven frozen
-families or shapes — Weibull with shape at most one, gamma with shape at
-most one, beta-opposing with parameter at most one, high-separation
-bimodal-negative, heteroscedastic Gaussian, and two frozen-seed LHS draws
-from the paper's DGP mapper. The inside-window member is chosen using the
-true DGP only to place the simulation cell's `(AUC, n)`; the evaluated region
-still receives observables only. The control is matched as closely as
-feasible in AUC while placing predicted true `m_50` outside the t-family
-failure window. Freeze the full manifest before Study A outcomes.
-
-Run 400 replicates with `.05` primary, using the same paired arms as Study B
-except the composite piggyback. Top up by the same rule where needed.
-Answer separately:
-
-- **C-Q1, repair transfer:** where `C = 1` fails, how much do the fixed
-  hybrids repair, and at what width?
-- **C-Q2, mechanism transfer:** do failures occur where the m-window
-  predicts, including traversal in both directions?
-- **C-Q3, geometry transfer:** do violation sets fall inside the fixed
-  regions, and are residuals inside, edge, or far escapes?
-
-A rule that fails C is not refitted and then called externally validated.
-The residual classifications may define a `stage_f_v2` development study,
-with new confirmation data.
+For every failure, classify inside-region, one-grid-step edge escape, and
+far escape. Report the legacy closure's propagated lower misses separately.
+For sliver cells additionally report coverage conditional on whether the
+sliver was sampled and conditional on `K`/margin bins.
 
 ---
 
-## 7. Reproducibility, implementation, and checks
+## 6. Study C — geometry-class transfer
 
-All arms share deterministic per-`(study, cell, replicate)` data seeds,
-tie-break seeds, and (where applicable) fiducial-cloud seeds. Results refuse
-to mix unless the cell manifest, rule artifact hash, M3 parameters, trim-grid
-rule, alpha grid, and code version agree.
+Retain a 14-cell budget: seven predetermined non-student-t shapes, each at a
+smaller and larger sample size. The five named families remain Weibull,
+gamma, beta-opposing, high-separation bimodal-negative, and
+heteroscedastic Gaussian, plus two fixed-seed mapper draws.
 
-Required implementation work:
+Their role is:
 
-1. a per-replicate violation-set and cumulative-width recorder;
-2. offline coordinate, capture, and price analysis using lossless
-   per-replicate sufficient records;
-3. a serialized observable-only region evaluator; and
-4. a paired multi-arm runner with resume/refuse-to-mix behavior.
+- remove the t-family `m_50` “inside-window/control” labels;
+- match AUC within each size pair as closely as feasible;
+- precompute, without coverage outcomes, the sign of corner curvature on
+  the Lemma 13 intervals and label each shape `corner-concave`,
+  `corner-convex`, or `ambiguous`; and
+- preserve both `n=500` and `n=8000` scales unless feasibility requires
+  a documented change.
 
-Focused tests must cover at least:
+Study C asks:
 
-- final hybrid pointwise containment of `C = 1`, and of M3 on `R`, after
-  widening-only closure;
-- replication of the legacy running-maximum stitch and a counterexample
-  demonstrating why it does not receive the regional-cap claim;
-- equality with `C = 1` for an empty region and containment of M3 for a
-  full region;
-- endpoint inclusion, flat empirical-ROC preimages, and grid resampling;
-- invariance of a frozen rule to true AUC/ROC metadata;
-- shared random tie-breaking across AUC, region, and band arms;
-- offline price/capture equality to direct reconstruction;
-- overflow fallback without miss-set truncation;
-- artifact round-trip and out-of-support full-region behavior; and
-- resume/refuse-to-mix failures for changed rule hashes or design constants.
+1. whether the frontier floor's repair and price transfer;
+2. whether corner-concave cells avoid the two end-gap failure channels, as
+   Corollary 13.1 predicts at leading order; and
+3. whether residuals are inside, edge, far, or an interior mechanism.
 
-The M3 arm's coverage is a regression check on implementation, not a new
-test of Proposition 12. Any material discrepancy triggers parity debugging
-before scientific interpretation.
+The concavity result is reported as a class-relative theory check. Passing
+these cells does not promote Corollary 13.1 to a finite-sample theorem or
+create a data-driven class test.
+
+Use the Study B arms except the composite piggyback, with the same 400 to
+1,200 top-up rule.
+
+---
+
+## 7. Implementation and tests
+
+**Implementation status (2026-09-02): complete; no Stage F run has been
+started.** The `stage_f_*.py` files now:
+
+1. evaluate `frontier_floor_v1` directly from `(n0, n1, M, khat)`, with no
+   fitted router or separate rule artifact;
+2. provide the `run0`, `j1`, and square-root-margin comparisons with full
+   flat preimages;
+3. include the unequal-size sliver cells and geometry-labeled Study C; and
+4. retain the useful execution machinery: one shared cloud per replicate,
+   deterministic seeds, compact lossless records, atomic checkpoints,
+   offline scoring, and resumability.
+
+Manifests are ordinary readable design snapshots. They can be regenerated
+while the study is exploratory. The runner only checks that a checkpoint
+belongs to the same cell and has a contiguous replicate sequence; the
+summary checks that the requested study is complete. There are no artifact
+hashes, Git fingerprints, or compatibility ledgers.
+
+Focused tests cover containment, closure, encoding, tie-sharing, offline
+reconstruction, and checkpoint correctness, plus:
+
+- exact budget-derived `k_left`, `K`, and square-root-margin endpoint
+  inclusion;
+- invariance of `frontier_floor_v1` to every AUC field and true metadata;
+- flat `j=0` and `j<=1` preimages;
+- balanced and imbalanced sliver construction at the requested numerical
+  AUC;
+- conditional expansion of the right region on unsampled-sliver rank
+  paths; and
+- equality between direct and offline frontier-region scoring.
+
+Before a simulation, generate the manifests and inspect the dry-run cell
+list and budgets. If the design changes after results exist, rerun the
+affected cells instead of appending to them.
 
 ---
 
 ## 8. Budget and order
 
-| study | cells | reps | expensive fiducial builds/rep | estimated CPU-h |
+| study | cells | reps | fiducial clouds/rep | estimated CPU-h |
 |---|---:|---:|---:|---:|
-| A: replay corpus | ~40 | 200 | 1 | 2-3 |
-| A: imbalance LHS | 24 | 200 | 1 | 1.5-2 |
+| A: replay corpus | ~40 | 200 | 1 | 2–3 |
+| A: imbalance LHS | 24 | 200 | 1 | 1.5–2 |
 | A: extent stress | 4 | 200 | 1 | 1.5 |
-| B: fixed-rule external behavior | ~24 | 400-1200 | 1 | 3-5 |
-| C: cross-family transfer | 14 | 400-1200 | 1 | 2-3 |
-| **total** | **~106** | | | **~10-15** |
+| B: ordinary external cells | 24 | 400–1200 | 1 | 3–5 |
+| B: fresh sliver block | 6 | 400–1200 | 1 | ~1 |
+| C: geometry-class transfer | 14 | 400–1200 | 1 | 2–3 |
+| **total** | **~112** |  |  | **~11–16** |
 
 Order:
 
-1. freeze all cell manifests and split assignments;
-2. run A, select/refit the rule, and record the dated artifact amendment;
-3. run B and C (they may run in parallel because neither updates the rule);
-4. write the report before any `stage_f_v2` work begins.
+1. revise and test the implementation;
+2. generate and inspect the A/B/C manifests;
+3. inspect dry-run cost;
+4. run A, B, and C; B/C may run in parallel and never update the rule;
+5. write the report before any successor design.
 
-M3 computation and offline stitches are cheap relative to the one fiducial
-cloud per replicate. Dry runs must replace these estimates with measured
-budgets before launching the full study.
+Because the rule is no longer learned from A, B/C need not wait for an A
+fit. Running A first is still operationally useful for parity and storage
+checks, not a condition of external validity.
 
 ---
 
 ## 9. Deliverables
 
-1. `data/results/hybrid_floor_<date>/`: manifests, design constants,
-   per-replicate records, rule artifacts, and per-study summaries.
-2. A dated amendment here containing the complete `stage_f_v1` rule and
-   hash before B/C outcomes are read.
-3. `stats/hybrid_floor_report.md`: A's coordinate/edge/price findings,
-   direct external results for both simple benchmarks and the learned rule,
-   alpha2 frontier, residual-miss classifications, cross-family transfer,
-   and explicit empirical/exact labels.
-4. Formal one-paragraph proofs of domination, the adaptive regional cap,
-   and the two-piece decomposition in the theory document, including the
-   widening-only closure condition that corrects the current §7.3 wording.
-5. Updates to the §7 roster in `next_method_ideas.md`, including whether the
-   original fixed-region lead replicated independently and whether the
-   fitted rule added enough width efficiency to justify its complexity.
-
-The report supplies evidence to the later roster decision; it does not make
-that decision by relabeling the reporting bars as acceptance criteria.
+1. The rule definition in source/spec and the A/B/C design manifests.
+2. Lossless paired records and per-study summaries.
+3. `stats/hybrid_floor_report.md`, including margin capture/price,
+   alpha2 frontier, sliver conditional results, imbalance, residual
+   classification, and geometry-class transfer.
+4. A theory amendment that clearly separates exact domination/regional-cap
+   statements, the sketch-level frontier argument, and empirical exterior
+   control.
+5. A roadmap update that retires the shape-blind AUC router as a
+   distribution-free candidate and keeps any declared-class router
+   separate.
 
 ---
 
@@ -543,12 +440,12 @@ that decision by relabeling the reporting bars as acceptance criteria.
 
 | risk | response |
 |---|---|
-| No coordinate transfers | Prefer the fixed count benchmark or a conservative union of endpoint regions; report the price. Do not hide the failure in a flexible surface. |
-| `m_q` helps in-sample only | Keep it diagnostic unless its internal-validation gain clears cell-bootstrap uncertainty and B/C confirm the frozen rule. |
-| Learned rule beats benchmarks only trivially | Prefer the simpler benchmark in the later roster discussion; Stage F still provides the geometry and price curves. |
-| Region repairs t but not other families | Use C's inside/edge/far classification to distinguish margin error from a new miss channel; any refit becomes `stage_f_v2`. |
-| A replay selection creates optimism | Describe A's split as internal validation; reserve out-of-sample language for fresh B/C seed streams and cells. |
-| Data-adaptive region invalidates naive coverage arithmetic | Score the full procedure per replicate. The exact regional cap remains valid because full-curve M3 coverage implies coverage on every random subset. |
-| Sparse interval encoding overflows | Store a packed bitset fallback and an overflow flag; never truncate a miss set. |
-| Wedge persists beyond n = 12,000 | This does not affect domination or the adaptive regional cap; it limits the empirical exterior claim and favors the full-region fallback outside support. |
-| Composite piggyback under-covers | Quarantine that result to the separate finite-range width candidate; it cannot weaken the floor-only arms or revise `stage_f_v1`. |
+| Square-root margin misses exterior violations | Report edge/far geometry; any enlarged successor is a new version requiring new confirmation data |
+| Square-root margin costs too much | Compare `run0` and `j1`; do not tune the primary rule on B/C |
+| Sliver failure persists outside the floor | Treat as a falsification of the proposed frontier trigger, not as an AUC-surface fitting problem |
+| Corner-concave cells fail | Downgrade Corollary 13.1 and investigate interior versus finite-grid causes; do not invent a class test |
+| AUC or `m_q` predicts residuals | Report class-relative diagnostic value only |
+| M3 floor misses inside its region | Trigger implementation/parity debugging before scientific interpretation |
+| Composite piggyback under-covers | Quarantine it to the finite-range width candidate |
+| Sparse miss encoding overflows | Use packed-bitset fallback; never truncate |
+| Large-n wedge or sliver persists | This is compatible with Proposition 14 and strengthens the case for a rank-adaptive floor |
