@@ -4,12 +4,11 @@
 `src/studroc_paper/methods/fiducial_band.py` (implementation). This document
 develops the probabilistic structure behind the method: what is exactly true,
 what is asymptotically true, what is finite-sample heuristic, and what is
-open. Last substantive revision 2026-09-02, folding in the follow-up
-boundary study (§7.3: the validity failure is a curved (AUC, n) *wedge*,
-coverage is **not monotone in n**, misses concentrate at the upper-FPR
-end, and a localized M3 floor with a pointwise-domination property is the
-lead repair); previous revisions 2026-08-30 (§7.2, the Stage S screen and
-the C=1 default) and 2026-08-23 (the §14 literature pass).*
+open. Last substantive revision 2026-09-02: §7.4 derives the convex-corner
+failure mechanism, a finite-grid risk score and shape-class router, and
+principled M3 floor regions; §7.3 records the 257-cell empirical wedge and
+localized-floor probe. Previous revisions: 2026-08-30 (§7.2, Stage S and
+the $C=1$ default) and 2026-08-23 (§14 literature pass).*
 
 **Status tags.** Every claim carries one of:
 - **[Exact]** — proved here or a one-step consequence of a classical result;
@@ -47,7 +46,7 @@ The construction (recipe in `next_method_ideas.md` §1): merged label sequence
 $\Lambda$ (ties broken at random); $M$ fiducial curves $\tilde R_1,\dots,
 \tilde R_M$ from Dirichlet spacings per class with within-gap spreading,
 evaluated on the grid $t_k = k/n_0$; equal-local-levels (min-p) trim at level
-$\alpha_{\mathrm{eff}} = 1-(1-\alpha)^C$ (default $C=2$) with realized depth
+$\alpha_{\mathrm{eff}} = 1-(1-\alpha)^C$ (default $C=1$ since 2026-08-30, §7.2) with realized depth
 $j^\*$; pointwise $[j^\*\text{-th smallest},\, j^\*\text{-th largest}]$ tube;
 Clopper–Pearson upper allowance at local level $\ell = j^\*/(M+1)$; lower
 edge zeroed where the empirical TPR count is zero.
@@ -259,6 +258,18 @@ statistics).
    $O_p(1)$. Thus “steep” is not the mathematical dividing line:
    the dividing line for first-order equivalence is a local modulus
    $o(\sqrt\delta)$, up to logarithms.
+5. **Where it actually bites: the end gaps at a convex corner (§7.4).
+   [Exact mechanism; Sketch rates]** The sorted-uniform placement is the
+   fiducial implementation of "the likelihood ratio is constant across the
+   gap", i.e. the true ROC is *linear* between consecutive same-class
+   operating points. In the end gaps — below the lowest positive, above the
+   highest negative — that gap carries $O(1)$ of the local curve deficit, and
+   a heavy-tailed truth is exactly there most nonlinear (the ROC is *convex*,
+   the classical hook). Lemma 13 shows the convention is calibrated iff the
+   ROC is linear across the end gap and anti-conservative iff it is convex
+   there, with endpoint miss approximations. (The finite-grid score screens
+   the measured wedge without a false negative at its conservative cutoff;
+   §7.4(g).)
 
 *Proof of (1)–(2).* (1) is the inverse-image structure (Cui & Hannig 2019,
 eq. 2.3): consecutive completions differ by at most the spacing they
@@ -307,10 +318,12 @@ selection is uniquely fiducial.
 
 **Measured corroboration. [Empirical]** Coverage is insensitive to the
 convention (random vs even spreading indistinguishable; ties red-team), as
-(3) predicts on the interior.
+(3) predicts on the interior. Both tested conventions retain the same
+endpoint-linearity premise, so this does not test §7.4's failure mechanism.
 
-**A conservative interval-valued variant (untried).** Following Cui &
-Hannig's conservative option: compose, per draw, the *bracket*
+**A conservative interval-valued variant (untried as a full band; its
+tail restriction is, up to the level, the M3 floor — §7.4(e)).** Following
+Cui & Hannig's conservative option: compose, per draw, the *bracket*
 $[\tilde R^L, \tilde R^U]$ (lower/upper completions on both axes), score a
 draw as inside the tube only when its whole bracket is inside, and take the
 band as the envelope of retained brackets. By Proposition 3b(1)–(2) this
@@ -467,7 +480,9 @@ exact Lemma 5 duality. Untried here; flagged in §12.
   rather than concentrating it at a corner. **[Sketch]** for the limit
   statement; **[Empirical]** at finite n (e.g. $.017/.017$ at $n=5000$;
   median miss FPR spread over $0.08$–$0.79$ across cells; contrast the
-  envelope's measured $\sim$10:1 downward skew).
+  envelope's measured $\sim$10:1 downward skew). Inside the §7.3 wedge the
+  endpoint mechanism breaks this balance downward (.301/.013 at
+  t(2)/.99, $n=500$).
 - **Graze-type misses. [Heuristic]** A coverage failure means the truth's
   depth fell just below $j^\*$ somewhere; the exceedance has no atom and the
   tube boundary is an order statistic of a continuous cloud, so the
@@ -595,7 +610,8 @@ native-grid coverage to the continuum. $\square$
 (trim exponent $C=1$) is asymptotically **calibrated**: its limiting
 coverage equals $1-a$ exactly, rather than merely exceeding it. (No
 finite-sample validity claim is made for $C=1$; the finite-sample evidence
-is §7's.) The scope limitations are real and stated: the theorem is
+is §7's.) At $n=50{,}000$, Stage S measured .951–.960 coverage on its three
+taper shapes. The scope limitations are real and stated: the theorem is
 on compacts; the corner zones are governed instead by the
 finite-sample devices of §8, and the moving-boundary strip between them
 ($t \sim k/n_0$, small fixed $k$) is covered by neither argument and rests
@@ -870,7 +886,12 @@ gone by n = 500 for t(2) (.958). Notably the *trapezoid* truth — the
 designed rough adversary, the shape D5's floor conjecture was actually
 about — sits comfortably at $C^\* = 2.01$: legitimate roughness is
 harmless; tail mass is not, and it breaks the band in a way no trim
-level can repair or express.
+level can repair or express. **Sharpened 2026-09-02:** the channel is now
+derived (§7.4). "Unseen tail mass" is the right picture, but the
+quantitative driver is the within-gap convention's implicit *linearity*
+assumption failing at a convex corner: what matters is the ratio of the
+average likelihood ratio across the end gap to that at the outermost grid
+point (the hook ratio), not the tail mass itself.
 
 **(b) Fixed $C=2$ is refuted as a default.** On t(2) cells it measures
 .932/.940/.924 at n = 500/5,000/50,000 and .918–.928 on the imbalance
@@ -975,16 +996,26 @@ window in either direction. Extending n falsified it as a universal rule
 grows with AUC, so m compresses the boundary without linearizing it. It
 is runtime-estimable without the truth, which makes it the candidate
 mechanistic routing/region statistic once its AUC drift is
-characterized.
+characterized. **Explained 2026-09-02 (§7.4(c)):** for heavy tails
+$t_{.5} = P(X > \delta) \approx (1-\mathrm{AUC})/2$, so
+$m \approx N_0 := n_0(1-\mathrm{AUC})/2$ — the coordinate in which the
+t-family's corner mechanism depends on $(N_0, N_1, \nu)$ alone. The
+window's "AUC drift" was the tail index: at fixed $\nu$ the failing set is
+a window in $N$ whose upper edge grows steeply with $\nu$, and the large-$n$
+failures are the moderate-df shapes.
 
 **(c) Miss geometry.** Replayed from seeds: misses are overwhelmingly
 lower-edge and concentrate at the *upper* FPR end (peak pointwise miss
 rate at $1-\mathrm{FPR} \approx .002$–$.04$; ~70% of missing reps in
 large-n cells miss only above FPR = .9), plus a secondary cluster at the
-extreme left corner (FPR ≲ .005). Mechanically: heavy-tailed positives
-make the true ROC approach 1 slowly, while the band's monotone lower
-edge, pinned to reach 1, overshoots it — the §7.2(a) unseen-tail-mass
-channel, localized.
+extreme left corner (FPR ≲ .005). Mechanically (derived in §7.4): in
+the zone where the empirical TPR is 1, the cloud spreads the positive mass
+below the lowest *observed* positive uniformly over the $k_{\mathrm{sat}}$
+negatives there — the "ROC is linear here" assumption — so the lower edge
+claims a TPR deficit of order $\ln(1/\ell)/(n_1 k_{\mathrm{sat}})$, while a
+heavy-tailed truth's deficit at the outermost grid points is of order
+$1/n_1$ (its likelihood ratio is largest at the extreme end). The left
+cluster is the mirror image on the F-axis at the first grid point.
 
 **(d) Repairs, in preference order.** *(i) The localized M3 floor:*
 pointwise union with M3 on FPR ∈ [0, .005] ∪ [.5, 1], C = 1 elsewhere,
@@ -1005,7 +1036,386 @@ conservative routing rule* (AUC upper bound × n; report §5): zero
 failures over all 257 cells with min coverage .944, but 65% of its
 M3-routals were unnecessary and the thresholds are read from the data
 that validates them. Both await fresh-seed confirmation; the floor study
-is specced separately.
+is specced separately. **Theory-side update (§7.4(e)–(f)):** the derived
+base region is the first $\lceil\ln(1/\ell)\rceil$ left-grid points plus
+the complete empirical-TPR-1 run on the right. Extending the right floor to
+$j>0$ positive-tail counts remains one integer to calibrate. M3 implements
+the same no-interpolation bracketing principle with a simultaneous
+finite-sample theorem.
+
+### 7.4 Endpoint curvature, a finite-grid risk score, and principled floors
+
+*Status. The constructional claim in (a) and the Student-t hook locations
+in (b) are exact. Lemma 13 is a Poisson/Dirichlet endpoint approximation,
+not a coverage theorem. Its finite-grid refinement in (c) is
+parameter-free; only the map from its risk score to whole-band coverage is
+empirically calibrated. The floor containment statements are exact, while
+the proposed floor extents remain to be externally tested in Stage F.
+Reproduction: `scripts/c_calibration/corner_mechanism.py`.*
+
+**(a) What the convention assumes. [Exact]** On each axis, own-class
+elements sit at their Dirichlet cumulative masses and the other class's
+elements inside a gap are placed at sorted-uniform fractions of that gap's
+mass (§3.1; `_axis_coords`). On the G-axis the $k$ negatives ranked between
+consecutive positives $Y_{(j)} < Y_{(j+1)}$ receive fiducial G-values
+$\tilde G(Y_{(j)}) + S_{j+1} V_{(r)}$, $r = 1,\dots,k$, with $S_{j+1}$ the
+gap's spacing and $V_{(1)} < \dots < V_{(k)}$ sorted uniforms. Averaged over
+the uniforms, this allocates the gap's positive mass to the $k{+}1$
+sub-intervals cut by the negatives in equal expected shares — in proportion
+to the negatives' own F-mass there. Since $R' = dG/dF$ is the likelihood
+ratio, this is the fiducial rendering of "the likelihood ratio is constant
+across the gap": **the true ROC is taken to be linear between consecutive
+positives' operating points**, and symmetrically (F-axis) between
+consecutive negatives'. The *randomness* of the placement is not the issue
+— the exchangeable law of the fractions is the right one *given* a constant
+LR; the issue is which mass is being spread, and over what.
+
+**(b) Where it can matter: the end gaps at a convex corner.** In the
+interior every gap holds $O(1/n)$ mass and the curve is smooth, so the
+assumption costs second order (Prop. 3b(3)). The two *end gaps* differ in
+kind:
+
+- G-axis: below the lowest observed positive $Y_{(1)}$ — mass
+  $S_1 \sim \mathrm{Beta}(1, n_1) \approx E/(n_1{+}1)$ — spread over the
+  $k_{\mathrm{sat}} := \#\{i : X_i < Y_{(1)}\}$ negatives ranked below it,
+  i.e. over the whole FPR range on which the empirical TPR equals 1;
+- F-axis: above the top negative $X_{(1)}$ — mass $\approx E'/(n_0{+}1)$ —
+  spread over the $p_1 := \#\{j : Y_j > X_{(1)}\}$ positives ranked above
+  it, i.e. over $[0, t_1)$ at grid resolution.
+
+In both regions the *local curve deficit being estimated* is itself
+$O(1/n)$, so the end-gap allocation is $O(1)$ of the quantity of interest;
+and a heavy-tailed truth is exactly there most nonlinear. Write
+$\tau(s) := 1 - R(1-s)$ (positive mass below the bottom-$s$ negative
+quantile) and $\rho(s) := \tau(s)/s$ (the average LR over that region); at
+the origin $\rho_0(t) := R(t)/t$. $R$ is concave near $(1,1)$ iff $\rho$ is
+nondecreasing. A positive class whose lower tail is as heavy as the
+negatives' (LR $\to c > 0$ far out) gives $\rho$ *decreasing*: the ROC is
+**convex** near $(1,1)$ — the classical hook of "improper" ROC curves — and
+symmetrically $\rho_0$ increasing is a convex hook at the origin. For a
+location family with common tail index $\nu$ (Student-$t$ against shifted
+Student-$t$, shift $\delta$) the LR has its minimum at
+$x_- = (\delta - \sqrt{\delta^2 + 4\nu})/2$ and its maximum at
+$x_+ = \delta - x_-$: the ROC is convex for thresholds below $x_-$ (FPR
+above $P(X > x_-) \approx 1/2$ for large $\delta$) and above $x_+$ (FPR
+below $\approx (1 - \mathrm{AUC})/2$), concave between. For t(2)/.99 these
+regions are FPR $<.005$ and FPR $>.53$, matching the probe's floor.
+
+*Corner scales.* $Q := \ln(1/\ell)$, $\ell$ the band's local level ($Q
+\approx 6$–$7$ at $\alpha = .05$; §9). Right end: $s_* := \tau^{-1}(1/n_1)$
+(expected depth of the lowest positive), $k_* := n_0 s_*$ (expected width of
+the saturated zone in negatives), $p_* := n_1 \tau(1/n_0)$ (expected
+positives below the bottom negative), and the **hook ratio**
+$h := \rho(s_*)/\rho(1/n_0) = 1/(k_* p_*)$. Left corner:
+$h_0 := (Q/n_0)\big/R^{-1}\!\big(Q\,R(1/n_0)\big)$. Both equal 1 for a
+linear corner; $h < 1$ and $h_0 > 1$ at convex corners.
+
+**Lemma 13 (leading-order end-gap calibration and hook inflation).
+[Sketch]** Approximations: (i)
+$\mathrm{Beta}(1, n)\cdot(n{+}1)$ and Dirichlet partial sums are replaced by
+Exp(1) and Gamma variables; (ii) counts are replaced by their expectations
+where they are large ($p_1 \gg 1$ at the left; grid index $k \gg 1$ at the
+right). Both are relative errors of order $1/n$ or $1/\sqrt{\text{count}}$.
+
+*Left corner, grid point $t_1 = 1/n_0$.* Let $\Gamma_1 \sim$ Exp(1) be the
+top negative's placement in units of $1/(n_0{+}1)$ and $p_1$ the positives
+above it. A cloud draw puts the top negative at fiducial depth
+$E/(n_0{+}1)$, $E \sim$ Exp(1) independent of the data, and the $p_1$
+positives at sorted-uniform fractions of $[0, E/(n_0{+}1)]$. If $E > 1$ the
+draw's TPR at $t_1$ is $\mathrm{Bin}(p_1, 1/E)/n_1 \approx p_1/(n_1 E)$;
+draws with $E < 1$ have TPR $\ge p_1/n_1$. Hence the tube's lower edge is
+$L(t_1) \approx p_1/(n_1 Q)$. The truth is
+$R(1/n_0) \approx (p_1/n_1)\, R(1/n_0)/R(\Gamma_1/n_0)$. Therefore
+
+$$r_L := P(\text{lower-edge miss at } t_1)
+ \approx P\big(R(\Gamma_1/n_0) > Q\,R(1/n_0)\big)
+ = \exp\!\big(-n_0\,R^{-1}(Q\,R(1/n_0))\big) = \ell^{\,1/h_0}.$$
+
+If $R$ is linear on $[0, Q/n_0]$ then $h_0 = 1$ and $r_L = \ell$: the
+end-gap spread transports the top negative's exact Beta$(1, n_0)$ pivot to
+the TPR axis without loss. Convex there: $h_0 > 1$, $r_L > \ell$.
+Concave: $r_L < \ell$. (If $Q\,R(1/n_0) \ge 1$ the channel is closed —
+the curve is already too high at $t_1$ for the top negative's placement to
+matter — which is why the left channel shuts off at high AUC.)
+
+*Right end, the saturated zone.* Let $s_1 := 1 - W_{(n_1)}$ be the depth of
+the lowest positive, $\Lambda := n_1 \tau(s_1) \sim$ Exp(1), and
+$k_{\mathrm{sat}} \approx n_0 s_1$. The cloud gives the zone's negatives TPR
+deficits $S V_{(1)} < \dots < S V_{(k_{\mathrm{sat}})}$ with
+$S \approx E/(n_1{+}1)$. At the grid point $k$ negatives from the top, with
+$k \gg 1$ so that the fiducial negatives' own F-jitter averages out, the
+fiducial deficit is $\approx S\,k/k_{\mathrm{sat}}$ with upper-$\ell$
+quantile $Q\,k/(k_{\mathrm{sat}}(n_1{+}1))$, while the truth's deficit is
+$\tau(k/n_0)$, deterministic. The band misses there iff
+$n_1 \tau(k/n_0)\,k_{\mathrm{sat}}/k > Q$, i.e.
+
+$$\Lambda > Q\,h_k,\qquad h_k := \rho(s_1)/\rho(k/n_0).$$
+
+Under linearity $h_k \equiv 1$ and **the whole zone misses together** —
+one effective look, probability $e^{-Q} = \ell$, however wide the zone.
+Under a convex hook $h_k < 1$, smallest at the outermost grid points, and
+the probability is inflated. Replacing both the random $s_1$ by $s_*$ and
+the order statistic $V_{(k)}$ by $k/k_{\mathrm{sat}}$ gives the
+**large-$k$** zone criterion
+
+$$k_{\mathrm{sat}} > k_{\mathrm{crit}} := Q/p_*
+ \ \Longleftrightarrow\ \text{miss},\qquad
+ r_R^{(\infty)} := P(k_{\mathrm{sat}} > k_{\mathrm{crit}})
+ = \exp\!\big(-n_1\,\tau(Q/(n_0 p_*))\big),$$
+
+again $\ell$ when $\tau$ is linear. This last replacement is poor when the
+first few grid points determine the miss and is corrected next. $\square$
+
+Two remarks. The same computation in an interior gap with $j$ positives
+below gives a relative excess of order $1/j$ (the anchor
+$\tilde G(Y_{(j)}) \sim \Gamma_j/n_1$ is at the right scale; only a fraction
+of one spacing is misallocated), so the end gap dominates and the effect
+decays into the interior like $1/j$ — the *count of positives below the
+threshold* is the natural coordinate for its extent. And both channels
+move the truth *below* the cloud while the upper edge additionally carries
+the CP allowance: this is the directional asymmetry of the failures
+(viol_low $\gg$ viol_high in every failing cell).
+
+**Finite-grid correction. [Sketch]** Conditional on a saturated-zone size
+$K$, retain the randomness discarded above. For the point $k$ steps from
+the endpoint,
+
+$$n_1(1-\widetilde R_k)\ \dot\sim\
+ E\,{k\over K}Z_k,\qquad E\sim\operatorname{Exp}(1),\quad
+ Z_k\sim\operatorname{Gamma}(k,\text{rate }k),$$
+
+with $E$ and $Z_k$ independent. Let $q_{k,\ell}$ solve
+$P(EZ_k>q_{k,\ell})=\ell$. Its survival function is available without
+simulation,
+
+$$P(EZ_k>q)=
+ {2(kq)^{k/2}\over\Gamma(k)}K_k(2\sqrt{kq}),$$
+
+where $K_k$ is the modified Bessel function. Thus $q_{1,\ell}>Q$ and
+$q_{k,\ell}\downarrow Q$; the cloud is substantially more variable than
+the mean-gap approximation at the first few grid points. Define
+
+$$K_{\rm crit}:=
+ \left\lceil\min_{1\le k\le n_0}
+ \max\left\{k,\ {q_{k,\ell}k\over n_1\tau(k/n_0)}\right\}\right\rceil ,
+\qquad
+r_R:=\exp\{-n_1\tau(K_{\rm crit}/n_0)\},$$
+
+with $r_R=0$ if $K_{\rm crit}\ge n_0$, and combine the ends as
+
+$$\boxed{\quad r_{\rm corner}=1-(1-r_L)(1-r_R).\quad}$$
+
+This is a *risk score*, not a literal whole-band miss probability: it still
+Poissonizes the endpoint spacings, treats the F-axis grid jitter only to
+first order, and omits interior gaps. Unlike $r_R^{(\infty)}$, however, it
+keeps the grid-resolution effect responsible for the worst false alarms.
+
+**(c) Consequences.**
+
+1. *A fast screen and a slower magnitude predictor.* The analytic score
+   uses only $R$ near the two endpoints and costs milliseconds. On the 257
+   follow-up cells its correlation with measured miscoverage is .86, versus
+   .53 for the large-$k$ formula; $r_{\rm corner}\le .05$ clears 122 cells
+   with no observed coverage below .94. The Poissonized endpoint simulator
+   in (g) is slower but predicts magnitude better (RMSE .025). These are
+   in-sample diagnostics, not new validation.
+2. *The t-family reduces to $(N_0, N_1, \nu)$.* With the power-tail
+   approximation $P(T_\nu < -y) \approx c_\nu y^{-\nu}$,
+   $1 - \mathrm{AUC} \approx 2 c_\nu \delta^{-\nu}$ and
+
+   $$\rho(s) = \big(1 + (2s/(1{-}\mathrm{AUC}))^{1/\nu}\big)^{-\nu},\qquad
+     \rho_0(t) = \big(1 - (2t/(1{-}\mathrm{AUC}))^{1/\nu}\big)^{-\nu}
+     \ \ (2t < 1{-}\mathrm{AUC}),$$
+
+   so the tail approximation reduces the problem to
+   $N_i := n_i (1 - \mathrm{AUC})/2$, $\nu$, and $Q$ (plus the integer
+   grid index in the finite-$k$ correction). At fixed $\nu$ the dangerous
+   set is generally a **window in $N$**: it opens when the hook becomes
+   resolvable and closes only when the sampled tail reaches the nearly
+   linear far-tail regime. Its location and width depend strongly on
+   $\nu$; there is no universal safety claim at $N_0<1$. Read along $n$ at
+   fixed AUC and worst-cased over $\nu$, the maximizing tail index drifts
+   upward with $n$, producing the observed wedge. The
+   $m$-window of §7.3(b) is this coordinate: for heavy tails
+   $t_{.5} = P(X > \delta) \approx (1 - \mathrm{AUC})/2$, so $m \approx N_0$.
+3. *Imbalance.* Among the two sample sizes, $r_L$ depends only on $n_0$.
+   $r_R$ generally worsens as
+   $n_0/n_1$ grows: $h = 1/(n_1 s_* \rho(1/n_0))$, and more negatives at
+   fixed positives probe deeper into the far tail where $\rho$ is larger,
+   while the saturated zone widens in proportion. **Prediction:**
+   negative-majority is the dangerous direction for the right-end channel
+   at high AUC; positive-majority is protective (resolution-corrected
+   worst case at AUC .975: $n_0 \times n_1 = 5000 \times 500$ gives .25,
+   $500 \times 5000$ gives .09). Untested; Stage F's imbalance LHS will
+   see it.
+4. *Frontier reading.* The failures are
+   the Lemma 9 frontiers being violated by way of the convention.
+5. *Why the right end dominates, and how deep the misses are.* $h_0$ is
+   bounded because $Q\,R(1/n_0) \ge 1$ closes the left channel at high AUC,
+   so $r_L$ is 0 for most high-AUC cells and rarely exceeds .1–.2; the
+   right score can be much larger. Left misses are *deep* —
+   the truth at $t_1$ may be .01–.1 with the edge several times higher
+   (measured max depth .10) — right misses are *shallow*, $\lesssim$ a
+   few$/n_1$ (measured $10^{-4}$–$.02$).
+
+**(d) Predictions for untested cells.** The following is
+$r_{\rm corner}$ from the exact Student-t ROC, worst-cased over the
+numerically attainable members of a fixed grid
+$\nu\in[1.1,30]$; it is *prediction, not measurement*. The §9 law supplies
+$\ell$. The empirically natural screening line is .05.
+
+| AUC | $n=100$ | 500 | 2,000 | 8,000 | 50,000 |
+|---|---:|---:|---:|---:|---:|
+| .85 | .051 | .019 | .010 | .006 | .003 |
+| .90 | .101 | .034 | .018 | .011 | .006 |
+| .95 | .261 | .083 | .042 | .025 | .014 |
+| .975 | .508 | .178 | .092 | .056 | .032 |
+| .99 | .591 | .359 | .207 | .143 | .094 |
+
+For approximate severity, the smallest useful empirical map is
+
+$$P(\text{whole-band miss})\approx q_0+\lambda r_{\rm corner},
+\qquad q_0\approx .019,\quad\lambda\approx .62,$$
+
+where $q_0$ is ordinary non-corner miscoverage estimated from cells with
+negligible score. An unconstrained weighted fit gives
+$.003+.72r_{\rm corner}$; the spread between these maps is a more honest
+uncertainty indication than extra digits. Both give roughly 2.5–2.8
+percentage-point RMSE on the same 257 cells, with larger errors on the 11
+original anchors.
+
+Concrete prospective predictions: at AUC .985–.99 and balanced
+$n=8{,}000$–12,000, $\nu=2$ should pass, $\nu\approx4.7$ is borderline,
+$\nu\approx6$–8 should fail (predicted coverage about .89–.93 at AUC .99),
+and $\nu=10$ returns toward the boundary. At AUC .975, changing
+$n_0\times n_1$ from $500\times5000$ to $5000\times500$ raises worst-case
+risk from about .09 to .25. A one-heavy-tail family should fail only at
+the corresponding endpoint; a concave-corner family should not exhibit
+this channel. Stage F is the external test of all three predictions.
+
+**(e) The floor from first principles.** Where the convention is wrong,
+the honest replacement is the *bracket* completion of Prop. 3b(1): use the
+whole enclosing gap. On the G-axis, at a negative with $j$ positives below,
+the bracket's lower completion is $1 - \tilde G(Y_{(j+1)})$, whose fiducial
+law is Beta$(n_1 - j,\, j{+}1)$ — exactly the pivot of $B(Y_{(j+1)})$, and
+$R$ at that negative is $\ge B(Y_{(j+1)})$ deterministically. This uses
+the same Beta order-statistic ingredient as M3. M3 additionally makes the
+two one-sample bands simultaneous and composes uncertainty from both axes;
+it is therefore a certified implementation of the *bracketing principle*,
+not literally the bracket cloud at level $\ell$.
+
+The endpoint calculation gives a minimal, observable base region:
+
+- **Left: $k\le\lceil Q\rceil$.** At $t_k=k/n_0$, the top-negative end gap
+  can affect the lower $\ell$-quantile only on the event $E>k$, whose
+  probability is $e^{-k}$. Once $k>Q$, that event has probability below
+  $\ell$ and cannot determine that quantile at leading order. Thus the
+  first $\lceil Q\rceil$ grid points are a conservative end-gap floor
+  ($Q\approx6$–7 here); fewer points are an empirical economy.
+- **Right: $j(t)=0$.** Here
+  $j(t)=n_1\{1-\widehat R(t)\}$ is the observed number of positives below
+  the threshold. The set $j=0$ is exactly the empirical-TPR-1 saturated
+  run over which the final positive spacing is spread. Flooring this
+  entire random run is the smallest endpoint-connected, data-measurable
+  region that removes the dominant right end-gap mechanism. Extending to
+  $j\le j_{\max}$ protects the first interior gaps, whose relative
+  interpolation effect is $O(1/(j+1))$; theory fixes the base
+  $j_{\max}=0$, while Stage F must choose any larger integer from exterior
+  escape versus width.
+
+There is also a larger **curvature-complete** floor when a shape class is
+declared. For the shifted common-scale Student-t family the likelihood
+ratio turns at
+
+$$x_\pm={\delta\pm\sqrt{\delta^2+4\nu}\over2},\qquad
+t_L=P(T_\nu>x_+),\quad t_R=P(T_\nu>x_-),$$
+
+and the ROC is convex exactly on $[0,t_L]\cup[t_R,1]$. Flooring that set
+removes every convex within-gap segment, not only the two end gaps. Since
+$x_-<0$, $t_R>1/2$ for every $\delta>0$; as $\delta\to\infty$,
+$t_R\downarrow1/2$. Hence $[.5,1]$ is the smallest fixed right-hand
+interval covering the hook uniformly over the whole shifted-t class—the
+probe's cutoff has a first-principles justification. A narrower
+shape-restricted rule uses the infimum of $t_R$ over a prespecified
+$(\mathrm{AUC},\nu)$ uncertainty set.
+
+Inside these regions the M3-versus-fiducial difference is only
+$O(1/n_1)$ per right-tail grid point, explaining why a long right floor can
+be cheap. Three choices remain, and should not be conflated:
+
+1. $j_{\max}\ge0$, the sole fitted *extent* beyond the derived end-gap
+   region (the left default is $\lceil Q\rceil$);
+2. $\alpha_2$, where $\alpha_2=\alpha$ gives the sharpest regional M3 band
+   but leaves no formal budget for exterior misses, while
+   $\alpha_2=\alpha/2$ leaves half the union-bound budget; and
+3. M3's class split $\rho$. Any split fixed independently of the observed
+   ranks preserves Proposition 12. A first-order width calculation gives
+   $\rho^*\approx A_F/(A_F+A_G)$, where
+
+   $$A_F={1\over\sqrt{n_0}}\int_{\mathcal R}
+       R'(t)\sqrt{t(1-t)}\,dt,\qquad
+     A_G={1\over\sqrt{n_1}}\int_{\mathcal R}
+       \sqrt{R(t)\{1-R(t)\}}\,dt.$$
+
+   Rather than fit another surface, evaluate the exact M3 width over the
+   one-dimensional $\rho$ grid for the design sizes and a prespecified
+   reference or worst-case shape. Choosing $\rho$ from the same observed
+   ranks would forfeit the simple exact-coverage proof unless selection is
+   separately accounted for.
+
+**(f) What an optimal router boundary can—and cannot—use.**
+
+**Proposition 14 (AUC and sample sizes do not identify endpoint risk).
+[Exact construction; coverage consequence is a conjecture.]** Fix
+$A\in(1/2,1)$ and $(n_0,n_1)$. The class of continuous increasing ROC
+curves with integral $A$ contains curves with arbitrarily different
+$\rho_0$ and $\rho$ on intervals shorter than $1/n_0$: insert a convex
+endpoint hook of width $\varepsilon$ and compensate its $O(\varepsilon)$
+area by an arbitrarily small interior perturbation. Therefore AUC and the
+two sample sizes cannot bound either hook ratio, and no nontrivial
+distribution-free router boundary in those three variables can be derived.
+Uniform validity over all continuous ROCs routes everything to M3. Any
+useful boundary must declare a shape/curvature class or use additional
+tail information.
+
+For a declared class $\mathcal C$ and an AUC uncertainty set $\mathcal A$,
+the hard-coverage router furnished by the approximation is
+
+$$r^*(n_0,n_1,\mathcal A,\mathcal C)
+ =\sup_{A\in\mathcal A,\ R\in\mathcal C(A)}r_{\rm corner}(R),$$
+$$\boxed{\quad\text{use fiducial only if}\quad
+q_0+\lambda r^*\le\alpha-\eta,\quad}$$
+
+where $\eta\ge0$ is a validation margin. At $\alpha=.05$, the current
+$q_0,\lambda$ estimates make $r^*\lesssim.05$ the natural zero-margin
+boundary. For the shifted-t class the only structural input beyond
+$(A,n_0,n_1)$ is the allowed $\nu$ range; no fitted AUC-by-$n$ surface is
+needed. Because the risk is nonmonotone in both AUC and $n$, a one-sided
+AUC upper bound is not safely plugged into this formula: maximize over the
+entire confidence set.
+
+If “optimal” means minimizing width plus a miss penalty rather than
+enforcing a hard bar, let $\Delta W$ be M3's extra expected width and
+$q_F,q_M$ the predicted miss probabilities. The pointwise Bayes/minimax
+decision is M3 exactly when
+
+$$\kappa(q_F-q_M)>\Delta W,$$
+
+for the declared penalty $\kappa$ (using suprema over the class for a
+minimax rule). This makes explicit why no unique optimal boundary exists
+without a loss or coverage constraint. The localized floor usually has a
+better measured width tradeoff than global routing, but it provides only
+the regional cap of §7.3(d); it is not a full-band theorem unless the
+exterior term is also controlled.
+
+**(g) Evidence, briefly. [Empirical]** On the 257 follow-up cells, the
+finite-grid analytic score correlates .86 with measured miscoverage and
+clears 122 cells at the .05 cutoff with no observed sub-.94 coverage. The
+Poissonized endpoint simulator correlates .90 with coverage (RMSE .025);
+its $\le.01$ screen clears 103 cells with no observed failure. A 40-rep
+production-band spot check at t(6.62)/.988, $n=6656$, directly reproduced
+the predicted first-point, mid-zone, and whole-saturated-zone miss modes.
+
 
 ---
 
@@ -1055,7 +1465,15 @@ tracks that boundary at the forced scale. Scope honesty: these are
 two-point (Le Cam-style) lower-bound *sketches* that fix scales. A finished
 minimax statement needs explicit continuous $(F, G)$ pairs realizing the
 perturbations, the exact TV computations, and matching upper procedures
-with constants — open problem 5.
+with constants — open problem 5. The §7.3 wedge is these
+frontiers being *violated*: through the within-gap convention the fiducial
+lower edge is nonvacuous on the first grid points ($L(t_1) \approx
+p_1/(n_1 \ln(1/\ell))$ whenever any positive outranks the top negative) and
+tighter than $c/n_1$ in the empirical-TPR-1 zone whenever that zone is
+wider than $\sim\ln(1/\ell)$ negatives. Both claims exceed what any
+distribution-free band may make, and a convex corner is the truth that
+calls the bluff. The bracket completion (Prop. 3b(1)), or a certified M3
+floor based on the same bracketing principle, restores both frontiers.
 
 **Corollary 9.3 (the point $t = 0$; why the $k=0$ allowance must stay).
 [Sketch]** The same F-side move applies *at* $t = 0$: relocating the top
@@ -1153,6 +1571,7 @@ the corners, so both effects are mixed in the fit. Treat $K^{-0.27}$ as an
 empirical compression over the tested range ($K \le 5001$), not a law, and
 do not extrapolate it. The budget rule is self-diagnosing regardless:
 $j^\*$ is computed anyway and the implementation warns at $j^\* < 3$.
+Empirically, $j^\*$ ran 11–22 across the Stage S and follow-up cells.
 
 **The ERL alternative.** §5.1: trimming by extreme rank length removes the
 saturation failure mode (strict ordering at any $M$, given randomized
@@ -1221,8 +1640,13 @@ main open *width* problem (§12), distinct from all coverage questions.
   F-side fiducial tail, whose marginals are the exact Beta laws
   (Prop. 4) — the same mathematics as the fix that repaired the envelope,
   now intrinsic. Measured: coverage $.978$–$.995$ at AUC $.99$ with misses
-  *not* at the corner. What remains AUC-sensitive is width (§10), not
-  coverage.
+  *not* at the corner — on the binormal and bimodal cells, i.e. the
+  *concave*-corner case. With a convex (heavy-tail) corner, AUC is the
+  second coordinate of the wedge: the §7.4 mechanism is a function of
+  $n_i(1-\mathrm{AUC})$ and the tail index, and at AUC $\ge .96$ no tested
+  $n \le 6{,}656$ is safe in the t-family. Width is AUC-sensitive
+  everywhere (§10); coverage is AUC-sensitive exactly where the corner is
+  convex.
 - **Shape.** By Proposition 2, shape is the *only* axis of sensitivity.
   Shape enters through: (i) corner degeneracies (handled exactly);
   (ii) the smoothness contrast driving $a^\*$ (§7, the residual
@@ -1400,7 +1824,7 @@ main open *width* problem (§12), distinct from all coverage questions.
 
    **Measured profile (unchanged by the exact calibration, which only
    removes the shading slack):** coverage 1.000 at $\alpha=.05$ on all 8
-   cells; area 1.45–2.19× the production fiducial band (0.37–0.88× KS —
+   cells and .998–1.000 on the probed wedge cells; area 1.45–2.19× the production fiducial band (0.37–0.88× KS —
    it strictly dominates the provable baseline); production spot-check
    1.58× at binormal ~.875, $n=500$. The whole penalty is *level
    accounting*, not geometry: at the nominal level whose realized coverage
@@ -1457,7 +1881,13 @@ main open *width* problem (§12), distinct from all coverage questions.
    and its pointwise projection is a certified band *for truths in the
    family*; quantifying the approximation cost of a sieve over shape space
    — how fine a family buys validity over a smoothness class — is a
-   concrete, attackable version of this problem.
+   concrete, attackable version of this problem. **Update 2026-09-02:**
+   the finite-sample obstruction is identified (§7.4) — the within-gap
+   convention, not the trim or the pivots. The natural theorem target is
+   therefore the band with the *bracket completion* (§3.1) on the tails,
+   or the M3-floored band implementing the same no-interpolation principle
+   with simultaneous Beta bands; the interior claim stays
+   empirical/asymptotic (Theorem 7).
 3. **Fix the central-$\alpha$ shape spread at the source: change the depth
    functional.** Every level-side fix is dead (§7). The measured mechanism
    (draws rougher than truth, contrast concentrated in the lower depth
@@ -1482,6 +1912,19 @@ main open *width* problem (§12), distinct from all coverage questions.
    sketches; the exact Beta computations give constants for specific
    events; a clean minimax theorem (explicit continuous perturbation pairs,
    exact TV, matching upper procedures) would tie the corner story shut.
+6. **Turn Lemma 13 into bounds (new, 2026-09-02).** The corner miss rates
+   of §7.4 are leading-order: Beta$(1,n)\cdot(n{+}1) \approx$ Exp(1), the
+   large-$p_1$ approximation at the left, the deep-zone ($k \gg 1$)
+   approximation at the right, the pointwise level standing in for the
+   global trim, and the first interior gaps ($j \ge 1$, relative effect
+   $\sim 1/j$) omitted. The finite-$k$ product correction in §7.4 removes
+   the most consequential right-end approximation; the remainder is a
+   finite computation with the exact Beta
+   and Dirichlet laws. A clean statement would be: for any $R$ convex on
+   $[1-s_*, 1]$, the C=1 band's lower-edge miss probability is bounded in
+   terms of $r_R(R,n_0,n_1,\ell)$; and for $R$ concave on both corners, at most
+   $\ell$ per corner. The second half is the finite-sample validity
+   statement that has been missing for concave truths.
 
 **Scope caveat.** Proposition 2 — and with it everything downstream — is
 specific to the two-independent-samples, single-marker design. Paired
@@ -1504,7 +1947,7 @@ is, at the price of conservatism).
 | Rank-only inputs | Coverage depends on (shape, $n_0$, $n_1$) only; family invariance is a theorem; exact simulability per shape | [Exact] |
 | Dirichlet spacings per class | Exact Beta pivots at every order statistic, every $n$; = the nonparametric spacings-GFD ($(n{+}1)$ spacings — distinct from the $n$-weight Bayesian bootstrap, which pins the extremes) | [Exact + Lit] |
 | Fiducial mass beyond extremes | Two-sided corner uncertainty; the bootstrap's one-sided support collapse cannot occur; old Beta floor subsumed | [Exact] |
-| Within-gap convention | Bounded by one gap mass (Prop. 3b); first-order irrelevant under local Hölder exponent $>1/2$ (up to logs); potentially material at rough regions or jumps | [Exact bound; Sketch rate] |
+| Within-gap convention | Bounded by one gap mass (Prop. 3b); first-order irrelevant on the interior (local Hölder exponent $>1/2$); calibrated to local ROC linearity and materially anti-conservative at convex heavy-tail corners; repaired by bracketing or an M3 floor (§7.4) | [Exact bound; Sketch rate; Empirical failure] |
 | Curve-valued draws (not pointwise intervals) | Monotone, $[0,1]$-respecting, correctly correlated bands; both HT variance channels carried without density estimation | [Sketch] |
 | Min-p / equal-local-levels trim | Simultaneity without a variance estimate (= the correctly-studentized region in the Gaussian limit, Narisetty–Nair Cor. 1); balanced miss directions; spread miss locations; graze-type misses | [Exact structure; balance asymptotic] |
 | Trim level from the cloud's own quantile | Finite-$M$ content control for *any* trim score (Lemma 6b); conservative failure mode under saturation; self-diagnosing budget ($j^\*$) | [Exact] |
@@ -1643,7 +2086,11 @@ assembly, plus one empirical phenomenon. Specifically:
    as the level; the second-order gap is not analyzed anywhere we have
    found. Current status honestly stated: an empirical phenomenon plus a
    toy effective-looks model — it becomes the intellectually novel core
-   only if the second-order analysis (open problem 1) is completed.
+   only if the second-order analysis (open problem 1) is completed. The
+   2026-09-02 corner analysis (§7.4) adds a finite-sample second-order
+   statement of a different kind — the end-gap calibration lemma and its
+   hook inflation — that we have not found in either literature, both of
+   which take the cloud's between-observation completion as given.
 3. **The corner-necessity sketches tied to the CP-form allowance**
    (Lemma 9, Cor. 9.3): two-point lower bounds at the $1/n$ scale matched
    by a parameter-free widening device inside the band — an application of

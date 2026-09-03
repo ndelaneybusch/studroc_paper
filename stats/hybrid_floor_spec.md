@@ -287,6 +287,20 @@ used as though they locate an arbitrary `t`. The primary model excludes
 them. An `m_q`-augmented model is promoted only if it improves the internal
 validation objective beyond its cell-bootstrap uncertainty.
 
+**Theory prior (2026-09-02; `fiducial_band_theory.md` §7.4).** The corner
+mechanism predicts the answers to A-Q1/A-Q2 before the data: left edge in
+*grid points*, with the derived default
+`k_left <= ceil(ln(1/ell)) ~ 7`. The minimal right end-gap region is
+`p_right = 0`, the complete empirical-TPR-1 run. Extending it to
+`p_right <= j_max` covers the first interior positive gaps; `j_max` is
+one integer for Study A to choose rather than a theoretically fixed 2–3.
+The curvature-complete shifted-t floor is `[t_hook, 1]`. The
+right-end channel worsens with `n0 / n1` (negative-majority), so separate
+class-size scaling is expected in A-Q2. The `m_q` covariates are ≈
+`n0 (1 - AUC) / 2` for heavy tails and should add little beyond `AUC_ub`
+and the count coordinate (A-Q5). These are priors for the fit, not
+constraints on it; a fit that lands elsewhere is a finding.
+
 Candidate edge models are deliberately low-complexity: constant cutoffs;
 piecewise-linear surfaces in `(log n0, log n1, AUC_ub)` with extra knots
 near one; and conservative binned outer envelopes. The untransformed upper

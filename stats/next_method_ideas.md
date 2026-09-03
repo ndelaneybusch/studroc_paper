@@ -81,7 +81,11 @@ in n** — at fixed shape t(4.69)/.986 it falls .993 → .823 from n = 150 to
 not just in its constant. The measured routing rule and the localized M3
 floor that repairs the failures are in
 `stats/c_calibration_followup_report.md` §5 and §7; the exact M3 band
-remains the indicated fallback inside the wedge.
+remains the indicated fallback inside the wedge. **Mechanism derived
+2026-09-02** (theory doc §7.4): the within-gap law is calibrated to local
+ROC linearity and becomes anti-conservative at a convex heavy-tail hook. A
+finite-grid endpoint score screens 122 of 257 cells with no observed
+sub-.94 coverage and supplies a shape-class router.
 
 ---
 
@@ -249,7 +253,19 @@ conclusion.
    for routing, and provably never worse than C = 1) and the conservative
    (AUC, n) **routing rule** (report §5; zero failures over all 257 cells).
    Both are validated in-sample only; spec follow-up item 5 still gates
-   guidance.
+   guidance. **Mechanism resolved 2026-09-02** (theory doc §7.4, Lemma 13):
+   the within-gap sorted-uniform convention is an implicit *linear-ROC*
+   assumption; it transports the exact corner pivots to the TPR axis
+   without loss when the corner is linear, and inflates the lower-edge miss
+   rate when it is convex (heavy tails, LR → const in the far tail). The
+   left-corner rate $\ell^{1/h_0}$ and a finite-grid right-end scan reproduce
+   the wedge; the resulting score correlates .86 with miscoverage. In the
+   t-family everything reduces to (N₀, N₁, ν) with N = n(1−AUC)/2 (≈ the
+   m-statistic), and the failing set at fixed ν is a *window in N* whose
+   upper edge grows steeply with ν — the non-monotonicity in n, explained.
+   Predictions on file: extent-stress cells at AUC ≥ .985, n = 8–12k fail
+   most clearly for ν ≈ 6–8 and pass for ν ≤ 2; negative-majority imbalance
+   worsens the right-end channel; concave-cornered families never show it.
 2. **No shape-blind level map is worth shipping — the Stage S screen
    returned its pre-registered STOP.** Per-shape C*(.05) at n = 500 spans
    1.17 (t(2), 2,000 reps) to 3.0; the library lower envelope minus one SE
@@ -421,7 +437,15 @@ in production, none silently dropped:
   that score it (100–200 reps each, student-t only); `tau_lo = .005` should
   be re-expressed in grid points (at n = 130 it spans 0.65 of one); and the
   width cost where C = 1 was already valid is unpriced. The validation run
-  is specified in the report §10 item 2 (~2–3 CPU-hours).
+  is specified in the report §10 item 2 (~2–3 CPU-hours). **Theory
+  (2026-09-02, theory doc §7.4(e)):** M3 implements the bracket's
+  no-interpolation principle with a simultaneous theorem. The derived base
+  region is the first $\lceil\ln(1/\ell)\rceil\approx7$ left-grid points
+  plus the complete empirical-TPR-1 run on the right. Extending the latter
+  to the first interior positive gaps leaves one integer `j_max` for
+  Stage F to calibrate; it is not fixed at 2–3 by theory. The
+  "upper half is nearly free" is structural
+  (M3's and the fiducial's tail deficits differ by $O(1/n_1)$ per point).
 - **The composite band — corner-patched interior trim over a declared
   finite range (after Stage S; now the width play rather than the validity
   play, since the M3 floor above addresses validity more cheaply and with a
@@ -491,6 +515,13 @@ in production, none silently dropped:
   the median positive) is the candidate for a tighter second-generation
   rule once its AUC drift is characterized (report §4). Fresh-seed
   confirmation (spec item 5) required before any threshold freezes.
+  **Theory (2026-09-02, theory doc §7.4(f)):** AUC and class sizes cannot
+  identify endpoint curvature, so no nontrivial distribution-free router
+  exists in those variables alone. For a declared shape class, route by
+  the worst finite-grid endpoint risk over the full AUC uncertainty set;
+  do not merely plug in an AUC upper endpoint because the risk is
+  nonmonotone. The m-statistic is approximately
+  $N_0=n_0(1-\mathrm{AUC})/2$, explaining its useful compression.
 - **Continuous blend of M3 and C\* over (n, AUC, FPR) (roster #5) —
   deferred by assessment, not falsified.** The generalization of the M3
   floor: pointwise band edges interpolating between the trimmed fiducial
@@ -667,7 +698,10 @@ in production, none silently dropped:
    candidates are the composite band (§7, with exact corner treatment) or —
    more promising, because M3 already carries Prop. 12 — the localized M3
    floor, whose union construction dominates C = 1 pointwise by
-   construction.
+   construction. **2026-09-02:** the obstruction is identified — the
+   within-gap convention (theory doc §7.4) — and the natural theorem
+   target is the bracket-completed / M3-floored band, whose tail edges are
+   exact Beta pivots (theory doc open problem 6).
 3. The identifiability frontier at the corner, restated in rank space: no
    band can certify a nonvacuous lower bound below ~c/n₀ — connects to the
    old Beta-floor honesty result and bounds the achievable width in the

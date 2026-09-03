@@ -133,6 +133,13 @@ The coordinate is estimable at runtime without knowing the truth (count
 negatives scoring above the median positive), which makes it the more
 mechanistic routing statistic once its AUC dependence is characterized.
 
+**Superseded 2026-09-02 by a derived mechanism** (`fiducial_band_theory.md`
+§7.4): the cloud's within-gap spreading is calibrated to a locally linear
+ROC and fails at convex heavy-tail corners. A resolution-corrected endpoint
+risk score screens 122 of the 257 cells with no observed sub-.94 coverage,
+and for heavy tails `m ≈ n0 (1 − AUC) / 2`, the coordinate in which the
+t-family's failure set is a tail-index-dependent window.
+
 ## 5. A conservative routing heuristic
 
 Routing is admissible per-dataset adaptivity because mis-routing to M3 costs
@@ -188,6 +195,11 @@ missing replicates in the large-n cells having all their misses above
 FPR = .9 — plus a secondary cluster at the extreme left corner (FPR <~ .005).
 Mechanically: with heavy-tailed positives the true ROC approaches 1 slowly
 while the band's lower edge, monotone and pinned to reach 1, overshoots it.
+(Derived 2026-09-02, theory doc §7.4: the cloud spreads the positive mass
+below the lowest *observed* positive uniformly over the negatives below it,
+so its lower edge claims a TPR deficit of order `ln(1/ell) / (n1 k_sat)`
+where the truth's is of order `1 / n1`; M3 uses the corresponding
+no-interpolation bracketing principle and adds simultaneous control.)
 
 **M3 covers at 100.0% of the fiducial's miss points** in all five probed
 cells.
