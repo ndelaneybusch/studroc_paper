@@ -29,6 +29,44 @@ from .fiducial_band import TieBreak, _auto_n_draws, _merged_labels, production_t
 from .method_utils import torch_to_numpy
 
 
+def _apply_corner_allowances(
+    *,
+    lower: NDArray,
+    upper: NDArray,
+    khat: NDArray,
+    n1: int,
+    trim_depth: int,
+    n_draws: int,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Apply the production corner allowances to raw tube edges.
+
+    Args:
+        lower: Raw lower tube edge on the native grid.
+        upper: Raw upper tube edge on the native grid.
+        khat: Empirical positive counts at the native grid points.
+        n1: Positive-class sample size.
+        trim_depth: Realized one-indexed pointwise trim depth.
+        n_draws: Fiducial cloud size.
+
+    Returns:
+        Allowance-augmented lower and upper edges.
+    """
+    lower_out = np.clip(np.asarray(lower, dtype=np.float64), 0.0, 1.0)
+    upper_out = np.clip(np.asarray(upper, dtype=np.float64), 0.0, 1.0)
+    local_level = trim_depth / (n_draws + 1)
+    cp_upper = np.ones(len(khat))
+    interior = khat < n1
+    cp_upper[interior] = beta_dist.ppf(
+        1.0 - local_level, khat[interior] + 1, n1 - khat[interior]
+    )
+    upper_out = np.maximum.accumulate(np.maximum(upper_out, cp_upper))
+    lower_out[khat == 0] = 0.0
+    upper_out = np.clip(upper_out, 0.0, 1.0)
+    lower_out[0] = 0.0
+    upper_out[-1] = 1.0
+    return lower_out, upper_out
+
+
 def _require_fiducial_core():
     """Import the Rust extension, with a build hint on failure."""
     try:
@@ -174,22 +212,9 @@ def fiducial_band_rs(
             stacklevel=2,
         )
 
-    lower = np.clip(lower, 0.0, 1.0)
-    upper = np.clip(upper, 0.0, 1.0)
-
-    # Exact binomial allowances at the band's own local level.
-    local_level = j / (n_draws + 1)
-    cp_upper = np.ones(len(grid))
-    interior = khat < n1
-    cp_upper[interior] = beta_dist.ppf(
-        1.0 - local_level, khat[interior] + 1, n1 - khat[interior]
+    lower, upper = _apply_corner_allowances(
+        lower=lower, upper=upper, khat=khat, n1=n1, trim_depth=j, n_draws=n_draws
     )
-    upper = np.maximum.accumulate(np.maximum(upper, cp_upper))
-    lower[khat == 0] = 0.0
-
-    upper = np.clip(upper, 0.0, 1.0)
-    lower[0] = 0.0
-    upper[-1] = 1.0
 
     if k is not None:
         if k < 2:

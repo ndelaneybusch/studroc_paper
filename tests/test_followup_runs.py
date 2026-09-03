@@ -1,12 +1,13 @@
 """Focused tests for scripts/c_calibration/followup_runs.py.
 
 Covers the decision-changing mechanics flagged in review: the stitched
-band's monotone closure, the Wilson-interval classification rule, the
-sentinel config restriction, and the refuse-to-mix reuse validation.
-No kernel calls — everything here is pure Python.
+band's monotone closure, the shared-cloud multi-exponent path, the
+Wilson-interval classification rule, the sentinel config restriction, and
+the refuse-to-mix reuse validation.
 """
 
 import sys
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -23,6 +24,7 @@ from followup_runs import (  # noqa: E402
     LHS_N_CELLS,
     SENTINEL_INTERIOR_C,
     _composite_constants,
+    _fiducial_bands_for_exponents,
     _load_composite,
     _stitch,
     boundary_lhs_points,
@@ -36,6 +38,8 @@ from followup_runs import (  # noqa: E402
     surface_predict,
     wilson_ci,
 )
+
+from studroc_paper.methods.fiducial_band_rs import fiducial_band_rs  # noqa: E402
 
 
 class TestStitch:
@@ -89,6 +93,42 @@ class TestStitch:
         lo, hi = _stitch(lo_wide, hi_wide, lo_int, hi_int, grid, -1.0, 2.0)
         assert np.array_equal(lo, np.maximum.accumulate(lo_int))
         assert np.array_equal(hi, np.maximum.accumulate(hi_int))
+
+
+def test_shared_cloud_exponents_match_independent_production_calls():
+    pytest.importorskip("fiducial_core")
+    rng = np.random.default_rng(5)
+    n0, n1 = 45, 35
+    y_true = np.repeat([0, 1], [n0, n1])
+    y_score = np.concatenate([rng.normal(size=n0), rng.normal(1.0, size=n1)])
+    exponents = (1e-4, 1.0, 2.5)
+    n_draws = 300
+    seed = 123
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        actual = _fiducial_bands_for_exponents(
+            y_true,
+            y_score,
+            alpha=0.05,
+            n_draws=n_draws,
+            exponents=exponents,
+            n_threads=0,
+            random_state=seed,
+        )
+        expected = {
+            exponent: fiducial_band_rs(
+                y_true,
+                y_score,
+                alpha=0.05,
+                n_draws=n_draws,
+                trim_exponent=exponent,
+                random_state=seed,
+            )[1:]
+            for exponent in exponents
+        }
+    for exponent in exponents:
+        np.testing.assert_array_equal(actual[exponent][0], expected[exponent][0])
+        np.testing.assert_array_equal(actual[exponent][1], expected[exponent][1])
 
 
 class TestClassification:

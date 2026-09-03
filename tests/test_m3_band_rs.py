@@ -16,7 +16,12 @@ pytest.importorskip("fiducial_core")
 import fiducial_core  # noqa: E402
 
 from studroc_paper.methods import m3_band_rs  # noqa: E402
-from studroc_paper.methods.m3_band_rs import _ell_gamma  # noqa: E402
+from studroc_paper.methods.fiducial_band import _merged_labels  # noqa: E402
+from studroc_paper.methods.m3_band_rs import (  # noqa: E402
+    _ell_bounds,
+    _ell_gamma,
+    _m3_band_from_labels_rs,
+)
 
 
 @pytest.fixture(scope="module")
@@ -209,6 +214,32 @@ def test_split_ratio_shifts_width_between_classes(gaussian_data):
     areas = {rho: float(np.mean(b[2] - b[1])) for rho, b in bands.items()}
     # All valid bands; widths differ across splits (the lever moves).
     assert len({round(a, 6) for a in areas.values()}) == 3
+
+
+def test_cached_ell_bounds_are_reused_and_immutable():
+    alpha_class = 1.0 - np.sqrt(0.95)
+    _ell_bounds.cache_clear()
+    first = _ell_bounds(fiducial_core, 137, alpha_class)
+    second = _ell_bounds(fiducial_core, 137, alpha_class)
+    assert first[0] is second[0] and first[1] is second[1]
+    assert _ell_bounds.cache_info().hits == 1
+    with pytest.raises(ValueError, match="read-only"):
+        first[0][0] = 0.0
+
+
+def test_premerged_entry_point_matches_public_tie_realization(gaussian_data):
+    y_true, y_score = gaussian_data
+    quantized = np.round(y_score)
+    rng = np.random.default_rng(19)
+    labels = _merged_labels(
+        y_true=y_true, y_score=quantized, tie_break="random", rng=rng
+    )
+    expected = m3_band_rs(
+        y_true, quantized, alpha=0.1, split_ratio=0.3, random_state=19
+    )
+    actual = _m3_band_from_labels_rs(labels, alpha=0.1, split_ratio=0.3)
+    for expected_array, actual_array in zip(expected, actual, strict=True):
+        np.testing.assert_array_equal(actual_array, expected_array)
 
 
 def test_ties_handled(gaussian_data):

@@ -47,6 +47,8 @@ who can assert ``R(0) = 0`` (overlapping supports) may opt into the pin via
 both edges are pinned to 1 at ``t = 1``.
 """
 
+from functools import lru_cache
+
 import numpy as np
 from numpy.typing import NDArray
 from scipy.stats import beta as beta_dist
@@ -111,6 +113,114 @@ def _ell_gamma(core, n: int, alpha_class: float) -> float:
     return lo
 
 
+@lru_cache(maxsize=64)
+def _ell_bounds(
+    core: object, n: int, alpha_class: float
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Return cached ELL beta bounds for one class.
+
+    The bounds depend only on class size and confidence level, but a typical
+    simulation previously recomputed both SciPy beta-quantile vectors for
+    every replicate. Arrays are read-only so cached values cannot be
+    corrupted by a caller.
+
+    Args:
+        core: Imported ``fiducial_core`` module used to calibrate the level.
+        n: Class sample size.
+        alpha_class: Class-specific significance level.
+
+    Returns:
+        Read-only lower and upper beta-bound arrays.
+    """
+    gamma = _ell_gamma(core, n, alpha_class)
+    indices = np.arange(1, n + 1, dtype=np.float64)
+    lower = beta_dist.ppf(gamma, indices, n + 1.0 - indices)
+    upper = beta_dist.ppf(1.0 - gamma, indices, n + 1.0 - indices)
+    lower.setflags(write=False)
+    upper.setflags(write=False)
+    return lower, upper
+
+
+def _m3_band_from_labels_rs(
+    lab_s: NDArray,
+    *,
+    alpha: float = 0.05,
+    k: int | None = None,
+    split_ratio: float = 0.5,
+    assume_r0_zero: bool = False,
+) -> tuple[NDArray, NDArray, NDArray]:
+    """Compute M3 from an already tie-resolved merged label sequence.
+
+    This internal entry point lets simulation runners share one score sort
+    across levels and methods. ``lab_s`` must be ordered by descending score,
+    using the same tie realization as every other paired arm.
+
+    Args:
+        lab_s: One-dimensional 0/1 labels ordered by descending score.
+        alpha: Significance level for the simultaneous band.
+        k: Optional output-grid size.
+        split_ratio: Log-confidence split assigned to the negative class.
+        assume_r0_zero: Whether to impose the optional upper-edge zero pin.
+
+    Returns:
+        Tuple of FPR grid, lower edge, and upper edge.
+
+    Raises:
+        ValueError: If inputs are malformed or either class is absent.
+    """
+    if not 0.0 < alpha < 1.0:
+        raise ValueError(f"alpha must be in (0, 1), got {alpha}")
+    if not 0.0 < split_ratio < 1.0:
+        raise ValueError(f"split_ratio must be in (0, 1), got {split_ratio}")
+
+    labels_raw = np.asarray(lab_s)
+    if labels_raw.ndim != 1 or not np.all((labels_raw == 0) | (labels_raw == 1)):
+        raise ValueError("lab_s must be a one-dimensional 0/1 array")
+    labels = np.ascontiguousarray(labels_raw, dtype=np.uint8)
+    n1 = int(labels.sum())
+    n0 = len(labels) - n1
+    if n0 == 0 or n1 == 0:
+        raise ValueError(f"Both classes must be present (n0={n0}, n1={n1})")
+
+    core = _require_fiducial_core()
+    alpha_f = 1.0 - (1.0 - alpha) ** split_ratio
+    alpha_g = 1.0 - (1.0 - alpha) ** (1.0 - split_ratio)
+    b0lo, b0hi = _ell_bounds(core, n0, alpha_f)
+    b1lo, b1hi = _ell_bounds(core, n1, alpha_g)
+
+    grid = np.arange(n0 + 1) / n0
+    iup = np.searchsorted(b0lo, grid, side="left") + 1
+    sent = iup > n0
+    iup = np.clip(iup, 1, n0)
+    ilo = np.minimum(np.searchsorted(b0hi, grid, side="left") + 1, n0 + 1)
+
+    cpos = np.cumsum(labels)
+    neg_idx = np.flatnonzero(labels == 0)
+    pcnt = np.concatenate([[0], cpos[neg_idx]]).astype(np.int64)
+
+    b1hi_ext = np.concatenate([[0.0], b1hi, [1.0]])
+    b1lo_ext = np.concatenate([[0.0], b1lo])
+    upper = b1hi_ext[pcnt[iup] + 1]
+    upper[sent] = 1.0
+    lower = b1lo_ext[pcnt[ilo - 1]]
+
+    if assume_r0_zero:
+        upper[0] = 0.0
+    lower[0] = 0.0
+    lower[-1] = 1.0
+    upper[-1] = 1.0
+
+    if k is not None:
+        if k < 2:
+            raise ValueError(f"k must be at least 2, got {k}")
+        out_grid = np.linspace(0.0, 1.0, k)
+        upper = upper[np.minimum(np.ceil(out_grid * n0).astype(int), n0)]
+        lower = lower[np.floor(out_grid * n0).astype(int)]
+        grid = out_grid
+
+    return grid, lower, upper
+
+
 def m3_band_rs(
     y_true: NDArray | Tensor,
     y_score: NDArray | Tensor,
@@ -173,8 +283,6 @@ def m3_band_rs(
         >>> bool(np.all(lo <= hi)) and lo[0] == 0.0 and hi[-1] == 1.0
         True
     """
-    core = _require_fiducial_core()
-
     if not 0.0 < alpha < 1.0:
         raise ValueError(f"alpha must be in (0, 1), got {alpha}")
     if not 0.0 < split_ratio < 1.0:
@@ -198,58 +306,9 @@ def m3_band_rs(
         else np.random.default_rng(random_state)
     )
 
-    # Exact per-class levels: (1 - alpha_F)(1 - alpha_G) = 1 - alpha.
-    alpha_f = 1.0 - (1.0 - alpha) ** split_ratio
-    alpha_g = 1.0 - (1.0 - alpha) ** (1.0 - split_ratio)
-    g0 = _ell_gamma(core, n0, alpha_f)
-    g1 = _ell_gamma(core, n1, alpha_g)
-
-    i0 = np.arange(1, n0 + 1, dtype=np.float64)
-    b0lo = beta_dist.ppf(g0, i0, n0 + 1.0 - i0)
-    b0hi = beta_dist.ppf(1.0 - g0, i0, n0 + 1.0 - i0)
-    i1 = np.arange(1, n1 + 1, dtype=np.float64)
-    b1lo = beta_dist.ppf(g1, i1, n1 + 1.0 - i1)
-    b1hi = beta_dist.ppf(1.0 - g1, i1, n1 + 1.0 - i1)
-
-    # Composition index maps on the native grid t_j = j / n0. In descending
-    # score order, iup(t) = min{i : b0lo[i] >= t} composes the positive
-    # survival upper band with the negative survival lower band;
-    # ilo(t) = min{i : b0hi[i] >= t} composes the opposite pair.
-    grid = np.arange(n0 + 1) / n0
-    iup = np.searchsorted(b0lo, grid, side="left") + 1
-    sent = iup > n0  # no such order statistic: the upper edge is vacuous (1)
-    iup = np.clip(iup, 1, n0)
-    ilo = np.minimum(np.searchsorted(b0hi, grid, side="left") + 1, n0 + 1)
-
-    # pcnt[i] = number of positives ranked above the i-th ranked negative
-    # (descending scores), pcnt[0] = 0.
-    lab_s = _merged_labels(y_true_np, y_score_np, tie_break, rng)
-    cpos = np.cumsum(lab_s)
-    neg_idx = np.flatnonzero(lab_s == 0)
-    pcnt = np.concatenate([[0], cpos[neg_idx]]).astype(np.int64)
-
-    # Degenerate-index extensions: G-band bound at 0 positives is 0; the
-    # bound "above the (n1+1)-th positive" is 1.
-    b1hi_ext = np.concatenate([[0.0], b1hi, [1.0]])
-    b1lo_ext = np.concatenate([[0.0], b1lo])
-
-    upper = b1hi_ext[pcnt[iup] + 1]
-    upper[sent] = 1.0
-    lower = b1lo_ext[pcnt[ilo - 1]]
-
-    if assume_r0_zero:
-        upper[0] = 0.0  # admissible only under the asserted R(0) = 0
-    lower[0] = 0.0
-    # R(1) = 1 exactly for every continuous DGP (trapezoidal estimand).
-    lower[-1] = 1.0
-    upper[-1] = 1.0
-
-    if k is not None:
-        if k < 2:
-            raise ValueError(f"k must be at least 2, got {k}")
-        out_grid = np.linspace(0.0, 1.0, k)
-        upper = upper[np.minimum(np.ceil(out_grid * n0).astype(int), n0)]
-        lower = lower[np.floor(out_grid * n0).astype(int)]
-        grid = out_grid
-
-    return grid, lower, upper
+    lab_s = _merged_labels(
+        y_true=y_true_np, y_score=y_score_np, tie_break=tie_break, rng=rng
+    )
+    return _m3_band_from_labels_rs(
+        lab_s, alpha=alpha, k=k, split_ratio=split_ratio, assume_r0_zero=assume_r0_zero
+    )

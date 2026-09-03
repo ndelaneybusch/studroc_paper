@@ -94,8 +94,15 @@ from shapes import (  # noqa: E402
     shape_registry,
 )
 
-from studroc_paper.methods.fiducial_band_rs import fiducial_band_rs  # noqa: E402
-from studroc_paper.methods.m3_band_rs import m3_band_rs  # noqa: E402
+from studroc_paper.methods.fiducial_band import _merged_labels  # noqa: E402
+from studroc_paper.methods.fiducial_band_rs import (  # noqa: E402
+    _apply_corner_allowances,
+)
+from studroc_paper.methods.fiducial_ladder import (  # noqa: E402
+    khat_from_labels,
+    ladder_profile,
+)
+from studroc_paper.methods.m3_band_rs import _m3_band_from_labels_rs  # noqa: E402
 
 FOLLOWUP_DATE = "20260830"
 DEFAULT_OUT = Path("data/results") / f"c_calibration_followup_{FOLLOWUP_DATE}"
@@ -580,25 +587,33 @@ def run_m3_arm(cell: Cell, out_dir: Path, reps: int, verbose: bool = True) -> di
     curve = truth_curve(cell)
     rtrue = np.clip(curve.eval(np.arange(cell.n_grid) / cell.n0), 0.0, 1.0)
     t0 = time.time()
-    per_alpha = {}
-    for alpha in M3_ALPHAS:
-        cov = 0
-        vlow = 0
-        areas = np.empty(reps)
-        for rep in range(reps):
-            y_true, y_score, _ = sample_scores(cell, rep)
-            fpr, lo, hi = m3_band_rs(y_true, y_score, alpha=alpha, random_state=rep)
+    coverage_counts = dict.fromkeys(M3_ALPHAS, 0)
+    lower_violation_counts = dict.fromkeys(M3_ALPHAS, 0)
+    areas = {alpha: np.empty(reps) for alpha in M3_ALPHAS}
+    for rep in range(reps):
+        y_true, y_score, _ = sample_scores(cell, rep)
+        lab_s = _merged_labels(
+            y_true=y_true,
+            y_score=y_score,
+            tie_break="random",
+            rng=np.random.default_rng(rep),
+        )
+        for alpha in M3_ALPHAS:
+            _, lo, hi = _m3_band_from_labels_rs(lab_s, alpha=alpha)
             ok_low = bool(np.all(lo <= rtrue + COV_TOL))
             ok_high = bool(np.all(rtrue <= hi + COV_TOL))
-            cov += ok_low and ok_high
-            vlow += not ok_low
-            areas[rep] = float(np.mean(hi - lo))
-        covm = cov / reps
+            coverage_counts[alpha] += ok_low and ok_high
+            lower_violation_counts[alpha] += not ok_low
+            areas[alpha][rep] = float(np.mean(hi - lo))
+
+    per_alpha = {}
+    for alpha in M3_ALPHAS:
+        covm = coverage_counts[alpha] / reps
         per_alpha[f"{alpha:g}"] = {
             "coverage": covm,
             "coverage_se": float(np.sqrt(covm * (1 - covm) / reps)),
-            "viol_low": vlow / reps,
-            "area": float(areas.mean()),
+            "viol_low": lower_violation_counts[alpha] / reps,
+            "area": float(areas[alpha].mean()),
         }
     out = {
         "cell": cell.name,
@@ -676,6 +691,100 @@ def composite_configs(cell: Cell) -> list[tuple[str, tuple | None, float]]:
         for b_lo, b_hi in cuts
         for c in cs
     ]
+
+
+def _fiducial_bands_for_exponents(
+    y_true: np.ndarray,
+    y_score: np.ndarray,
+    *,
+    alpha: float,
+    n_draws: int,
+    exponents: tuple[float, ...] | list[float],
+    n_threads: int,
+    random_state: int | np.random.Generator,
+) -> dict[float, tuple[np.ndarray, np.ndarray]]:
+    """Build several production fiducial bands from one cloud.
+
+    This follows ``fiducial_band_rs`` seed consumption exactly, then asks the
+    ladder kernel for every requested production depth in one pass. The raw
+    tube rows receive the same Python corner allowances as the public method.
+
+    Args:
+        y_true: Binary class labels.
+        y_score: Scores, with larger values indicating the positive class.
+        alpha: Significance level shared by all requested bands.
+        n_draws: Number of fiducial draws in the shared cloud.
+        exponents: Positive trim exponents to evaluate.
+        n_threads: Rayon thread count; zero uses the global pool.
+        random_state: Seed or generator for tie-breaking and the cloud seed.
+
+    Returns:
+        Mapping from each exponent to its allowance-augmented lower and upper
+        edges on the native grid.
+
+    Raises:
+        ValueError: If no exponent is supplied or an argument is out of range.
+    """
+    exponent_values = tuple(dict.fromkeys(float(value) for value in exponents))
+    if not exponent_values:
+        raise ValueError("exponents must be non-empty")
+    if any(value <= 0.0 for value in exponent_values):
+        raise ValueError("exponents must be positive")
+    if not 0.0 < alpha < 1.0:
+        raise ValueError(f"alpha must be in (0, 1), got {alpha}")
+    if n_draws < 100:
+        raise ValueError(f"n_draws must be at least 100, got {n_draws}")
+
+    labels = np.asarray(y_true, dtype=np.int64)
+    scores = np.asarray(y_score)
+    n0 = int((labels == 0).sum())
+    n1 = int((labels == 1).sum())
+    if n0 == 0 or n1 == 0:
+        raise ValueError(f"Both classes must be present (n0={n0}, n1={n1})")
+
+    rng = (
+        random_state
+        if isinstance(random_state, np.random.Generator)
+        else np.random.default_rng(random_state)
+    )
+    lab_s = _merged_labels(y_true=labels, y_score=scores, tie_break="random", rng=rng)
+    seed = int(rng.integers(0, 2**64, dtype=np.uint64))
+    alpha_effs = tuple(1.0 - (1.0 - alpha) ** value for value in exponent_values)
+    profile = ladder_profile(
+        lab_s,
+        rtrue=np.zeros(n0 + 1),
+        n_draws=n_draws,
+        seed=seed,
+        ladder=np.array([1]),
+        alpha_effs=alpha_effs,
+        trim_rows="production",
+        return_edges=True,
+        n_threads=n_threads,
+    )
+    assert profile.edges is not None
+    depths, raw_lower, raw_upper = profile.edges
+    depth_indices = {int(depth): index for index, depth in enumerate(depths)}
+    khat = khat_from_labels(lab_s)
+
+    bands = {}
+    for index, exponent in enumerate(exponent_values):
+        trim_depth = int(profile.ref_j[index])
+        if trim_depth < 3:
+            warnings.warn(
+                f"Realized trim depth j={trim_depth} < 3: n_draws={n_draws} "
+                f"is too small for alpha={alpha} and trim_exponent={exponent}",
+                stacklevel=2,
+            )
+        edge_index = depth_indices[trim_depth]
+        bands[exponent] = _apply_corner_allowances(
+            lower=raw_lower[edge_index],
+            upper=raw_upper[edge_index],
+            khat=khat,
+            n1=n1,
+            trim_depth=trim_depth,
+            n_draws=n_draws,
+        )
+    return bands
 
 
 def _stitch(
@@ -787,18 +896,15 @@ def run_composite_cell(
             warnings.simplefilter("ignore")  # corner arm trips the j<3 warning
             for rep in range(done, target):
                 y_true, y_score, seed = sample_scores(cell, rep)
-                bands = {}
-                for c_exp in exponents:
-                    _, lo, hi = fiducial_band_rs(
-                        y_true,
-                        y_score,
-                        alpha=0.05,
-                        n_draws=cell.m_draws,
-                        trim_exponent=c_exp,
-                        n_threads=n_threads,
-                        random_state=seed,
-                    )
-                    bands[c_exp] = (lo, hi)
+                bands = _fiducial_bands_for_exponents(
+                    y_true,
+                    y_score,
+                    alpha=0.05,
+                    n_draws=cell.m_draws,
+                    exponents=exponents,
+                    n_threads=n_threads,
+                    random_state=seed,
+                )
                 lo_wide, hi_wide = bands[CORNER_EXPONENT]
                 for label, bounds, c_exp in configs:
                     if bounds is None:

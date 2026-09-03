@@ -156,3 +156,42 @@ region rule (repair, price, residual-miss geometry), and a cross-family
 transfer test. It reuses this directory's seeding, band, and
 classification machinery; new code is the miss-interval recorder and the
 offline geometry/price analysis.
+
+Implementation is split into `stage_f_core.py` (statistical/persistence
+contracts), `stage_f_design.py` (frozen manifests and seeds),
+`stage_f_run.py` (one-cloud paired runner), and `stage_f_analysis.py`
+(offline selection and scoring). The guarded run order is:
+
+```bash
+# 1. Freeze A/B/C manifests together, before any Stage A outcome exists.
+uv run python scripts/c_calibration/stage_f_run.py manifests
+
+# 2. Inspect cost only, then run Study A from its frozen manifest.
+uv run python scripts/c_calibration/stage_f_run.py run --study A \
+    --manifest data/results/hybrid_floor_20260902/manifests/study_a.json --dry-run
+uv run python scripts/c_calibration/stage_f_run.py run --study A \
+    --manifest data/results/hybrid_floor_20260902/manifests/study_a.json
+
+# 3. Select/refit and freeze stage_f_v1. Review both the JSON selection
+#    record and generated spec-amendment text before continuing.
+uv run python scripts/c_calibration/stage_f_run.py fit
+
+# 4. Run B/C against that exact artifact hash. They may run concurrently.
+uv run python scripts/c_calibration/stage_f_run.py run --study B \
+    --manifest data/results/hybrid_floor_20260902/manifests/study_b.json \
+    --artifact data/results/hybrid_floor_20260902/rules/stage_f_v1.json
+uv run python scripts/c_calibration/stage_f_run.py run --study C \
+    --manifest data/results/hybrid_floor_20260902/manifests/study_c.json \
+    --artifact data/results/hybrid_floor_20260902/rules/stage_f_v1.json
+
+# 5. Produce deterministic offline summaries; no clouds are regenerated.
+uv run python scripts/c_calibration/stage_f_run.py summarize --study B \
+    --artifact data/results/hybrid_floor_20260902/rules/stage_f_v1.json
+uv run python scripts/c_calibration/stage_f_run.py summarize --study C \
+    --artifact data/results/hybrid_floor_20260902/rules/stage_f_v1.json
+```
+
+Cells checkpoint every 100 replicates. Resume refuses mismatched manifests,
+rule hashes, implementation fingerprints, M3 parameters, alpha grids, or
+trim-grid rules. `--force` starts the selected cell from replicate zero;
+`--select` supports explicit sharding by cell-name substring.
