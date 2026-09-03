@@ -1,0 +1,32 @@
+# corner_mechanism.py pointwise  (n0=n1=500, M=3000, 200 reps): pointwise 95% fiducial credible interval
+# (cloud .025/.975 quantiles, no trim) at fixed grid points k from the top (FPR = 1 - k/n). Theory doc 7.4(i).
+sliver AUC .80 (c=.8, s1=.25):
+   k=   1 (FPR 0.998, truth deficit 1.60e-03): lower-miss 0.395  upper-miss 0.000  coverage 0.605
+   k=   3 (FPR 0.994, truth deficit 1.60e-03): lower-miss 0.395  upper-miss 0.010  coverage 0.595
+   k=   5 (FPR 0.990, truth deficit 1.60e-03): lower-miss 0.395  upper-miss 0.015  coverage 0.590
+   k=  10 (FPR 0.980, truth deficit 1.60e-03): lower-miss 0.395  upper-miss 0.020  coverage 0.585
+   k=  25 (FPR 0.950, truth deficit 1.60e-03): lower-miss 0.315  upper-miss 0.035  coverage 0.650
+   k=  50 (FPR 0.900, truth deficit 1.60e-03): lower-miss 0.000  upper-miss 0.065  coverage 0.935
+   k= 100 (FPR 0.800, truth deficit 1.60e-03): lower-miss 0.000  upper-miss 0.065  coverage 0.935
+   k= 250 (FPR 0.500, truth deficit 9.50e-02): lower-miss 0.010  upper-miss 0.020  coverage 0.970
+   k= 450 (FPR 0.100, truth deficit 5.89e-01): lower-miss 0.005  upper-miss 0.035  coverage 0.960
+t(2)/.99:
+   k=   1 (FPR 0.998, truth deficit 7.45e-04): lower-miss 0.215  upper-miss 0.005  coverage 0.780
+   k=   3 (FPR 0.994, truth deficit 1.36e-03): lower-miss 0.205  upper-miss 0.015  coverage 0.780
+   k=   5 (FPR 0.990, truth deficit 1.70e-03): lower-miss 0.195  upper-miss 0.015  coverage 0.790
+   k=  10 (FPR 0.980, truth deficit 2.22e-03): lower-miss 0.155  upper-miss 0.015  coverage 0.830
+   k=  25 (FPR 0.950, truth deficit 2.92e-03): lower-miss 0.115  upper-miss 0.020  coverage 0.865
+   k=  50 (FPR 0.900, truth deficit 3.43e-03): lower-miss 0.090  upper-miss 0.025  coverage 0.885
+   k= 100 (FPR 0.800, truth deficit 3.95e-03): lower-miss 0.065  upper-miss 0.025  coverage 0.910
+   k= 250 (FPR 0.500, truth deficit 4.81e-03): lower-miss 0.030  upper-miss 0.030  coverage 0.940
+   k= 450 (FPR 0.100, truth deficit 7.22e-03): lower-miss 0.010  upper-miss 0.035  coverage 0.955
+t(30)/.95 (near-binormal, concave corners):
+   k=   1 (FPR 0.998, truth deficit 2.63e-06): lower-miss 0.000  upper-miss 0.005  coverage 0.995
+   k=   3 (FPR 0.994, truth deficit 9.18e-06): lower-miss 0.000  upper-miss 0.020  coverage 0.980
+   k=   5 (FPR 0.990, truth deficit 1.69e-05): lower-miss 0.000  upper-miss 0.030  coverage 0.970
+   k=  10 (FPR 0.980, truth deficit 4.06e-05): lower-miss 0.000  upper-miss 0.030  coverage 0.970
+   k=  25 (FPR 0.950, truth deficit 1.42e-04): lower-miss 0.000  upper-miss 0.040  coverage 0.960
+   k=  50 (FPR 0.900, truth deficit 4.09e-04): lower-miss 0.000  upper-miss 0.035  coverage 0.965
+   k= 100 (FPR 0.800, truth deficit 1.37e-03): lower-miss 0.000  upper-miss 0.045  coverage 0.955
+   k= 250 (FPR 0.500, truth deficit 1.11e-02): lower-miss 0.010  upper-miss 0.035  coverage 0.955
+   k= 450 (FPR 0.100, truth deficit 1.40e-01): lower-miss 0.005  upper-miss 0.040  coverage 0.955

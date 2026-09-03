@@ -20,7 +20,7 @@ Usage from the repository root::
 
     uv run python scripts/c_calibration/corner_mechanism.py <command>
 
-Commands are ``cells``, ``closed``, ``simulate``, ``real``, ``sliver``, ``router``, and
+Commands are ``cells``, ``closed``, ``simulate``, ``real``, ``sliver``, ``pointwise``, ``router``, and
 ``compare``. Run the module without a command to see their argument syntax.
 
 All three predictors take the true ROC as input; they are tools for predicting
@@ -884,6 +884,36 @@ def sliver_check(auc: float, n: int, c: float, s1: float, reps: int, M: int, see
           f"M3 cov {out['cov_m3']:.3f}, k_sat median {out['k_sat_median']:.0f}", flush=True)
     return out
 
+
+def pointwise_check(n: int = 500, M: int = 3000, reps: int = 200, seed: int = 3) -> dict:
+    """Coverage of the POINTWISE 95% fiducial credible interval (cloud .025/.975 quantiles,
+    no trim) at fixed grid points inside the hook region, for the sliver DGP (AUC .80),
+    t(2)/.99, and the concave-corner reference t(30)/.95 (theory doc 7.4(i))."""
+    from studroc_paper.methods.fiducial_band import _fiducial_cloud
+    grid = np.arange(n + 1) / n
+    ks = [1, 3, 5, 10, 25, 50, 100, 250, 450]
+    idx = np.array([n - k for k in ks])
+    shapes = [("sliver_auc80", make_sliver(0.80, n, 0.8, 0.25)[:2]),
+              ("t2_99", t_shape(df=2.0, auc=0.99)[1:3]),
+              ("t30_95", t_shape(df=30.0, auc=0.95)[1:3])]
+    out = {}
+    for name, (R, Rinv) in shapes:
+        rng = np.random.default_rng(seed); truth = R(grid); truth[0] = 0; truth[-1] = 1
+        miss_lo = np.zeros(len(ks)); miss_hi = np.zeros(len(ks))
+        for _ in range(reps):
+            u = rng.random(n); w = Rinv(rng.random(n))
+            lab = np.concatenate([np.zeros(n, np.uint8), np.ones(n, np.uint8)])[
+                np.argsort(np.concatenate([u, w]), kind="stable")]
+            cloud = _fiducial_cloud(lab, n, n, M, grid, rng, torch.device("cpu"), torch.float64).numpy()
+            lo = np.quantile(cloud[:, idx], 0.025, axis=0); hi = np.quantile(cloud[:, idx], 0.975, axis=0)
+            miss_lo += truth[idx] < lo - 1e-12; miss_hi += truth[idx] > hi + 1e-12
+        out[name] = dict(k=ks, fpr=(1 - np.array(ks) / n).tolist(), truth_deficit=(1 - truth[idx]).tolist(),
+                         lower_miss=(miss_lo / reps).tolist(), upper_miss=(miss_hi / reps).tolist(),
+                         coverage=(1 - (miss_lo + miss_hi) / reps).tolist())
+        for k, ml, mh in zip(ks, miss_lo / reps, miss_hi / reps):
+            print(f"{name:14s} k={k:4d} FPR={1 - k / n:.3f} lower-miss={ml:.3f} upper-miss={mh:.3f} coverage={1 - ml - mh:.3f}", flush=True)
+    return out
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         raise SystemExit(__doc__)
@@ -966,6 +996,12 @@ if __name__ == "__main__":
         # sliver <n> <reps> <M> [out.json]: AUC in {.6,.8,.95}; see theory doc 7.4(f)
         n, reps, M = int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4])
         res = [sliver_check(a, n, c, s1, reps, M) for a, c, s1 in ((0.60, 1.0, 0.12), (0.80, 0.8, 0.25), (0.95, 0.8, 0.25))]
+        if len(sys.argv) > 5:
+            json.dump(res, open(sys.argv[5], "w"), indent=1)
+    elif cmd == "pointwise":
+        # pointwise [n reps M] [out.json]
+        n, reps, M = (int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4])) if len(sys.argv) > 4 else (500, 200, 3000)
+        res = pointwise_check(n=n, M=M, reps=reps)
         if len(sys.argv) > 5:
             json.dump(res, open(sys.argv[5], "w"), indent=1)
     elif cmd == "router":

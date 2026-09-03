@@ -12,6 +12,8 @@ from the true ROC; the risk scores are not fitted to measured coverage.
 | `real_band_6.62_0.988_6656.json` | `corner_mechanism.py real 6.62 0.988 6656 12000 40` | the production band (`fiducial_band_rs`, C = 1) on 40 simulated datasets: per replicate `k_sat`, miss flags, grid indices (from the top) of lower-edge violations, max depth |
 | `router_table.txt` | historical `corner_mechanism.py router` output | superseded large-k screen; use the finite-grid table in theory §7.4(d) |
 | `sliver_check.json` | `corner_mechanism.py sliver 500 100 8000 <out>` | Corollary 14.1: the production C = 1 band and M3 on the constructed sliver DGP at AUC .60/.80/.95, n = 500/500 (C = 1 covers .64/.54/.56, M3 1.000) |
+| `pointwise_check.txt` | `corner_mechanism.py pointwise` | the *pointwise* 95% fiducial interval (no trim) at fixed FPR grid points: covers .59-.61 (sliver) and .78-.83 (t(2)/.99) at FPR >= .98, .96-.995 on a concave-corner shape — the defect is pointwise, theory doc 7.4(i) |
+| `rocnreg_bb/` | `scripts/c_calibration/rocnreg_bb_check/` (R, ROCnReg 1.0.9) | the published pointwise Bayesian-bootstrap band `pooledROC.BB` at fixed corner FPRs: covers .46-.72 (t(2)/.99, FPR >= .98), .50 (sliver, FPR >= .80), and .00-.11 (t(30)/.95, FPR >= .95 — degenerate point interval, microscopic depth); theory doc 7.4(i) |
 
 Headline numbers (all 257 cells, failure = coverage < .94, 65 cells):
 

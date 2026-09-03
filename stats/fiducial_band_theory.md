@@ -379,7 +379,12 @@ this method.
 
 **Lemma 5 (depth–tube duality). [Exact; essentially Myllymäki et al. 2017,
 Thm. 4.2, restated for an arbitrary curve against the cloud rather than an
-ensemble member]**
+ensemble member. Code parity checked 2026-09-03: on one exported cloud
+(t(2)/.99, $n_0=n_1=500$, $M=2000$, $K=501$) GET 1.0.9's
+`central_region(type="rank", coverage=.95)` returns edges identical to the
+production C = 1 tube at every grid point, max difference 0, retained
+fraction .9510; `type="erl"` is strictly narrower at 498/501 points as the
+§5.1 sandwich predicts — `scripts/c_calibration/rocnreg_bb_check/`]**
 For curves $c$ evaluated on the grid, define
 $a_k(c) = \#\{m: \tilde R_m(t_k) \le c(t_k)\}$,
 $b_k(c) = \#\{m: \tilde R_m(t_k) \ge c(t_k)\}$ and the depth
@@ -1549,6 +1554,73 @@ A router that reads $(\widehat{\mathrm{AUC}}, n_0, n_1)$ and nothing else
 is not a weaker distribution-free rule — by Prop. 14 it is a class
 assumption written in three numbers.
 
+**(i) The defect is pointwise, not a simultaneity artifact — and why the
+pointwise literature did not meet it. [Exact mechanism + Empirical]**
+Everything in Lemma 13 is a statement about the cloud's *marginal* law at
+one grid point: the misallocated end-gap mass changes the fiducial
+distribution of $\tilde R(t)$ at a fixed $t$ inside the run. The band only
+changes the level at which that marginal is probed ($\ell$ in place of
+$\alpha/2$), so the pointwise 95% credible interval — the cloud's .025 and
+.975 quantiles, no trim — inherits the same criterion with
+$\ln(1/(\alpha/2)) \approx 3.7$ replacing $Q$. Measured
+(`corner_mechanism.py pointwise`; $n_0 = n_1 = 500$, $M = 3000$, 200
+replicates): on the sliver DGP of Cor. 14.1 (AUC .80) the pointwise
+interval at fixed FPR $\ge .98$ covers **.59–.61** (lower-edge misses
+.395, i.e. the sliver's unsampled probability); on t(2)/.99 it covers
+**.78–.83** at FPR $\ge .98$ and .87–.91 at FPR .80–.95, recovering to
+.94–.96 only in the interior; on the concave-corner reference t(30)/.95 it
+covers .96–.995 at every point with *zero* lower-edge misses at the
+corner — the conservative direction Corollary 13.1 predicts. The
+Bayesian-bootstrap cloud of Gu–Ghosal–Roy has the defect in its extreme
+form: it places no mass beyond the lowest observed positive (§3), so on
+the empirical-TPR-1 run its pointwise interval is the degenerate point
+$\{1\}$ and misses whenever the truth is below 1 there — with probability
+one, at a depth equal to the truth's deficit. **Verified with the published
+code** (`ROCnReg` 1.0.9, `pooledROC.BB`, $B = 2000$ Bayesian-bootstrap
+draws, 200 replicates, $n_0 = n_1 = 500$;
+`scripts/c_calibration/rocnreg_bb_check/`): its 95% pointwise band covers
+**.46, .59, .63, .72** at FPR .998, .994, .990, .980 on t(2)/.99, still
+only .79–.87 at FPR .80–.95 and .91 at FPR .50; **.50** at every FPR
+$\ge .80$ on the sliver DGP (the sliver's unsampled probability, predicted
+$e^{-.8} = .45$); and — the sharpest confirmation of the mechanism —
+**.00, .01, .02, .04** at FPR .998–.980 on the *concave-corner* t(30)/.95,
+where the truth's deficit is $3\times10^{-6}$–$4\times10^{-5}$: in every
+case the lower-edge miss rate equals the probability that the interval
+collapses to a point (width 0), i.e. the BB's corner defect is universal
+for continuous scores and merely invisible in depth when the tails are
+light. Against the same data the spacings-GFD pointwise interval covers
+.78–.83 (t(2)/.99), .59–.61 (sliver) and .97–.995 (t(30)/.95) at the same
+points: the spacings-GFD repairs the *anchor* (the lowest positive's mass
+has the exact Beta$(1,n_1)$ law) and then spends it along the run by the
+linear convention; the bracket, or M3, declines to spend it at all.
+
+Three things kept this out of view. (1) *Where coverage was checked.*
+Pointwise studies evaluate at fixed interior operating points (FPR .1,
+.3, .5) where the count of positives below the threshold is large and the
+misallocation is $O(1/j)$ of an $O(1/n_1)$ quantity; the run sits at the
+far corner and its location is data-dependent, so a fixed interior $t$
+almost never lands in it. A simultaneous band evaluated on the native grid
+integrates over the run in every replicate, which is why the defect
+surfaced here as a whole-band failure rather than as a pointwise one.
+(2) *Which shapes were simulated.* Binormal-type truths have concave
+corners; there the convention is conservative (Lemma 13) and the BB's
+degenerate corner interval misses by $\sim 10^{-6}$, an invisible
+technical miss. Heavy tails at high AUC are what make the hook resolvable.
+(3) *What the one-sample theory chose to do at the gaps.* Cui & Hannig's
+GFD is exact at the order statistics and carries the between-observation
+uncertainty as an *interval* $[F^L, F^U]$ (their conservative option);
+their band theory (Thm. 3.2) is on compacts. The ROC composition forces a
+*selection* inside that interval because each draw must be a curve, and
+the negatives' grid then makes the selection visible at every point of an
+end gap. The corner problem is therefore the price of the selection, not
+of the fiducial argument or of simultaneity — which is also why its cure
+(bracketing, in exact form M3) comes from the same one-sample literature.
+One consequence is checkable and was checked: the C = 1 band is *exactly*
+GET's rank envelope of the fiducial cloud (Lemma 5, code parity), so any
+global-envelope user who fed GET a fiducial or Bayesian-bootstrap ROC
+cloud would inherit precisely this corner behavior — the trim has no way
+to see, let alone repair, a defect in the cloud's marginals.
+
 
 ---
 
@@ -2131,6 +2203,9 @@ implementation.)*
   confidence bands" from bootstrap/posterior curve clouds — with the
   level always taken as the cloud's own content (the $C=1$ arm; their
   eq. 2 defines coverage *under the sampling scheme's distribution*).
+  Verified 2026-09-03: GET 1.0.9's rank central region of our fiducial
+  cloud coincides with the production C = 1 tube to the last digit
+  (Lemma 5 note).
 - **The depth as a population object = extremal depth.** Narisetty & Nair
   (2016), JASA 111:1705–1714: the d-CDF left-tail-stochastic ordering
   (their finite-sample comparison at the smallest depth level is min-p;
@@ -2156,7 +2231,12 @@ implementation.)*
   where the spacings-GFD carries the corner channel (§3) — an $O_p(1/n)$
   difference, invisible at first order and load-bearing exactly at the
   corners and in the §7 roughness story. No simultaneous band, no
-  frequentist calibration of a band, no corner analysis. Follow-ups: Gu &
+  frequentist calibration of a band, no corner analysis. Measured
+  2026-09-03 with `ROCnReg` 1.0.9 (§7.4(i)): the pointwise BB band's
+  interval collapses to the point $\{1\}$ on the empirical-TPR-1 run and
+  its coverage at the corner grid points is .46–.72 on t(2)/.99, .50 on
+  the sliver DGP, and $\approx 0$ (at microscopic depth) even on a
+  near-binormal truth. Follow-ups: Gu &
   Ghosal (2009, rank-likelihood binormal); Inácio de Carvalho et al.
   (Bayesian-bootstrap ROC surfaces); the `ROCnReg` R package
   (Rodríguez-Álvarez & Inácio 2021).
