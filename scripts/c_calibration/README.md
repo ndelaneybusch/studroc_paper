@@ -184,3 +184,24 @@ small deterministic function in `stage_f_core.py`; it uses each cell's
 `n0`, `n1`, cloud budget, and empirical count map. Manifests are overwriteable
 design snapshots during exploration. A checkpoint can resume only when its
 stored cell definition matches the requested cell.
+
+### Reporting
+
+Two analysis passes feed `stats/hybrid_floor_report.md`. Both re-score the
+stored paired parents; neither re-simulates.
+
+```bash
+# Per-cell coverage/width plus the direction, FPR, and true-TPR location of
+# every violation (the study summaries keep coverage but discard location).
+uv run python scripts/c_calibration/stage_f_report_tables.py --study A
+
+# Grid-point-level mechanism: pointwise miss profiles, residual-to-region
+# distances, the effective-looks decomposition, the within-cell saturated-run
+# trigger test, and a post-hoc sweep of the left cutoff.
+uv run python scripts/c_calibration/stage_f_deep_analysis.py
+```
+
+The `A/`, `B/`, and `C/` record directories are ~7 GB and are gitignored;
+`manifests/` and `analysis/` are tracked. Re-run the study to rebuild the
+records — seeds are deterministic per (study, cell, replicate), so a rerun
+reproduces them exactly.

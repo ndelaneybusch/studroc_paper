@@ -1,0 +1,400 @@
+{
+  "cells": [
+    {
+      "alphas": [
+        0.05,
+        0.5
+      ],
+      "m_draws": 10315,
+      "n0": 500,
+      "n1": 500,
+      "name": "c-weibull_small-00--n500x500",
+      "notes": "",
+      "prior_coverage": null,
+      "prior_reps": null,
+      "quantize": null,
+      "reps": 400,
+      "reps_max": 1200,
+      "seed_mode": "stage_f",
+      "shape": "sf_c_weibull_small_00",
+      "shape_meta": {
+        "auc": 0.985,
+        "corner_geometry": "corner-concave",
+        "family": "weibull",
+        "shape": 0.5
+      },
+      "source": "weibull_small",
+      "source_name": null,
+      "source_stage": null,
+      "study": "C"
+    },
+    {
+      "alphas": [
+        0.05,
+        0.5
+      ],
+      "m_draws": 12357,
+      "n0": 8000,
+      "n1": 8000,
+      "name": "c-weibull_large-01--n8000x8000",
+      "notes": "",
+      "prior_coverage": null,
+      "prior_reps": null,
+      "quantize": null,
+      "reps": 400,
+      "reps_max": 1200,
+      "seed_mode": "stage_f",
+      "shape": "sf_c_weibull_large_01",
+      "shape_meta": {
+        "auc": 0.985,
+        "corner_geometry": "corner-concave",
+        "family": "weibull",
+        "shape": 0.5
+      },
+      "source": "weibull_large",
+      "source_name": null,
+      "source_stage": null,
+      "study": "C"
+    },
+    {
+      "alphas": [
+        0.05,
+        0.5
+      ],
+      "m_draws": 10315,
+      "n0": 500,
+      "n1": 500,
+      "name": "c-gamma_small-02--n500x500",
+      "notes": "",
+      "prior_coverage": null,
+      "prior_reps": null,
+      "quantize": null,
+      "reps": 400,
+      "reps_max": 1200,
+      "seed_mode": "stage_f",
+      "shape": "sf_c_gamma_small_02",
+      "shape_meta": {
+        "auc": 0.925,
+        "corner_geometry": "corner-concave",
+        "family": "gamma",
+        "shape": 0.5
+      },
+      "source": "gamma_small",
+      "source_name": null,
+      "source_stage": null,
+      "study": "C"
+    },
+    {
+      "alphas": [
+        0.05,
+        0.5
+      ],
+      "m_draws": 12357,
+      "n0": 8000,
+      "n1": 8000,
+      "name": "c-gamma_large-03--n8000x8000",
+      "notes": "",
+      "prior_coverage": null,
+      "prior_reps": null,
+      "quantize": null,
+      "reps": 400,
+      "reps_max": 1200,
+      "seed_mode": "stage_f",
+      "shape": "sf_c_gamma_large_03",
+      "shape_meta": {
+        "auc": 0.925,
+        "corner_geometry": "corner-concave",
+        "family": "gamma",
+        "shape": 0.5
+      },
+      "source": "gamma_large",
+      "source_name": null,
+      "source_stage": null,
+      "study": "C"
+    },
+    {
+      "alphas": [
+        0.05,
+        0.5
+      ],
+      "m_draws": 10315,
+      "n0": 500,
+      "n1": 500,
+      "name": "c-beta_opposing_small-04--n500x500",
+      "notes": "",
+      "prior_coverage": null,
+      "prior_reps": null,
+      "quantize": null,
+      "reps": 400,
+      "reps_max": 1200,
+      "seed_mode": "stage_f",
+      "shape": "sf_c_beta_opposing_small_04",
+      "shape_meta": {
+        "alpha": 0.5,
+        "auc": 0.985,
+        "corner_geometry": "corner-concave",
+        "family": "beta_opposing"
+      },
+      "source": "beta_opposing_small",
+      "source_name": null,
+      "source_stage": null,
+      "study": "C"
+    },
+    {
+      "alphas": [
+        0.05,
+        0.5
+      ],
+      "m_draws": 12357,
+      "n0": 8000,
+      "n1": 8000,
+      "name": "c-beta_opposing_large-05--n8000x8000",
+      "notes": "",
+      "prior_coverage": null,
+      "prior_reps": null,
+      "quantize": null,
+      "reps": 400,
+      "reps_max": 1200,
+      "seed_mode": "stage_f",
+      "shape": "sf_c_beta_opposing_large_05",
+      "shape_meta": {
+        "alpha": 0.5,
+        "auc": 0.985,
+        "corner_geometry": "corner-concave",
+        "family": "beta_opposing"
+      },
+      "source": "beta_opposing_large",
+      "source_name": null,
+      "source_stage": null,
+      "study": "C"
+    },
+    {
+      "alphas": [
+        0.05,
+        0.5
+      ],
+      "m_draws": 10315,
+      "n0": 500,
+      "n1": 500,
+      "name": "c-bimodal_negative_small-06--n500x500",
+      "notes": "",
+      "prior_coverage": null,
+      "prior_reps": null,
+      "quantize": null,
+      "reps": 400,
+      "reps_max": 1200,
+      "seed_mode": "stage_f",
+      "shape": "sf_c_bimodal_negative_small_06",
+      "shape_meta": {
+        "auc": 0.98,
+        "corner_geometry": "corner-concave",
+        "family": "bimodal_negative",
+        "mixture_weight": 0.5,
+        "mode_separation": 4.0
+      },
+      "source": "bimodal_negative_small",
+      "source_name": null,
+      "source_stage": null,
+      "study": "C"
+    },
+    {
+      "alphas": [
+        0.05,
+        0.5
+      ],
+      "m_draws": 12357,
+      "n0": 8000,
+      "n1": 8000,
+      "name": "c-bimodal_negative_large-07--n8000x8000",
+      "notes": "",
+      "prior_coverage": null,
+      "prior_reps": null,
+      "quantize": null,
+      "reps": 400,
+      "reps_max": 1200,
+      "seed_mode": "stage_f",
+      "shape": "sf_c_bimodal_negative_large_07",
+      "shape_meta": {
+        "auc": 0.98,
+        "corner_geometry": "corner-concave",
+        "family": "bimodal_negative",
+        "mixture_weight": 0.5,
+        "mode_separation": 4.0
+      },
+      "source": "bimodal_negative_large",
+      "source_name": null,
+      "source_stage": null,
+      "study": "C"
+    },
+    {
+      "alphas": [
+        0.05,
+        0.5
+      ],
+      "m_draws": 10315,
+      "n0": 500,
+      "n1": 500,
+      "name": "c-hetero_gaussian_small-08--n500x500",
+      "notes": "",
+      "prior_coverage": null,
+      "prior_reps": null,
+      "quantize": null,
+      "reps": 400,
+      "reps_max": 1200,
+      "seed_mode": "stage_f",
+      "shape": "sf_c_hetero_gaussian_small_08",
+      "shape_meta": {
+        "auc": 0.98,
+        "corner_geometry": "ambiguous",
+        "family": "hetero_gaussian",
+        "sigma_ratio": 3.0
+      },
+      "source": "hetero_gaussian_small",
+      "source_name": null,
+      "source_stage": null,
+      "study": "C"
+    },
+    {
+      "alphas": [
+        0.05,
+        0.5
+      ],
+      "m_draws": 12357,
+      "n0": 8000,
+      "n1": 8000,
+      "name": "c-hetero_gaussian_large-09--n8000x8000",
+      "notes": "",
+      "prior_coverage": null,
+      "prior_reps": null,
+      "quantize": null,
+      "reps": 400,
+      "reps_max": 1200,
+      "seed_mode": "stage_f",
+      "shape": "sf_c_hetero_gaussian_large_09",
+      "shape_meta": {
+        "auc": 0.98,
+        "corner_geometry": "ambiguous",
+        "family": "hetero_gaussian",
+        "sigma_ratio": 3.0
+      },
+      "source": "hetero_gaussian_large",
+      "source_name": null,
+      "source_stage": null,
+      "study": "C"
+    },
+    {
+      "alphas": [
+        0.05,
+        0.5
+      ],
+      "m_draws": 10315,
+      "n0": 500,
+      "n1": 500,
+      "name": "c-student_t_small-10--n500x500",
+      "notes": "",
+      "prior_coverage": null,
+      "prior_reps": null,
+      "quantize": null,
+      "reps": 400,
+      "reps_max": 1200,
+      "seed_mode": "stage_f",
+      "shape": "sf_c_student_t_small_10",
+      "shape_meta": {
+        "auc": 0.95,
+        "corner_geometry": "ambiguous",
+        "df": 8.131509394179195,
+        "family": "student_t"
+      },
+      "source": "student_t_small",
+      "source_name": null,
+      "source_stage": null,
+      "study": "C"
+    },
+    {
+      "alphas": [
+        0.05,
+        0.5
+      ],
+      "m_draws": 12357,
+      "n0": 8000,
+      "n1": 8000,
+      "name": "c-student_t_large-11--n8000x8000",
+      "notes": "",
+      "prior_coverage": null,
+      "prior_reps": null,
+      "quantize": null,
+      "reps": 400,
+      "reps_max": 1200,
+      "seed_mode": "stage_f",
+      "shape": "sf_c_student_t_large_11",
+      "shape_meta": {
+        "auc": 0.95,
+        "corner_geometry": "ambiguous",
+        "df": 8.131509394179195,
+        "family": "student_t"
+      },
+      "source": "student_t_large",
+      "source_name": null,
+      "source_stage": null,
+      "study": "C"
+    },
+    {
+      "alphas": [
+        0.05,
+        0.5
+      ],
+      "m_draws": 10315,
+      "n0": 500,
+      "n1": 500,
+      "name": "c-weibull_small-12--n500x500",
+      "notes": "",
+      "prior_coverage": null,
+      "prior_reps": null,
+      "quantize": null,
+      "reps": 400,
+      "reps_max": 1200,
+      "seed_mode": "stage_f",
+      "shape": "sf_c_weibull_small_12",
+      "shape_meta": {
+        "auc": 0.95,
+        "corner_geometry": "corner-concave",
+        "family": "weibull",
+        "shape": 0.7418830851020262
+      },
+      "source": "weibull_small",
+      "source_name": null,
+      "source_stage": null,
+      "study": "C"
+    },
+    {
+      "alphas": [
+        0.05,
+        0.5
+      ],
+      "m_draws": 12357,
+      "n0": 8000,
+      "n1": 8000,
+      "name": "c-weibull_large-13--n8000x8000",
+      "notes": "",
+      "prior_coverage": null,
+      "prior_reps": null,
+      "quantize": null,
+      "reps": 400,
+      "reps_max": 1200,
+      "seed_mode": "stage_f",
+      "shape": "sf_c_weibull_large_13",
+      "shape_meta": {
+        "auc": 0.95,
+        "corner_geometry": "corner-concave",
+        "family": "weibull",
+        "shape": 0.7418830851020262
+      },
+      "source": "weibull_large",
+      "source_name": null,
+      "source_stage": null,
+      "study": "C"
+    }
+  ],
+  "schema": "stage-f-manifest/v2",
+  "study": "C"
+}

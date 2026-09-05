@@ -42,3 +42,10 @@ results/activations/data/*
 
 # Rust build artifacts
 rust/target/
+
+# Stage F raw paired replicate records (~7 GB); regenerate with
+# scripts/c_calibration/stage_f_run.py. Manifests and analysis outputs
+# under the same directory are tracked.
+data/results/hybrid_floor_*/A/
+data/results/hybrid_floor_*/B/
+data/results/hybrid_floor_*/C/
