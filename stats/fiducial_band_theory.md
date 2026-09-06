@@ -1,6 +1,6 @@
 # Rank-space fiducial ROC bands: construction, guarantees, and next theory
 
-*Working theory, 2026-09-05. Companion to the
+*Working theory, 2026-09-06. Companion to the
 [method assessment](next_method_ideas.md), the
 [Stage F measurements](hybrid_floor_report.md), and the
 [Python implementation](../src/studroc_paper/methods/fiducial_band.py).
@@ -1452,7 +1452,70 @@ class-uniform branch guarantees.
 
 ## 13. The strongest next theory and experiment targets
 
-The highest-value sequence is:
+### 13.1 Missing theory, ranked by importance
+
+The fundamental gap is the connection between the conditional fiducial
+cloud and repeated-sampling coverage, not the Dirichlet spacing law itself.
+The following priorities distinguish missing principles from unfinished
+proof details.
+
+1. **Full-bracket coverage: a theorem or a decisive counterexample.**
+   Full bracketing removes the arbitrary within-gap completion, with
+   controlled area cost (§3.1). It does not resolve calibration: conditional
+   on the merged ranks, the true spacing pair does not have the law of
+   independent auxiliary Dirichlet draws. Retaining 95% of the bracketed
+   cloud therefore does not establish 95% population coverage. The key
+   target is either a useful uniform coverage bound for the specified
+   bracket-and-trim procedure, or a counterexample isolating a remaining
+   calibration failure. That distinction determines whether completion
+   repair is enough or the trim needs a different validity principle.
+2. **Joint control of protected tails and the remaining interior.**
+   Exact boundary localization (§10) is not a bound on failures outside
+   the floor. A sufficient missing result is
+   $P_R\{V(B_F;A^c)\}\le\alpha_I$ uniformly over a stated class, with
+   $\alpha_M+\alpha_I\le\alpha$. A tighter joint analysis could avoid
+   spending the full M3 error cap in a union bound when its failures and
+   exterior failures overlap or are otherwise constrained. This would
+   make cut-point optimization a coverage–width problem with a justified
+   risk constraint. Moving-boundary asymptotics may supply a
+   class-restricted route; they cannot silently cover arbitrary jumps
+   or unseen interior slivers.
+3. **An efficiency benchmark beyond perfect separation.**
+   The lower bound in §9 does not describe necessary width across ordinary
+   ROC shapes, imbalance, and alpha. We need local or minimax width
+   benchmarks under explicit objectives, together with a quantitative
+   account of M3's projection conservatism. The central opportunity is
+   a finite-sample honest construction that retains the direct ROC's
+   quadratic combination of the two sampling errors (§11.1), rather
+   than paying for two separately protected CDFs. The Gaussian geometry
+   alone does not prove such an efficiency result.
+4. **Honest adaptation and error allocation.**
+   A router needs control of the selected fiducial failures in (12.3),
+   not just marginal coverage estimates within AUC/sample-size cells.
+   Directional and regional balancing likewise need joint calibration.
+   The Gaussian sign result is an interior benchmark, not a finite-sample
+   account of how completion, trimming, and floors redistribute errors.
+   A finer router wedge and optimized regional levels should follow
+   better risk control, not substitute for it.
+5. **A complete theorem for the computational procedure.**
+   The regular-interior argument still needs formal conditional
+   completion and quantile/depth convergence. A theorem for production
+   additionally needs explicit errors for finite Monte Carlo budgets
+   and thinned trimming grids, or an implementation regime satisfying
+   the asymptotic assumptions (§6.2). This is likely the most tractable
+   proof-completion project, but it would not settle unrestricted
+   full-curve coverage.
+
+**Research judgment.** Resolve full-bracket calibration first, then
+joint tail/interior risk; postpone fine-tuning the router wedge.
+Finishing the interior theorem offers a comparatively tractable formal
+result. Direct rank-test inversion has the largest potential payoff for
+uniform honesty because it can replace the missing fiducial coverage
+justification, provided computation produces a certified outer set (§12.2).
+
+### 13.2 Concrete proof and experiment targets
+
+The corresponding work sequence is:
 
 1. **Full-bracket fiducial variant with frozen trimming.** Keep the
    production cloud and trim index, then use bracket edges instead of
