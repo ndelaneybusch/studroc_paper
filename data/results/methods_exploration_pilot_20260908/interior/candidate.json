@@ -1,0 +1,31 @@
+{
+  "eligible": false,
+  "kind": "gated",
+  "window": [
+    0.02,
+    0.95
+  ],
+  "requires_window_eligibility": true,
+  "coefficients": {
+    "0.05": {
+      "C": 1.0,
+      "n_eff_range": [
+        500,
+        5000
+      ],
+      "outside_C": 1.0
+    },
+    "0.5": {
+      "C": 1.0,
+      "n_eff_range": [
+        500,
+        5000
+      ],
+      "outside_C": 1.0
+    }
+  },
+  "reasons": {
+    "0.05": "incomplete_or_insufficient_eligible_coverage_evidence",
+    "0.5": "incomplete_or_insufficient_eligible_coverage_evidence"
+  }
+}

@@ -4,9 +4,8 @@ import time
 from itertools import product
 
 import numpy as np
-from scipy.stats import beta, binom
 
-from studroc_paper.methods.fiducial_ladder import khat_from_labels
+from studroc_paper.methods.fiducial_band import production_trim_rows
 
 from .common import (
     Store,
@@ -20,40 +19,27 @@ from .common import (
     runs,
     sample,
 )
+from .hybrid import WINDOW, floor_components, geometry, hull, window_status
+
+MIN_ACTIVE = 400
+SMALL_REPLICATES = 2000
+LARGE_REPLICATES = 1000
 
 EXPONENTS = np.array([1.0, 1.25, 1.5, 2.0, 2.5, 3.5, 5.0, 8.0])
-
-
-def floor_mask(*, labels: np.ndarray, draws: int, depth: int) -> np.ndarray:
-    """Compute the exact inclusive left cutoff and beta-inverted right margin."""
-    counts = khat_from_labels(lab_s=labels)
-    n0 = len(counts) - 1
-    left = n0
-    for k in range(n0 + 1):
-        probability = 0.0 if k == n0 else np.exp(n0 * np.log1p(-k / n0))
-        if binom.sf(depth - 1, draws, probability) <= 0.001:
-            left = k
-            break
-    run = n0 - int(np.flatnonzero(counts == counts[-1])[0])
-    right = (
-        0
-        if run == n0
-        else max(0, n0 - int(np.ceil(n0 * beta.ppf(0.975, run + 1, n0 - run) - 1e-9)))
-    )
-    indices = np.arange(n0 + 1)
-    return (indices <= left) | (indices >= right)
 
 
 def stitch(
     *, base: tuple, interior: tuple, m3: tuple, grid: np.ndarray, region: np.ndarray
 ) -> tuple:
     """Switch on a fixed window, take the floor hull, then widen to monotonicity."""
-    window = (grid >= 0.02) & (grid <= 0.95)
-    lower = np.where(window, interior[0], base[0])
-    upper = np.where(window, interior[1], base[1])
-    lower = np.where(region, np.minimum(lower, m3[0]), lower)
-    upper = np.where(region, np.maximum(upper, m3[1]), upper)
-    return np.minimum.accumulate(lower[::-1])[::-1], np.maximum.accumulate(upper)
+    if not window_status(grid=grid, region=region)["eligible"]:
+        return base[0].copy(), base[1].copy()
+    window = (grid >= WINDOW[0]) & (grid <= WINDOW[1])
+    combined = (
+        np.where(window, interior[0], base[0]),
+        np.where(window, interior[1], base[1]),
+    )
+    return hull(raw=combined, m3=m3, region=region)
 
 
 def crossing(*, coverage: np.ndarray, target: float) -> dict:
@@ -73,7 +59,7 @@ def crossing(*, coverage: np.ndarray, target: float) -> dict:
 
 def design(*, pilot: bool) -> list[tuple]:
     """Declare size, direction and shape cells with balanced-equivalent n."""
-    sizes = [100] if pilot else [100, 500, 5_000, 50_000]
+    sizes = [100, 1000] if pilot else [100, 500, 5_000, 50_000]
     shapes = (
         ["normal_0.95", "interior_sliver"]
         if pilot
@@ -83,148 +69,217 @@ def design(*, pilot: bool) -> list[tuple]:
     return list(product(sizes, ratios, shapes))
 
 
-def summarize(*, store: Store, pilot: bool, expected: int) -> None:
-    """Invert coverage intervals and freeze only fully supported schedules."""
-    groups = {}
-    width_groups = {}
-    for row in store.records:
-        if row.get("audit"):
-            continue
-        for alpha in [0.05, 0.5]:
-            key = (row["n"], row["ratio"], row["shape"], alpha)
-            arms = row["alphas"][str(alpha)]["arms"]
-            width_groups.setdefault(key, []).append(arms)
-            groups.setdefault(key, []).append(
-                [
-                    row["alphas"][str(alpha)]["arms"][f"C{c:g}"]["covered"]
-                    for c in EXPONENTS
-                ]
-            )
-    cells = []
-    conservative = {}
-    grouped_shapes = {}
-    for key, flags in groups.items():
-        data = np.asarray(flags, dtype=float)
-        means = data.mean(axis=0)
-        intervals = np.array(
-            [interval(successes=int(s), count=len(data)) for s in data.sum(axis=0)]
-        )
-        target = 1 - key[-1]
-        observed = crossing(coverage=means, target=target)
-        lower = crossing(coverage=intervals[:, 0], target=target)
-        upper = crossing(coverage=intervals[:, 1], target=target)
-        cells.append(
-            {
-                "cell": key,
-                "replicates": len(data),
-                "coverage": means.tolist(),
-                "coverage_ci": intervals.tolist(),
-                "crossing": observed,
-                "crossing_ci": [lower, upper],
-                "paired_to_floor": {
-                    name: {
-                        metric: paired_summary(
-                            values=[
-                                arms[name][metric] / arms["floor"][metric]
-                                for arms in width_groups[key]
-                            ]
-                        )
-                        for metric in ["area", "left_width", "right_width"]
-                    }
-                    for name in width_groups[key][0]
-                },
-            }
-        )
-        conservative[key] = lower["lower"]
-        grouped_shapes.setdefault((key[0], key[1], key[-1]), []).append(data)
-    spreads = []
-    all_collapsed = True
-    rng = rng_for("interior", "spread-bootstrap")
-    for key, shapes in grouped_shapes.items():
-        draws = []
-        censored = False
-        for _ in range(500):
-            values = []
-            for data in shapes:
-                draw = data[rng.integers(len(data), size=len(data))].mean(axis=0)
-                estimate = crossing(coverage=draw, target=1 - key[-1])
-                if estimate["censor"]:
-                    censored = True
-                values.append((estimate["lower"] or 1.0, estimate["upper"] or 8.0))
-            draws.append(max(v[1] for v in values) - min(v[0] for v in values))
-        ci = np.quantile(draws, [0.025, 0.975]).tolist()
-        spreads.append(
-            {
-                "cell": key,
-                "spread_upper_bound_bootstrap_ci": ci,
-                "censored_bootstraps": censored,
-            }
-        )
-        all_collapsed &= not censored and ci[1] <= 0.5 and len(shapes) == 5
-    complete = len([r for r in store.records if not r.get("audit")]) == expected
-    resolution_failures = sum(
-        data["depth"] < 3 or min(data["interior_depths"]) < 3
-        for row in store.records
-        for data in row["alphas"].values()
+def coverage_ladder(*, rows: list[dict], alpha: float) -> dict | None:
+    """Estimate one coverage ladder without treating unexposed data as evidence."""
+    if not rows:
+        return None
+    flags = np.array(
+        [[row["arms"][f"C{c:g}"]["covered"] for c in EXPONENTS] for row in rows],
+        dtype=float,
     )
-    frozen = {"eligible": False, "kind": "unsupported", "coefficients": {}}
-    if complete and not pilot and not resolution_failures:
-        for alpha in [0.05, 0.5]:
-            available = [
-                (2 * (2 * k[0] * k[1]) * (2 * k[0] * (1 - k[1])) / (2 * k[0]), c)
-                for k, c in conservative.items()
-                if k[-1] == alpha
-            ]
-            if all_collapsed and all(c is not None for _, c in available):
-                choices = []
-                for exponent in np.linspace(0.1, 1.0, 91):
-                    amplitude = min(
-                        (c - 1) * (n / 100) ** exponent for n, c in available
-                    )
-                    objective = np.mean(
-                        [1 + amplitude * (n / 100) ** (-exponent) for n, _ in available]
-                    )
-                    choices.append((objective, amplitude, exponent))
-                _, amplitude, exponent = max(choices)
-                frozen["coefficients"][str(alpha)] = {"a": amplitude, "b": exponent}
-                frozen["kind"] = "decaying"
-            else:
-                usable = [c or 1.0 for n, c in available if 500 <= n <= 5000]
-                frozen["coefficients"][str(alpha)] = {
-                    "C": min(usable, default=1.0),
-                    "n_eff_range": [500, 5000],
-                    "outside_C": 1.0,
-                }
-                frozen["kind"] = "finite_range"
-        frozen["eligible"] = any(
-            v.get("a", v.get("C", 1) - 1) > 0 for v in frozen["coefficients"].values()
+    ci = np.array(
+        [interval(successes=int(s), count=len(rows)) for s in flags.sum(axis=0)]
+    )
+    return {
+        "replicates": len(rows),
+        "coverage": flags.mean(axis=0).tolist(),
+        "coverage_ci": ci.tolist(),
+        "crossing": crossing(coverage=flags.mean(axis=0), target=1 - alpha),
+        "crossing_ci": [
+            crossing(coverage=ci[:, 0], target=1 - alpha),
+            crossing(coverage=ci[:, 1], target=1 - alpha),
+        ],
+    }
+
+
+def spread_summary(*, groups: list[list[dict]], alpha: float) -> dict:
+    """Bootstrap shape spread only when every shape has enough eligible samples."""
+    if len(groups) != 5 or any(len(group) < MIN_ACTIVE for group in groups):
+        return {
+            "status": "insufficient_eligible_data",
+            "collapsed": False,
+            "eligible_counts": [len(group) for group in groups],
+        }
+    rng = rng_for("interior", "conditional-spread", alpha)
+    bounds = []
+    censored = False
+    samples = [
+        np.array(
+            [[r["arms"][f"C{c:g}"]["covered"] for c in EXPONENTS] for r in group],
+            dtype=float,
         )
+        for group in groups
+    ]
+    for _ in range(500):
+        intervals = []
+        for flags in samples:
+            means = flags[rng.integers(len(flags), size=len(flags))].mean(axis=0)
+            value = crossing(coverage=means, target=1 - alpha)
+            censored |= value["censor"] is not None
+            intervals.append((value["lower"] or 1.0, value["upper"] or 8.0))
+        bounds.append(max(v[1] for v in intervals) - min(v[0] for v in intervals))
+    ci = np.quantile(bounds, [0.025, 0.975]).tolist()
+    return {
+        "status": "censored" if censored else "resolved",
+        "spread_upper_bound_bootstrap_ci": ci,
+        "collapsed": not censored and ci[1] <= 0.5,
+        "eligible_counts": [len(group) for group in groups],
+    }
+
+
+def summarize(*, store: Store, pilot: bool, expected: int) -> None:
+    """Separate deployed coverage from eligible-only calibration and selection."""
+    groups = {}
+    for row in store.records:
+        if not row.get("audit"):
+            for alpha in [0.05, 0.5]:
+                groups.setdefault(
+                    (row["n"], row["ratio"], row["shape"], alpha), []
+                ).append(row["alphas"][str(alpha)])
+    cells, spread_groups = [], {}
+    for key, rows in groups.items():
+        active = [r for r in rows if r["window"]["eligible"]]
+        inactive = [r for r in rows if not r["window"]["eligible"]]
+        active_summary = coverage_ladder(rows=active, alpha=key[-1])
+        entry = {
+            "cell": key,
+            "replicates": len(rows),
+            "eligible_replicates": len(active),
+            "eligibility_rate": len(active) / len(rows),
+            "eligibility_ci": interval(successes=len(active), count=len(rows)),
+            "operational": coverage_ladder(rows=rows, alpha=key[-1]),
+            "eligible_only": active_summary,
+            "fallback_only": coverage_ladder(rows=inactive, alpha=key[-1]),
+            "calibration_status": "no_exposure"
+            if not active
+            else "insufficient_eligible_data"
+            if len(active) < MIN_ACTIVE
+            else "estimable",
+            "paired_to_floor": {
+                name: {
+                    metric: paired_summary(
+                        values=[
+                            r["arms"][name][metric] / r["arms"]["floor"][metric]
+                            for r in rows
+                        ]
+                    )
+                    for metric in ["area", "left_width", "right_width"]
+                }
+                for name in rows[0]["arms"]
+            },
+            "eligible_area_ratios": {
+                name: paired_summary(
+                    values=[
+                        r["arms"][name]["area"] / r["arms"]["floor"]["area"]
+                        for r in active
+                    ]
+                )
+                for name in rows[0]["arms"]
+            }
+            if active
+            else None,
+        }
+        cells.append(entry)
+        spread_groups.setdefault((key[0], key[1], key[-1]), []).append(active)
+    spreads = [
+        {"cell": key, **spread_summary(groups=value, alpha=key[-1])}
+        for key, value in spread_groups.items()
+    ]
+    complete = sum(not row.get("audit", False) for row in store.records) == expected
+    frozen = {
+        "eligible": False,
+        "kind": "gated",
+        "window": list(WINDOW),
+        "requires_window_eligibility": True,
+        "coefficients": {},
+        "reasons": {},
+    }
+    for alpha in [0.05, 0.5]:
+        applicable = [c for c in cells if c["cell"][-1] == alpha]
+        active = [c for c in applicable if c["eligible_replicates"]]
+        adequate = active and all(
+            c["eligible_replicates"] >= MIN_ACTIVE for c in active
+        )
+        resolution = any(
+            r["depth"] < 3 or min(r["interior_depths"]) < 3
+            for k, rows in groups.items()
+            if k[-1] == alpha
+            for r in rows
+            if r["window"]["eligible"]
+        )
+        operational = all(
+            c["operational"]["crossing_ci"][0]["lower"] is not None for c in applicable
+        )
+        fallback = {"C": 1.0, "n_eff_range": [500, 5000], "outside_C": 1.0}
+        frozen["coefficients"][str(alpha)] = fallback
+        if not complete or pilot or not adequate or resolution or not operational:
+            frozen["reasons"][str(alpha)] = (
+                "incomplete_or_insufficient_eligible_coverage_evidence"
+            )
+            continue
+        constraints = []
+        for c in active:
+            n, ratio, _, _ = c["cell"]
+            limit = min(
+                c["eligible_only"]["crossing_ci"][0]["lower"] or 1.0,
+                c["operational"]["crossing_ci"][0]["lower"] or 1.0,
+            )
+            constraints.append((4 * n * ratio * (1 - ratio), limit))
+        informative = [
+            s
+            for s in spreads
+            if s["cell"][-1] == alpha and sum(s["eligible_counts"]) > 0
+        ]
+        collapsed = informative and all(s["collapsed"] for s in informative)
+        if collapsed:
+            choices = []
+            for b in np.linspace(0.1, 1.0, 91):
+                a = min((limit - 1) * (n / 100) ** b for n, limit in constraints)
+                choices.append(
+                    (np.mean([1 + a * (n / 100) ** (-b) for n, _ in constraints]), a, b)
+                )
+            _, a, b = max(choices)
+            frozen["coefficients"][str(alpha)] = {"a": a, "b": b}
+        else:
+            fallback["C"] = min(
+                (limit for n, limit in constraints if 500 <= n <= 5000), default=1.0
+            )
+        frozen["reasons"][str(alpha)] = "decaying" if collapsed else "finite_range"
+    frozen["eligible"] = any(
+        v.get("a", v.get("C", 1) - 1) > 0 for v in frozen["coefficients"].values()
+    )
+    store.save(name="candidate.json", payload=frozen)
     store.save(
         name="summary.json",
         payload={
             "complete": complete,
             "pilot": pilot,
             "expected_units": expected,
-            "completed_units": len([r for r in store.records if not r.get("audit")]),
+            "completed_units": sum(
+                not row.get("audit", False) for row in store.records
+            ),
+            "minimum_eligible_replicates": MIN_ACTIVE,
             "cells": cells,
             "shape_spreads": spreads,
             "candidate": frozen,
-            "unresolved_cloud_depth_cells": resolution_failures,
         },
     )
-    store.save(name="candidate.json", payload=frozen)
 
 
 def run(*, store: Store, pilot: bool, threads: int) -> None:
     """Run paired raw, floor, and interior arms, checkpointing each observation."""
     cells = design(pilot=pilot)
-    reps = {n: (2 if pilot else 24 if n >= 5000 else 64) for n, _, _ in cells}
+    reps = {
+        n: (3 if pilot else LARGE_REPLICATES if n >= 5000 else SMALL_REPLICATES)
+        for n, _, _ in cells
+    }
     expected = sum(reps[n] for n, _, _ in cells)
     try:
-        for rep in range(max(reps.values())):
-            for n, ratio, shape in cells:
-                if rep >= reps[n]:
-                    continue
+        for n, ratio in dict.fromkeys((n, ratio) for n, ratio, _ in cells):
+            block_shapes = [
+                shape for size, share, shape in cells if (size, share) == (n, ratio)
+            ]
+            for rep, shape in product(range(reps[n]), block_shapes):
                 key = f"{n}/{ratio}/{shape}/{rep}"
                 if key in store.keys:
                     continue
@@ -272,7 +327,7 @@ def run(*, store: Store, pilot: bool, threads: int) -> None:
 
 
 def measure(*, labels: np.ndarray, truth, draws: int, seed: int, threads: int) -> dict:
-    """Measure a complete paired ladder with one frozen floor per alpha."""
+    """Trim only eligible datasets, retaining the unchanged hybrid elsewhere."""
     n0 = len(labels) - int(labels.sum())
     grid = np.arange(n0 + 1) / n0
     raw, depths = fiducial_edges(
@@ -281,39 +336,52 @@ def measure(*, labels: np.ndarray, truth, draws: int, seed: int, threads: int) -
         draws=draws,
         seed=seed,
         alphas=[0.05, 0.5],
-        trim_rows=None,
+        trim_rows=production_trim_rows(len(grid)),
         threads=threads,
     )
-    levels = [1 - (1 - a) ** c for a in [0.05, 0.5] for c in EXPONENTS]
-    interior, inner_depths = fiducial_edges(
-        labels=labels,
-        truth=truth,
-        draws=draws,
-        seed=seed,
-        alphas=levels,
-        trim_rows=np.flatnonzero((grid >= 0.02) & (grid <= 0.95)),
-        threads=threads,
-    )
+    components = [
+        floor_components(labels=labels, draws=draws, depth=int(depth))
+        for depth in depths
+    ]
+    eligibility = [
+        window_status(grid=grid, region=left | right) for left, right in components
+    ]
+    active_indices = [i for i, status in enumerate(eligibility) if status["eligible"]]
+    interior, inner_depths = [], np.array([], dtype=int)
+    if active_indices:
+        levels = [
+            1 - (1 - [0.05, 0.5][i]) ** c for i in active_indices for c in EXPONENTS
+        ]
+        interior, inner_depths = fiducial_edges(
+            labels=labels,
+            truth=truth,
+            draws=draws,
+            seed=seed,
+            alphas=levels,
+            trim_rows=np.flatnonzero((grid >= WINDOW[0]) & (grid <= WINDOW[1])),
+            threads=threads,
+        )
     alphas = {}
     for index, alpha in enumerate([0.05, 0.5]):
         _, lo3, hi3 = m3_edges(labels=labels, alpha=alpha)
-        region = floor_mask(labels=labels, draws=draws, depth=int(depths[index]))
-        floor = stitch(
-            base=raw[index],
-            interior=raw[index],
-            m3=(lo3, hi3),
-            grid=grid,
-            region=region,
-        )
+        left, right = components[index]
+        region = left | right
+        floor = hull(raw=raw[index], m3=(lo3, hi3), region=region)
         arms = {"raw": raw[index], "floor": floor, "m3": (lo3, hi3)}
-        for k, c in enumerate(EXPONENTS):
-            arms[f"C{c:g}"] = stitch(
-                base=floor,
-                interior=interior[index * len(EXPONENTS) + k],
-                m3=(lo3, hi3),
-                grid=grid,
-                region=region,
-            )
+        used_depths = None
+        if eligibility[index]["eligible"]:
+            offset = active_indices.index(index) * len(EXPONENTS)
+            used_depths = inner_depths[offset : offset + len(EXPONENTS)].tolist()
+            for k, c in enumerate(EXPONENTS):
+                arms[f"C{c:g}"] = stitch(
+                    base=floor,
+                    interior=interior[offset + k],
+                    m3=(lo3, hi3),
+                    grid=grid,
+                    region=region,
+                )
+        else:
+            arms.update({f"C{c:g}": floor for c in EXPONENTS})
         truth_values = truth.evaluate(grid=grid)
         arm_metrics = {}
         for name, (lo, hi) in arms.items():
@@ -324,17 +392,23 @@ def measure(*, labels: np.ndarray, truth, draws: int, seed: int, threads: int) -
             arm_metrics[name] = score
         alphas[str(alpha)] = {
             "floor_runs": runs(mask=region),
+            "geometry": geometry(labels=labels, left=left, right=right),
+            "window": eligibility[index],
             "depth": int(depths[index]),
-            "interior_depths": inner_depths[index * 8 : (index + 1) * 8].tolist(),
+            "interior_depths": used_depths,
             "arms": arm_metrics,
         }
     return alphas
 
 
-def schedule_exponent(*, n0: int, n1: int, alpha: float, candidate: dict) -> float:
+def schedule_exponent(
+    *, n0: int, n1: int, alpha: float, candidate: dict, window_eligible: bool
+) -> float:
     """Read a frozen proposal with its declared sample-size range and C=1 clamp."""
     if n0 < 1 or n1 < 1:
         raise ValueError("Both class sizes must be positive")
+    if not window_eligible:
+        return 1.0
     settings = candidate["coefficients"][str(alpha)]
     n_eff = 2 * n0 * n1 / (n0 + n1)
     if "a" in settings:

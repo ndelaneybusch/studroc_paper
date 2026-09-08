@@ -259,8 +259,8 @@ def combinations_with_replacement_for_test():
     return combinations_with_replacement([Q(i, 4) for i in range(5)], 3)
 
 
-def test_stitch_preserves_floor_and_exponent_nesting_even_at_seams():
-    """The floor guarantee cannot be removed by lower-edge monotonic tightening."""
+def test_overlapping_window_returns_the_unchanged_hybrid():
+    """The eligibility fallback must preserve both edges, including all seams."""
     grid = np.linspace(0, 1, 6)
     base = (
         np.array([0.0, 0.1, 0.2, 0.3, 0.5, 1.0]),
@@ -271,26 +271,8 @@ def test_stitch_preserves_floor_and_exponent_nesting_even_at_seams():
         np.array([0.1, 0.35, 0.5, 0.7, 0.85, 1.0]),
     )
     region = np.array([True, True, False, False, True, True])
-    bands = [
-        stitch(base=base, interior=interior, m3=base, grid=grid, region=region)
-        for interior in [base, narrow]
-    ]
-    assert np.all(bands[1][0][region] <= base[0][region])
-    assert np.all(bands[1][1][region] >= base[1][region])
-    assert np.all(bands[0][0] <= bands[1][0])
-    assert np.all(bands[0][1] >= bands[1][1])
-    assert bands[1][0][2] > bands[0][0][2]
-    np.testing.assert_allclose(
-        metrics(
-            grid=np.array([0.0, 0.5, 1.0]),
-            lower=np.array([0.0, 0.2, 1.0]),
-            upper=np.array([0.3, 0.7, 1.0]),
-            truth=Curve(
-                name="diagonal", x=np.array([0.0, 1.0]), y=np.array([0.0, 1.0])
-            ),
-        )["area"],
-        0.75,
-    )
+    result = stitch(base=base, interior=narrow, m3=base, grid=grid, region=region)
+    np.testing.assert_array_equal(result, base)
 
 
 def test_censored_crossings_are_not_fitted_endpoint_estimates():
@@ -372,13 +354,37 @@ def test_frozen_schedule_uses_both_counts_and_clamps_finite_range():
     from scripts.methods_exploration.interior import schedule_exponent
 
     candidate = {"coefficients": {"0.05": {"C": 2.5, "n_eff_range": [500, 5000]}}}
-    assert schedule_exponent(n0=500, n1=500, alpha=0.05, candidate=candidate) == 2.5
-    assert schedule_exponent(n0=100, n1=900, alpha=0.05, candidate=candidate) == 1
-    assert schedule_exponent(n0=5001, n1=5001, alpha=0.05, candidate=candidate) == 1
+    assert (
+        schedule_exponent(
+            window_eligible=True, n0=500, n1=500, alpha=0.05, candidate=candidate
+        )
+        == 2.5
+    )
+    assert (
+        schedule_exponent(
+            window_eligible=True, n0=100, n1=900, alpha=0.05, candidate=candidate
+        )
+        == 1
+    )
+    assert (
+        schedule_exponent(
+            window_eligible=True, n0=5001, n1=5001, alpha=0.05, candidate=candidate
+        )
+        == 1
+    )
     candidate = {"coefficients": {"0.05": {"a": 2.0, "b": 0.5}}}
-    assert schedule_exponent(n0=400, n1=400, alpha=0.05, candidate=candidate) == 2
+    assert (
+        schedule_exponent(
+            window_eligible=True, n0=400, n1=400, alpha=0.05, candidate=candidate
+        )
+        == 2
+    )
     assert schedule_exponent(
-        n0=1_000_000, n1=1_000_000, alpha=0.05, candidate=candidate
+        window_eligible=True,
+        n0=1_000_000,
+        n1=1_000_000,
+        alpha=0.05,
+        candidate=candidate,
     ) == pytest.approx(1.02)
 
 

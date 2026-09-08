@@ -1,4 +1,4 @@
-"""Supervised, resumable command line for the four bounded method screens."""
+"""Supervised, resumable command line for bounded ROC-method studies."""
 
 import argparse
 import hashlib
@@ -13,7 +13,7 @@ from pathlib import Path
 
 from .common import Store
 
-TRACKS = {"interior": 75, "likelihood": 45, "projection": 30, "m3": 30}
+TRACKS = {"small_n": 60, "interior": 195, "likelihood": 45, "projection": 30, "m3": 30}
 
 
 def fingerprint() -> dict:
@@ -135,7 +135,7 @@ def main() -> None:
     total = (
         args.minutes
         if args.minutes is not None
-        else (10 if args.profile == "pilot" else 180)
+        else (10 if args.profile == "pilot" else sum(TRACKS[t] for t in tracks))
     )
     weight = sum(TRACKS[t] for t in tracks)
     deadline = time.monotonic() + total * 60

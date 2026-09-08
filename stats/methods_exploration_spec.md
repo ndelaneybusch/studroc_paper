@@ -4,7 +4,7 @@ Date: 2026-09-07. This is an information-gathering screen, not the decision-gati
 simulation or a production method change. Run from the repository root with
 `uv run --no-sync python -m scripts.methods_exploration.run --profile screen --out <directory>`.
 Use `--profile pilot` for an end-to-end implementation check. The screen has a
-three-hour wall-clock cap, enforced by a supervising process; unfinished work is
+six-hour wall-clock cap, enforced by a supervising process; unfinished work is
 reported as incomplete. Each track checkpoints observations and its decisions.
 
 ## Context and interpretation
@@ -50,7 +50,7 @@ Monte Carlo summaries use replicate uncertainty. Tail windows are [0,.02] and
 No screen claims to establish library noninferiority from failure to reject a
 deficit. Coverage intervals and censored exponent crossings are explicit.
 
-## 4. Interior exponent after the exact floor
+## 4. Interior exponent after the exact floor (revised 2026-09-08)
 
 Balanced-equivalent size n is 100, 500, 5,000, 50,000. Class fractions are 1:1,
 1:9 and 9:1 at total size 2n, so both directions have the same total sample
@@ -63,23 +63,39 @@ keep the exact piecewise-linear inverse, including plateaus. These are deliberat
 uniformity stress sequences, not regular fixed-shape asymptotic examples.
 
 Reuse the ladder kernel and follow-up's shared-cloud/edge/allowance construction.
-The corner arm is full-grid C=1 plus a localized M3 hull. Left cutoff is the
+The corner arm uses production trim rows for C=1 plus a localized M3 hull. Left cutoff is the
 smallest inclusive k with Binomial(M,(1-k/n0)^n0) survival at j-1 <= .001;
 right start is n0-ceil(n0 BetaInv(.975,K+1,n0-K)), with K the trailing negative
 run. The floor uses alpha and equal class split. Its region is frozen from the
-full-grid C=1 depth within the replicate for every interior C. This removes a
+production-trim C=1 depth within the replicate for every interior C. This removes a
 second moving tuning knob and preserves nesting across the exponent ladder.
 
-Trim the interior using **all native columns in the fixed window [.02,.95]**.
-Use that same cloud seed for both profiles. Outside the window retain the corner
-arm; inside use the interior tube with its depth-specific corner allowances;
-then reapply the frozen M3 hull and widen to monotonicity. Include raw full-grid
-C=1, exact-floored full-grid C=1, and fixed-interior C=1 as distinct baselines.
-The last isolates the change of trim domain from exponent effects.
+First compute the production-compatible hybrid and its inclusive tail masks.
+Use [.02,.95] only if **the entire window is outside both tails** on this dataset
+and alpha. Both native grid columns bracketing the window endpoints must also be
+unprotected, and at least two interior trim columns must exist. Touching a floor
+boundary is ineligible. Keep the window fixed; do not clip it to the random
+complement of the floor. When ineligible, skip the interior kernel and return the
+unchanged hybrid for every C, including C=1.
+
+When eligible, trim on every native column within [.02,.95], with the same cloud
+seed as the parent. Outside the window retain the parent; reapply the frozen M3
+hull and widen to monotonicity. Record eligibility, its reason, endpoint guards,
+actual cutoffs, floor overlap and remaining unprotected cells. A rank-selected
+eligibility event changes the conditional sampling law: Theorem 7 motivates the
+fixed trim domain, but does not supply a theorem for eligible-only coverage.
+
+Report operational coverage/width over **all** samples, eligible-only coverage
+and C* diagnostics, and fallback-only coverage separately. Inactive datasets must
+never produce an artificial infinite C* or collapse of the shape spread. No
+eligible observations means `no_exposure`; fewer than 400 eligible observations
+means insufficient calibration evidence. A group without all five shapes meeting
+that count cannot support a shape-collapse claim.
 
 C ladder: 1, 1.25, 1.5, 2, 2.5, 3.5, 5, 8. Primary statistic: max-minus-min
 shape C* at each size, alpha and class ratio; C* is the largest nested-grid C
-whose estimated simultaneous coverage reaches nominal. Report interval-inverted
+whose estimated eligible-only simultaneous coverage reaches nominal. This is a
+conditional diagnostic, accompanied by the operational coverage ladder. Report interval-inverted
 crossings and right/left censoring; never fit a value at the ladder endpoint as
 an observed crossing. Use paired bootstrap shape-spread uncertainty, including the full C-grid
 bracket width in the upper spread bound.
@@ -96,14 +112,70 @@ Small screens will often be inconclusive; that is useful precision information.
 The fixed and decaying candidates still require fresh coverage confirmation in
 the week-long gate, including interior slivers. No universal claim follows.
 
-Default replication is 64 per cell, with 24 at n>=5,000, M=2,000 (4,000 at large
-n); these are rejection screens. In particular, 24 replicates cannot establish a
-95% lower coverage bound of .95 even with no misses, so a successful-looking
-large-n sentinel demands further replication before a schedule can be supported.
-The bounded run must distinguish this precision limitation from heterogeneity. A same-data doubled-M audit on the first balanced binormal replicate at every size
-reports depth resolution and cloud sensitivity. A hard 75-minute allocation
-prevents large-n clouds from swallowing all the other questions. Interleave sizes,
-ratios, shapes and alphas to make partial output interpretable.
+Default replication is **2,000 per cell at n=100 and 500, and 1,000 per cell at
+n=5,000 and 50,000**, shared across alpha and candidate C. Near 95% coverage,
+the approximate standard errors are .49 and .69 percentage points. The exact
+interval rule can now support nominal with observed failures (for example,
+980/1,000 and 1,950/2,000 both have two-sided 95% lower bounds above .95).
+Promotion also requires operational coverage support; conditional eligibility
+never removes a failing dataset from that check. Rare eligibility remains a real
+precision limitation, explicitly reported with its own binomial interval.
+
+M=2,000 at smaller n and 4,000 at larger n; the floor uses these actual study
+budgets and realized production-trim depths. A same-data doubled-M audit on the
+first balanced binormal replicate at every size reports sensitivity. A 195-minute
+allocation is an interruptible run segment, not permission to reduce replication
+or mark a partial design complete. Resume with additional time as needed. Complete
+matched size/direction blocks before moving on so a timed-out run preserves useful
+shape comparisons. The full suite's default cap is now six hours; the default for
+an isolated track is its own allocation. `--minutes` overrides these budgets.
+
+## 4a. Small-sample hybrid, tails and interior (new 2026-09-08)
+
+Here n is **per class**, not total sample size. Balanced designs are 10/10,
+15/15,20/20,30/30,50/50; imbalance designs are 10/50,50/10,20/50,50/20. Use 500
+paired datasets in each of nine shape cells: diagonal; binormal AUC .6 and .95;
+t2 .95; kink; boundary and interior slivers; an interior jump; and support-gap
+endpoint atoms with R(0)=.15. Slivers scale with class size, and the interior
+sliver retains downstream positive mass. Alpha is .05 and .5.
+
+Use **production automatic M separately at each alpha**, actual production trim
+rows, realized C=1 depths, exact Binomial left cutoff and Beta-inverted right
+margin. Even the pilot uses production M. Do not transplant large-n tail fractions
+or shrink the tails to manufacture an interior. The exact floor implementation
+is shared with track 4; Stage F is a separate comparison arm.
+
+Three paired studies use the same sampled labels:
+
+1. **Geometry and overlap:** measure left/right cutoff distributions, trailing
+   run length, overlap, fully protected grids, and the fraction of native cells
+   with both endpoints unprotected. Record fixed-window eligibility, but never
+   apply deeper trimming where it is ineligible. An absent interior has null
+   conditional coverage/width, not perfect coverage and zero mean width.
+2. **Protection and width:** compare raw C=1, exact hybrid, full M3, left-only and
+   right-only floor ablations, and the frozen Stage F hybrid. Report pointwise and
+   component-specific failures, paired area ratios, repaired raw failures, and
+   widening that propagates beyond the masks. The ablations are mechanism probes,
+   not claimed honest bands. Tail regions can overlap; their rates are not additive.
+3. **Rare observations and separation:** retain latent sliver-observation counts
+   during sampling. Report conditional coverage when the sliver is unseen, after
+   complete separation, and when every grid point is protected. These conditional
+   diagnostics do not inherit an unconditional M3 error bound. Doubled-M audits
+   on the first balanced binormal/sliver observation at each size distinguish
+   cloud resolution from sampling behavior.
+
+Integrate widths using conservative step extension. Both ordinary fixed-FPR
+metrics and realized floor-region metrics are recorded; at these sizes the
+unfloored region must not be equated with [.02,.95]. Compare fully floored hybrid
+width to full M3: the hybrid is a hull and can be wider, even with no usable
+interior. The study informs whether small-n tuning effort belongs in tail
+geometry, cloud resolution, or a distinct small-sample construction, and which
+sizes/shapes merit the longer gate. It does not automatically promote a method.
+
+This track runs first, with a 60-minute resumable allocation, and produces
+per-cell summaries including pointwise miss arrays, geometry distributions,
+coverage intervals and paired width uncertainty. There is no pooling of n=10–50
+into the large-n exponent fit.
 
 ## 5. Likelihood inversion: measure losses before building a solver
 
@@ -213,7 +285,7 @@ Central-alpha overcoverage is measured, not fitted away.
 
 ## Deliverables and decision discipline
 
-The implementation has separate `interior`, `likelihood`, `projection`, and `m3`
+The implementation has separate `small_n`, `interior`, `likelihood`, `projection`, and `m3`
 tracks plus one budgeted runner and summary report. Output records contain enough
 information to re-evaluate all gates without regenerating clouds. The executable
 screen may stop early; the report lists requested/completed work and does not
