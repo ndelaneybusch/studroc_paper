@@ -28,10 +28,12 @@ The band is assembled in four steps:
    curved (AUC, n) region — heavy-tailed high-AUC score distributions,
    with failures measured from n = 102 to n = 6,656 and coverage NOT
    monotone in n (worst .645 at t(2)-shaped AUC .99, n = 250); coverage
-   is solid at AUC <= ~.90 at every tested n. Inside that region use
-   ``m3_band_rs`` (exact) until the localized M3 floor ships — see
-   ``stats/fiducial_band_theory.md`` section 7.3 and
-   ``stats/c_calibration_followup_report.md``. Exponents above 1 trim
+   is solid at AUC <= ~.90 at every tested n. The ``m3_floor`` option
+   repairs the two end regions where that mechanism acts by taking the
+   hull with the exact M3 band there (:mod:`.hybrid_floor`); use
+   ``m3_band_rs`` alone when a full-curve guarantee is required — see
+   ``stats/fiducial_band_theory.md`` section 7.4 and
+   ``stats/hybrid_floor_report.md``. Exponents above 1 trim
    deeper and are anti-conservative on heavy-tailed shapes: Stage S
    measured C = 2 at 92-94% realized coverage at alpha = .05 on
    t(2)-shaped cells at every n >= 500 (75% at n = 100), which retired
@@ -71,6 +73,7 @@ from numpy.typing import NDArray
 from scipy.stats import beta as beta_dist
 from torch import Tensor
 
+from .hybrid_floor import M3Floor, apply_m3_floor, resolve_floor
 from .method_utils import torch_to_numpy
 
 TieBreak = str  # "random" | "even"
@@ -281,6 +284,7 @@ def fiducial_band(
     k: int | None = None,
     tie_break: TieBreak = "random",
     random_state: int | np.random.Generator | None = None,
+    m3_floor: bool | M3Floor = False,
 ) -> tuple[NDArray, NDArray, NDArray]:
     """Compute a rank-space fiducial simultaneous confidence band for the ROC.
 
@@ -317,9 +321,9 @@ def fiducial_band(
             finite-sample coverage theorem, and measurably anti-conservative
             inside a curved (AUC, n) wedge (heavy tails x high AUC; failures
             from n ~ 100 to beyond 6,000, coverage not monotone in n — see
-            ``stats/fiducial_band_theory.md`` section 7.3). Use
-            :func:`m3_band_rs` inside that region or when a guarantee is
-            needed.
+            ``stats/fiducial_band_theory.md`` section 7.3). Enable
+            ``m3_floor`` there, or use :func:`m3_band_rs` when a full-curve
+            guarantee is needed.
             Values above 1 trim deeper and are anti-conservative on
             heavy-tailed shapes — the former default ``2.0`` measured
             92-94% at ``alpha = .05`` on t(2) cells at ``n >= 500`` (see
@@ -336,12 +340,24 @@ def fiducial_band(
             slightly conservative).
         random_state: Seed or ``numpy.random.Generator`` for the fiducial
             draws (and random tie-breaking). ``None`` draws fresh entropy.
+        m3_floor: Localized exact M3 floor at the two ends of the curve
+            (:mod:`.hybrid_floor`). ``False`` (default) returns the raw
+            fiducial band. ``True`` takes the pointwise hull with the M3
+            band, at this ``alpha``, on the exact-rule region and closes it
+            by widening; an :class:`M3Floor` sets the rule and its budgets.
+            The floored band contains the raw band pointwise and caps the
+            in-region miss probability at the M3 level. Widening cannot
+            increase misses outside the region, but their probability has
+            no distribution-free bound. Requires the ``fiducial_core``
+            extension for the M3 component.
 
     Returns:
         Tuple of ``(fpr_grid, lower_envelope, upper_envelope)`` numpy
         arrays, with ``lower[0] = 0`` and ``upper[-1] = 1``.
 
     Raises:
+        ImportError: If ``m3_floor`` is enabled and ``fiducial_core`` is not
+            built.
         ValueError: If either class is empty or arguments are out of range.
 
     Examples:
@@ -435,6 +451,19 @@ def fiducial_band(
     upper = np.clip(upper, 0.0, 1.0)
     lower[0] = 0.0
     upper[-1] = 1.0
+
+    floor = resolve_floor(m3_floor)
+    if floor is not None:
+        lower, upper = apply_m3_floor(
+            lab_s=lab_s,
+            khat=khat,
+            lower=lower,
+            upper=upper,
+            alpha=alpha,
+            n_draws=n_draws,
+            trim_depth=j,
+            floor=floor,
+        )
 
     if k is not None:
         if k < 2:

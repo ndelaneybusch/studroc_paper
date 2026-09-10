@@ -16,6 +16,13 @@ from .fiducial_ladder import (
     make_ladder,
 )
 from .hsieh_turnbull_band import hsieh_turnbull_band
+from .hybrid_floor import (
+    M3Floor,
+    exact_left_cutoff,
+    exact_right_start,
+    floor_region,
+    stitch_m3_floor,
+)
 from .ks_band import fixed_width_ks_band
 from .m3_band_rs import m3_band_rs
 from .max_modulus_boot import logit_bootstrap_band
@@ -32,10 +39,15 @@ __all__ = [
     "envelope_band_suite",
     "envelope_bootstrap_band",
     "wilson_beta_band",
+    "exact_left_cutoff",
+    "exact_right_start",
     "fiducial_band",
     "fiducial_band_rs",
     "fixed_width_ks_band",
+    "floor_region",
     "khat_from_labels",
+    "M3Floor",
+    "stitch_m3_floor",
     "ladder_profile",
     "LadderProfile",
     "make_ladder",

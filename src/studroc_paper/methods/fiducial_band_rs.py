@@ -26,6 +26,7 @@ from scipy.stats import beta as beta_dist
 from torch import Tensor
 
 from .fiducial_band import TieBreak, _auto_n_draws, _merged_labels, production_trim_rows
+from .hybrid_floor import M3Floor, apply_m3_floor, resolve_floor
 from .method_utils import torch_to_numpy
 
 
@@ -90,6 +91,7 @@ def fiducial_band_rs(
     tie_break: TieBreak = "random",
     n_threads: int = 0,
     random_state: int | np.random.Generator | None = None,
+    m3_floor: bool | M3Floor = False,
 ) -> tuple[NDArray, NDArray, NDArray]:
     """Compute the rank-space fiducial ROC band using the Rust kernel.
 
@@ -118,8 +120,9 @@ def fiducial_band_rs(
             fiducial credible band. Validity caveat (2026-09-01): at C = 1
             the band under-covers inside a curved (AUC, n) wedge — heavy
             tails x high AUC, failures measured n ~ 100 to beyond 6,000,
-            coverage not monotone in n (theory doc section 7.3); use
-            :func:`m3_band_rs` there. Values above 1 trim deeper and are
+            coverage not monotone in n (theory doc section 7.3); enable
+            ``m3_floor`` or use :func:`m3_band_rs` there. Values above 1
+            trim deeper and are
             anti-conservative on heavy-tailed shapes (the former default
             ``2.0`` measured 92-94% at ``alpha = .05`` on t(2) cells at
             ``n >= 500``, and 75% at ``n = 100``).
@@ -132,6 +135,15 @@ def fiducial_band_rs(
             the global pool (all cores).
         random_state: Seed or ``numpy.random.Generator`` for tie-breaking
             and the kernel seed. ``None`` draws fresh entropy.
+        m3_floor: Localized exact M3 floor at the two ends of the curve
+            (:mod:`.hybrid_floor`). ``False`` (default) returns the raw
+            fiducial band. ``True`` takes the pointwise hull with the M3
+            band, at this ``alpha``, on the exact-rule region and closes it
+            by widening; an :class:`M3Floor` sets the rule and its budgets.
+            The floored band contains the raw band pointwise and caps the
+            in-region miss probability at the M3 level. Widening cannot
+            increase misses outside the region, but their probability has
+            no distribution-free bound.
 
     Returns:
         Tuple of ``(fpr_grid, lower_envelope, upper_envelope)`` numpy
@@ -215,6 +227,19 @@ def fiducial_band_rs(
     lower, upper = _apply_corner_allowances(
         lower=lower, upper=upper, khat=khat, n1=n1, trim_depth=j, n_draws=n_draws
     )
+
+    floor = resolve_floor(m3_floor)
+    if floor is not None:
+        lower, upper = apply_m3_floor(
+            lab_s=lab_s,
+            khat=khat,
+            lower=lower,
+            upper=upper,
+            alpha=alpha,
+            n_draws=n_draws,
+            trim_depth=j,
+            floor=floor,
+        )
 
     if k is not None:
         if k < 2:
