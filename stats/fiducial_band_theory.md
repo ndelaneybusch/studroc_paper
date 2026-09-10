@@ -22,7 +22,13 @@ The most useful additions developed here are:
 - precise coverage-transfer and hybrid inequalities (§8);
 - missing-mass lower bounds showing what an honest band must leave open (§9);
 - exact, interpretable alternatives to the hybrid's empirical cut-point
-  margins, including an optimality statement with a specified scope (§10).
+  margins, including an optimality statement with a specified scope (§10);
+- an exact identity between full-bracket inclusion probability and rank
+  likelihood, identifying the conditional calibration gap (§12.5);
+- a computable finite-sample honest outer inversion allowing arbitrary
+  monotone completions, and convergent likelihood bounds for refining it
+  (§§12.6–12.7). These are conservative alternatives, not a validity
+  theorem for the production trim.
 
 **Status.** “Exact” means a finite-sample or deterministic statement under
 its explicit assumptions. “Asymptotic” means a limit under the stated
@@ -1368,11 +1374,13 @@ containing every curve in $\mathcal C$ is honest. There is no multiplicity
 penalty for the number of candidate curves: coverage only requires that
 the one true curve not be rejected.
 
-The hard part is computing a certified **outer** envelope over an infinite
-shape class. A finite library, local optimization, or inner approximation
-can omit the true curve and lose the theorem. A useful next method would
-use the fiducial band as a search proposal or discrepancy geometry,
-with exact rank tests supplying the confidence guarantee.
+The hard part is computing a sufficiently tight certified **outer**
+envelope over an infinite shape class. A finite library, local
+optimization, or inner approximation can omit the true curve and lose
+the theorem. Sections 12.6–12.7 give a conservative solution for
+likelihood-ratio inversion, with an explicit efficiency limitation.
+They do not yet solve efficient inversion of Monte Carlo rank tests.
+Fiducial geometry can guide search without restricting the accepted set.
 
 Passing a fitted-curve goodness-of-fit test does not certify a composite
 shape class or establish noninferiority. Sample splitting alone does not
@@ -1450,14 +1458,334 @@ conditional on the pilot. Then total error is at most $\alpha$.
 The present fiducial theory does not yet supply those finite-sample
 class-uniform branch guarantees.
 
+### 12.5 The full-bracket probability is a likelihood, not a confidence level
+
+Write $\mathsf P$ for the product of the auxiliary spacing laws,
+$S=(S^0,S^1)$, and $\mathcal B_\lambda(S)=[r^-_\lambda,r^+_\lambda]$
+for the **single-draw full bracket** of §3.1. This section concerns
+whole-curve inclusion in that bracket, not inclusion in the pointwise
+hull of several brackets. Denote the rank likelihood by
+$\mathscr L_R(\lambda)=P_R(\Lambda=\lambda)$, reserving $p$-values for
+tests. The candidate $R$ can have atoms at either endpoint or interior
+jumps, with the conventions of §1.
+
+**Proposition 12b (bracket–likelihood identity). [Exact; derived here]**
+For every fixed candidate $R$ and merged label path $\lambda$,
+$$
+ \boxed{\quad
+ \mathsf P\{R\in\mathcal B_\lambda(S)\}
+       =\mathscr L_R(\lambda).
+ \quad}                                                   \tag{12.7}
+$$
+Consequently, if $S^{\rm true}$ denotes the true own-class spacing pair
+and $\mathscr L_R(\lambda)>0$,
+$$
+ \frac{d\mathcal L_R(S^{\rm true}\mid\Lambda=\lambda)}
+      {d\mathsf P}(s)
+ =\frac{\mathbf1\{R\in\mathcal B_\lambda(s)\}}
+        {\mathscr L_R(\lambda)}.                          \tag{12.8}
+$$
+
+*Proof.* Let $p_i$ count positives before negative $i$ in $\lambda$.
+Generate the auxiliary anchors $u_1<\cdots<u_{n_0}$ and
+$v_1<\cdots<v_{n_1}$ independently. The $u_i$ almost surely avoid every
+jump of the fixed CDF $R$. Monotonicity and (3.2) imply
+$$
+ R\in\mathcal B_\lambda(S)
+ \quad\Longleftrightarrow\quad
+ v_{p_i}\le R(u_i)\le v_{p_i+1}\quad(1\le i\le n_0),        \tag{12.9}
+$$
+up to null sets, with $v_0=0,v_{n_1+1}=1$. For necessity, approach
+$u_i$ from both sides. For sufficiency, bound $R(t)$ between its values
+at the surrounding anchors; the first and last gaps use zero and one.
+The endpoint bracket includes possible mass at zero, and $R(1)=1$.
+
+The points $Q_R(v_j)$ are ordered iid placements with CDF $R$.
+Except for probability-zero boundary equalities,
+$Q_R(v_j)\le u_i$ iff $v_j\le R(u_i)$. Thus (12.9) is exactly the
+event that merging $u_i$ and $Q_R(v_j)$ gives $\lambda$.
+This proves (12.7), including when several positives collapse to a
+placement atom. The true own-class anchors give the same construction:
+a negative threshold with survival probability $u_i$ has positive
+survival probability $R(u_i)$ almost surely. Its labels are therefore
+a deterministic function of its spacing pair and $R$.
+Conditioning $\mathsf P$ on that event proves (12.8). $\square$
+
+An equivalent integral follows by conditioning on the negative
+anchors. Put $k_i=p_{i+1}-p_i$, with $p_0=0,p_{n_0+1}=n_1$:
+$$
+ \mathscr L_R(\lambda)
+ =\frac{n_0!n_1!}{\prod_{i=0}^{n_0}k_i!}
+ \int_{0<u_1<\cdots<u_{n_0}<1}
+ \prod_{i=0}^{n_0}[R(u_{i+1})-R(u_i)]^{k_i}\,du.           \tag{12.10}
+$$
+Here $R(u_0)$ means $R(0-)=0$, **not** $R(0)$, and
+$R(u_{n_0+1})=1$. The integrand is a multinomial gap probability.
+This is the rank likelihood already proposed in the
+[method assessment, §7](next_method_ideas.md#7-rank-likelihood-e-values-a-second-exact-route);
+(12.7) identifies its relationship to the fiducial brackets.
+
+**Corollary 12c (a strong conditional approximation is impossible).
+[Exact]** With total variation defined as $\sup_A|P(A)-Q(A)|$,
+$$
+ \left\|\mathcal L_R(S^{\rm true}\mid\Lambda=\lambda)
+                   -\mathsf P\right\|_{\rm TV}
+ =1-\mathscr L_R(\lambda).                               \tag{12.11}
+$$
+For the regular diagonal $R(t)=t$, every path has probability
+$\binom{n_0+n_1}{n_0}^{-1}$, so this distance approaches **one** as
+both class sizes grow. Integrating the conditional density in (12.8)
+over its support and complement proves the formula.
+
+Thus total-variation matching of the conditional **spacing pairs** is
+the wrong route to the missing guarantee, even at the diagonal. This
+does not contradict the centered, weak ROC-process convergence in §6:
+it concerns a different object and a much stronger metric. Likewise,
+an uncalibrated threshold on (12.7) would threshold a likelihood, not
+a super-uniform $p$-value. It cannot be read as a confidence level.
+The identity does not prove that the production bracket-and-trim band
+undercovers; projection and trimming require their own analysis.
+
+This distinction fits the auxiliary-set validity framework of
+[Martin, *Random sets and exact confidence regions*](https://arxiv.org/abs/1302.2023):
+propagating an auxiliary distribution and calibrating a confidence
+procedure are separate steps. The identities above are proved directly
+for this rank experiment, without invoking a general fiducial validity
+theorem.
+
+### 12.6 A computable honest band from a one-cut likelihood bound
+
+The likelihood-ratio proposal becomes constructive with a bound that
+removes all unknown within-bin shape. Fix a normalized predictive mass
+$q(\lambda)$ on the finite set of label paths. It may depend on class
+sizes, a prespecified model mixture, or independent training data.
+A sequential predictor using only preceding labels and the remaining
+class counts is also normalized. A full-path fitted numerator is not
+automatically such a $q$.
+
+Define the exact likelihood confidence set
+$$
+ \mathcal C_q(\lambda)
+ =\{R:\mathscr L_R(\lambda)>\alpha q(\lambda)\}.            \tag{12.12}
+$$
+For every true $R$,
+$$
+ P_R\{R\notin\mathcal C_q(\Lambda)\}
+ =\sum_{\lambda:\mathscr L_R(\lambda)\le\alpha q(\lambda)}
+           \mathscr L_R(\lambda)
+ \le\alpha\sum_\lambda q(\lambda)=\alpha.                 \tag{12.13}
+$$
+This is the elementary likelihood-ratio/e-value argument underlying
+[Wasserman–Ramdas–Balakrishnan, *Universal inference*](https://arxiv.org/abs/1912.11436).
+No sample split is needed when $q$ is fixed in advance. The test
+statistic is $q/\mathscr L_R$ on paths of positive null probability.
+
+**Proposition 12d (one-cut, all-completions bound). [Exact; derived here]**
+Let $(i_k,j_k)$ be the prefix class counts after the first $k$ labels,
+$k=0,\ldots,N$, where $N=n_0+n_1$. Write
+$b_{n,i}(x)=\binom ni x^i(1-x)^{n-i}$, including endpoint limits.
+Define
+$$
+ H_\lambda(t,r)=\sum_{k=0}^{N}
+           b_{n_0,i_k}(t)b_{n_1,j_k}(r).                  \tag{12.14}
+$$
+Then, as deterministic inequalities for all $t$ and $R$,
+$$
+ 0\le\mathscr L_R(\lambda)
+       \le H_\lambda(t,R(t))\le1.                        \tag{12.15}
+$$
+This bounds the likelihood **uniformly over every CDF with $R(t)=r$**,
+including jumps and unseen mass on either side of $t$.
+
+*Proof.* At the fixed cut $t$, the counts
+$I=\#\{U_i\le t\}$ and $J=\#\{W_j\le t\}$ are independent
+Binomial$(n_0,t)$ and Binomial$(n_1,R(t))$. If the merged labels are
+$\lambda$, the observations at or below the cut form a prefix, so
+$(I,J)$ is one of its $N+1$ distinct vertices. The disjoint probabilities
+of these vertex events sum to (12.14). Forgetting the order on either
+side only enlarges the event. $\square$
+
+**Corollary 12e (finite-sample honest outer band). [Exact]** For each $t$,
+let
+$$
+ \begin{split}
+ A_\lambda(t)&=\{r\in[0,1]:H_\lambda(t,r)>\alpha q(\lambda)\},\\
+ L_q(t)&=\inf A_\lambda(t),\qquad U_q(t)=\sup A_\lambda(t).
+ \end{split}                                             \tag{12.16}
+$$
+If this set is empty, report $[0,1]$ at that coordinate. Any measurable
+outer enclosure of these edges satisfies
+$$
+ \boxed{\quad P_R\{L_q(t)\le R(t)\le U_q(t)\ \forall t\}
+                      \ge1-\alpha.\quad}                \tag{12.17}
+$$
+Indeed, on the single event
+$\mathscr L_R(\Lambda)>\alpha q(\Lambda)$, (12.15) places
+$R(t)$ in $A_\Lambda(t)$ at **every** $t$. Equation (12.13) controls
+the complement. Alternatively compute on a finite reporting grid
+and use the monotone continuum extension in §1, optionally applying
+the coverage-preserving shape tightening in §8. Set the terminal
+edges at $t=1$ to one. No per-coordinate or candidate multiplicity
+factor occurs.
+
+This supplies a concrete outer projection over the unrestricted
+monotone class. It requires neither a derivative nor a guessed gap
+completion. Its guarantee comes from containing the likelihood set;
+it can be substantially conservative. It is a different construction
+from the production fiducial tube.
+
+**Certified scalar computation.** Group (12.14) by $j$:
+$$
+ H_\lambda(t,r)=\sum_{j=0}^{n_1} c_j(t)b_{n_1,j}(r),\qquad
+ c_j(t)=\sum_{k:j_k=j}b_{n_0,i_k}(t)\in[0,1].              \tag{12.18}
+$$
+These are Bernstein coefficients. On $[0,1]$ the polynomial lies
+between their minimum and maximum: its basis is nonnegative and
+sums to one. Midpoint de Casteljau subdivision gives the coefficients
+on each half-interval by repeated adjacent averaging. Discard an
+interval only if its **upper coefficient bound** is at most
+$\alpha q(\lambda)$; otherwise retain it or subdivide. At a computation
+limit, retain every unresolved interval and report their hull.
+There is no assumption that $A_\lambda(t)$ is connected.
+Exact rational arithmetic, or outward-rounded interval arithmetic
+including the coefficients and cutoff, preserves the theorem.
+Floating-point root finding alone does not certify it.
+
+**An exact efficiency limitation.** The one-cut relaxation forgets
+much of the rank path, and a weak $q$ imposes another loss. With
+$n_0=n_1=n$, uniform $q$, the all-positive-before-negative path, and
+$t=1/2$, the endpoint coefficient is $c_0=2^{-n}$ whereas the rejection
+cutoff is $\alpha/\binom{2n}{n}$. For every $n\ge1$ and
+$0<\alpha<1$, $c_0$ exceeds the cutoff. Thus this band retains $r=0$
+even after complete sample separation at that FPR. It can be much
+too wide. This argues for richer likelihood bounds and a better fixed
+predictor, not for presenting the one-cut band as an M3 replacement.
+
+### 12.7 Refining the likelihood bound without restricting the ROC class
+
+**Proposition 12f (cell dynamic program and a uniform error bound).
+[Exact; derived here]** Partition placement space into ordered cells
+$[0,t_1],(t_1,t_2],\ldots,(t_{m-1},1]$ with negative probabilities
+$a_h=t_h-t_{h-1}$ and positive probabilities
+$b_h=R(t_h)-R(t_{h-1})$, using $R(t_0)=R(0-)=0$, $t_0=0$, and $t_m=1$.
+Atoms belong to the cell containing their location; negatives hit
+no boundary almost surely. Let $h_{\max}=\max_h a_h$.
+
+Use the path's prefix counts $(i_k,j_k)$. Initialize
+$D_0(0)=1,D_0(k)=0$ for $k>0$, and recurse
+$$
+ D_h(k)=\sum_{l=0}^{k}D_{h-1}(l)
+   \frac{a_h^{i_k-i_l}b_h^{j_k-j_l}}
+        {(i_k-i_l)!(j_k-j_l)!}.                          \tag{12.19}
+$$
+Then $\overline{\mathscr L}_{\mathcal T}=n_0!n_1!D_m(N)$ bounds
+$\mathscr L_R(\lambda)$ from above. For a lower bound
+$\underline{\mathscr L}_{\mathcal T}$, use the same recursion but
+omit every transition with **both** class counts positive. They obey
+$$
+ \begin{split}
+ 0\le\underline{\mathscr L}_{\mathcal T}
+ &\le\mathscr L_R(\lambda)
+ \le\overline{\mathscr L}_{\mathcal T}\le1,\\
+ \overline{\mathscr L}_{\mathcal T}
+       -\underline{\mathscr L}_{\mathcal T}
+ &\le n_0n_1\sum_h a_hb_h
+ \le n_0n_1h_{\max}.
+ \end{split}                                             \tag{12.20}
+$$
+Refining a partition decreases the upper bound and increases the lower
+bound for the same fixed $R$. Their difference converges to zero
+uniformly over all placement CDFs, at fixed class sizes.
+
+*Proof.* The probability of both classes' cell counts is the product
+of two multinomial probabilities. A compatible allocation cuts
+$\lambda$ into $m$ consecutive blocks, allowing empty blocks.
+Equation (12.19) sums the multinomial weights of every such allocation,
+with common factor $n_0!n_1!$. The allocations are disjoint. The upper
+bound ignores internal block ordering; a pure-class block already has
+its ordering determined. The lower bound therefore sums allocations
+on which the path is forced. The difference requires at least one
+mixed cell. A negative–positive pair shares a cell with probability
+$\sum_h a_hb_h$; a union bound over $n_0n_1$ pairs gives (12.20).
+Any fine compatible allocation is coarsely compatible, and any coarse
+pure allocation remains pure after refinement. These event inclusions
+give the monotonicity. $\square$
+
+The recurrence uses $O(mN^2)$ arithmetic operations and $O(N)$ working
+memory. All terms are nonnegative. Larger class sizes require scaling
+or log representations with controlled roundoff. The uniform error
+bound is rough: relative accuracy at the likelihood cutoff can require
+very fine partitions, especially for small $q(\lambda)$.
+
+Two consequences make this useful for unrestricted outer inversion:
+
+- **Uniform bounds on boxes of ROC values.** Suppose a search box gives
+  $\ell_h\le R(t_h)\le u_h$. Then $b_h\le\bar b_h=u_h-\ell_{h-1}$,
+  with the same boundary conventions. For a feasible box these caps
+  are nonnegative. Substitute them for $b_h$ in (12.19) and cap the
+  result at one. Nonnegative coefficients ensure that this bounds the
+  likelihood of **every** monotone completion in the box, even though
+  the substituted masses need not sum to one. Reject a box only when
+  this bound is at most $\alpha q(\lambda)$, or when infeasibility is
+  established. Start from the full ordered cube of knot values and
+  retain every unresolved box. The fiducial cloud may guide subdivision
+  without restricting that initial domain. Stopping then affects width,
+  not coverage. Equation (12.20) applies to actual masses, not arbitrary
+  mass caps in a wide box.
+- **An exact finite model for checks.** If both classes have uniform
+  conditional locations within each positive-length cell, a block
+  with $a$ negatives and $b$ positives has each internal label order
+  with probability $\binom{a+b}{a}^{-1}$. Replace the factorial
+  denominator in (12.19) by $(a+b)!$ to obtain the exact rank likelihood
+  of the corresponding piecewise-linear ROC. A separate zero-width
+  cell with zero negative probability can represent a positive atom.
+  This is a verification model; the bounding construction does not
+  assume piecewise linearity of the truth.
+
+**Verification and practical status.** The
+[exact-arithmetic script](experiments/rank_likelihood_checks_20260906.py)
+and [results](experiments/res_rank_likelihood_checks_20260906.json)
+check 2,358 exact anchor/path compatibility cases against independently
+merged quantile draws, 210 path/model combinations, normalization of
+25 complete rank laws, and 544 one-cut/subdivision identities. They verify the known
+diagonal and single-atom laws, likelihood containment, refinement
+monotonicity, the mixed-cell bound, equivalence of the two-cell recurrence
+and (12.14), and the selected-error inclusion used in (12.17).
+The models include both imbalance directions, an empty interior cell,
+an interior atom, and endpoint atoms. All exclusion decisions use
+rational arithmetic.
+
+The 32 enumerated grid-coverage cases use uniform $q$, class sizes
+1/3, 3/1, 2/2, and 3/3, and $\alpha=.05,.5$. Errors range from zero
+to .011231, and mean grid widths from .926977 to .998449.
+A jump at $15/16$ produces positive-probability rejection events,
+checking the error inclusion beyond cases with no misses.
+The widths and error rates show severe conservatism, not useful calibration.
+The widths are averages over 17 grid coordinates, **not** integrated
+continuum widths; the experiment leaves the raw terminal enclosure
+untightened. For one nonuniform five-label example, refinement from
+2 to 128 cells shrinks the likelihood bracket from $[0,.2783203]$ to
+$[.0422212,.0469193]$, enclosing the exact value $.04453125$.
+
+These results advance the computational existence question: a
+finite-sample honest construction is specified, with an outer
+approximation that can stop safely. They do **not** establish useful
+width, near-nominal coverage, or a guarantee for the production trim.
+The efficiency questions are now the predictive likelihood penalty,
+information lost by cell coarsening, and the cost of sufficiently
+tight certified bounds.
+
 ## 13. The strongest next theory and experiment targets
 
 ### 13.1 Missing theory, ranked by importance
 
 The fundamental gap is the connection between the conditional fiducial
 cloud and repeated-sampling coverage, not the Dirichlet spacing law itself.
-The following priorities distinguish missing principles from unfinished
-proof details.
+Section 12.5 now identifies the conditional law exactly; strong
+conditional spacing matching is ruled out even at the diagonal.
+Sections 12.6–12.7 supply an honest alternative with computable outer
+bounds, but leave its efficiency unresolved. The priorities below
+distinguish those results from a guarantee for the existing trim.
 
 1. **Full-bracket coverage: a theorem or a decisive counterexample.**
    Full bracketing removes the arbitrary within-gap completion, with
@@ -1469,6 +1797,9 @@ proof details.
    bracket-and-trim procedure, or a counterexample isolating a remaining
    calibration failure. That distinction determines whether completion
    repair is enough or the trim needs a different validity principle.
+   Equations (12.7)–(12.11) identify the compatibility event and its
+   conditional likelihood tilt; they give a concrete object to analyze
+   rather than assuming conditional Dirichlet exactness.
 2. **Joint control of protected tails and the remaining interior.**
    Exact boundary localization (§10) is not a bound on failures outside
    the floor. A sufficient missing result is
@@ -1488,7 +1819,11 @@ proof details.
    a finite-sample honest construction that retains the direct ROC's
    quadratic combination of the two sampling errors (§11.1), rather
    than paying for two separately protected CDFs. The Gaussian geometry
-   alone does not prove such an efficiency result.
+   alone does not prove such an efficiency result. The one-cut inversion
+   in §12.6 is an exact but inefficient baseline: its separation example
+   proves that validity alone does not preserve the desired geometry.
+   Quantifying the gains from cell refinement and an improved fixed
+   predictor is now a bounded next project.
 4. **Honest adaptation and error allocation.**
    A router needs control of the selected fiducial failures in (12.3),
    not just marginal coverage estimates within AUC/sample-size cells.
@@ -1511,7 +1846,9 @@ joint tail/interior risk; postpone fine-tuning the router wedge.
 Finishing the interior theorem offers a comparatively tractable formal
 result. Direct rank-test inversion has the largest potential payoff for
 uniform honesty because it can replace the missing fiducial coverage
-justification, provided computation produces a certified outer set (§12.2).
+justification. Certified outer likelihood inversion is now available
+in §§12.6–12.7; obtaining useful width and efficient Monte Carlo test
+inversion remain open.
 
 ### 13.2 Concrete proof and experiment targets
 
@@ -1535,12 +1872,17 @@ The corresponding work sequence is:
    and $M$. Establish a moving-boundary extension only under stated,
    uniform regularity conditions; it would supply the missing link in
    (10.11), not a guarantee for arbitrary discontinuous curves.
-4. **Certify a direct rank confidence set.** Start with a finite FPR grid
-   and optimize over the *full* set of monotone probability allocations
-   consistent with that grid, including between-grid mass. Use exact
-   tests, conservative nuisance maximization, or certified outer
-   optimization. Extend by the monotone band rule. Fiducial geometry
-   can accelerate search, but must not restrict the accepted set.
+4. **Make certified rank inversion informative.** Implement the cell
+   upper bound (12.19) on boxes of ordered ROC values, retaining every
+   unresolved box. Compare fixed predictive mixtures against uniform
+   $q$, and measure the likelihood penalty separately from cell and
+   coordinate-projection slack. The one-cut result is a conservative
+   baseline with a proved width defect, not the target method. Begin
+   with enumerable small experiments, then compare width with M3.
+   Keep all between-grid allocations and use the monotone continuum
+   extension. Fiducial geometry may prioritize subdivisions, never
+   restrict the domain. Efficient inversion of calibrated Monte Carlo
+   rank tests remains a separate, potentially sharper route.
 5. **Optimize error placement only after controlling risk.** Separate
    lower/upper and regional constraints, using (6.5) as an interior
    benchmark. Retune for multiple alpha values, including .5.
@@ -1554,11 +1896,14 @@ ratios. An unconditional 95th percentile of violation magnitude can
 equal zero simply because coverage exceeds 95%; it is not evidence that
 the remaining misses are small.
 
-The central unresolved question is precise: **can we preserve direct ROC
-error cancellation while protecting unobserved probability allocations,
-without paying for two entire marginal-CDF rectangles?**
-The bracket-area result makes that a credible efficiency target.
-The missing-mass result states the protection that cannot be removed.
+The central unresolved efficiency question is precise: **can we preserve
+direct ROC error cancellation while protecting unobserved probability
+allocations, at useful computational cost and width?**
+The likelihood construction supplies finite-sample protection without
+two marginal-CDF rectangles, but the one-cut example shows that this
+alone is insufficient. The bracket-area result makes narrower
+completion protection credible; the missing-mass result states the
+protection that cannot be removed.
 
 ## 14. Sources and the boundary of the claims
 
@@ -1580,11 +1925,19 @@ The missing-mass result states the protection that cannot be removed.
 - [Pitt (1982)](https://doi.org/10.1214/aop/1176993872)
   supplies Gaussian association for nonnegative covariances;
   §6.3 derives the ROC directional bound from it.
+- [Martin, *Random sets and exact confidence regions*](https://arxiv.org/abs/1302.2023)
+  provides related auxiliary-set validity theory. Section 12.5 proves
+  its rank-specific identities directly.
+- [Wasserman–Ramdas–Balakrishnan, *Universal inference*](https://arxiv.org/abs/1912.11436)
+  supplies the likelihood-ratio validity principle behind (12.13).
+  The bracket identity, path-prefix relaxation, and cell bounds are
+  derived here; that paper does not establish their efficiency.
 - Empirical claims come from the
   [boundary follow-up](c_calibration_followup_report.md),
   [Stage F report](hybrid_floor_report.md), and linked experiment results,
   not from these literature theorems.
 
-The gap-area, coverage-algebra, boundary-inversion, and missing-mass
-arguments are derived in this document. “Derived here” identifies the
-proof's location, not a claim of priority over all existing literature.
+The gap-area, coverage-algebra, boundary-inversion, missing-mass,
+bracket–likelihood, and cell-bounding arguments are derived in this
+document. “Derived here” identifies the proof's location, not a claim
+of priority over all existing literature.
