@@ -1,8 +1,9 @@
 # Bounded method exploration: what the screen found
 
 *Run 2026-09-09/10. Executes `stats/methods_exploration_spec.md` at
-`--profile screen`, 12 threads. Data: `data/results/methods_exploration_screen/`.
-3.5 hours of track time, 135,448 stored units.
+`--profile screen`, 12 threads. Data: `data/results/methods_exploration_screen/`
+and `data/results/methods_exploration_50k_eligibility/`.
+3.5 hours of track time, 135,448 stored units, plus the §3 follow-up.
 Companions: `fiducial_band_theory.md` (Theorem 7, §§12.1–12.2, 12.6–12.7),
 `hybrid_floor_report.md` (Stage F), `c_calibration_screening_report_stage_s.md`
 (Stage S), `c_calibration_followup_report.md`, `next_method_ideas.md`.*
@@ -25,11 +26,11 @@ no candidate was frozen from an incomplete design.
 Four of five tracks finished their whole design, three of them in a small
 fraction of the time allotted. The interior track did not: it completed every
 cell at n = 100, 500 and 5,000 (75,000 units) and then got 510 units into the
-balanced n = 50,000 block before the deadline. The n = 50,000 numbers below are
-reported as the partial evidence they are — about 100 replicates per shape in
-the balanced direction only, and nothing at all in the two imbalanced
-directions. Finishing that size at this per-unit cost would take roughly a day,
-not the hour that was left.
+balanced n = 50,000 block before the deadline. Its coverage numbers at that
+size are the partial evidence they are — about 100 replicates per shape in the
+balanced direction only. The two imbalanced directions at n = 50,000 were
+measured afterwards by the follow-up in §3, which gets the eligibility
+geometry at 2,000 replicates per cell without building the cloud.
 
 One operational note that matters for reproducing this. The supervisor kills an
 over-budget worker with `TerminateProcess` on Windows, which does not run
@@ -223,7 +224,7 @@ Conditioning on eligibility is not a neutral act. Eligibility is a function of
 the observed ranks, so the eligible subsample is not a random subsample, and
 Theorem 7 supplies no theorem for eligible-only coverage. The study therefore
 reports operational coverage over all datasets, eligible-only coverage, and
-fallback-only coverage separately. §6 shows how far from neutral the
+fallback-only coverage separately. §7 shows how far from neutral the
 conditioning turned out to be.
 
 The cloud budget is below production, and it bites asymmetrically — this is
@@ -260,8 +261,11 @@ is a property of the truth, not of n.
 | `interior_sliver` | .000 | .000 | 1.000 | 1.000 |
 | `kink` | .000 | .000 | 1.000 | 1.000 |
 | `t2_0.95` | .000 | .004 | 1.000 | 1.000 |
-| `sliver` | .000 | .418 | .579 | .480 |
-| `normal_0.95` | .000 | .000 | .130 | .843 |
+| `sliver` | .000 | .418 | .579 | .541 |
+| `normal_0.95` | .000 | .000 | .130 | .818 |
+
+(The n = 50,000 column is measured at 2,000 replicates by the follow-up in §3;
+the screen's own 102-replicate estimates agree within their intervals.)
 
 Zero in all 30,000 datasets at n = 100, at both α, in all three class ratios.
 At n = 500 the α = .05 left cutoff lands at FPR .0215–.0219 against a guard at
@@ -286,21 +290,33 @@ nominal.** This is the central result.
 
 (At n = 500 the only other estimable cell is `sliver` in the balanced
 direction, at .952 on 837 eligible datasets.) At n = 5,000 the C = 1 windowed
-band falls below nominal in 4 of 15 cells; in the partial n = 50,000 block, in
-3 of 5. C\* is left-censored below the bottom of the ladder in those cells.
-Where a crossing does resolve it is small — [1.0, 1.25] or [1.25, 1.5] in most
-n = 5,000 cells, against Stage S's whole-curve 1.78 for binormal .95 and 1.51
-for kink at the same size.
+band's point estimate is below nominal in 4 of 15 cells, and two of those
+exclude nominal on their own interval — `sliver` at .923 [.898, .944] and .902
+[.874, .925]. In the partial n = 50,000 block three of five point estimates
+are below nominal but none individually excludes it at 49–102 replicates.
+
+The stronger statement is not about failures but about headroom. Across the 27
+estimable cells the C\* bracket is [1, 1.25] or censored below 1 in 13 of them,
+and no higher than [1.5, 2] in all but two. The comparison with Stage S is
+shape-dependent and I should not flatten it: Stage S's whole-curve C\* at
+n = 5,000 was 1.78 for binormal .95 and 1.51 for `kink`. After flooring,
+`kink`'s bracket collapses to [1, 1.25] balanced and [1.25, 1.5] at 9:1, but
+binormal .95's is [1.5, 2.0] — still consistent with Stage S. So the collapse
+is real for the shapes that dominate the eligible population, and *not*
+demonstrated for binormal .95, whose bracket is measured on the 13% of datasets
+that clear the window.
 
 **Restricting the trim domain to the window costs coverage rather than
 harvesting surplus.** On the same eligible datasets, the full-grid floor band
 covers .936–.990 at α = .05 while the windowed C = 1 band covers .902–.975 —
 lower in 21 of the 23 cells with at least 50 eligible datasets, tied in the
-other two, by up to 3.5 points. The misses are essentially all outside the
-floor region (in-region miss rate .000–.011), split roughly evenly between the
-lower and upper edges. The width does drop: at α = .05 windowed C = 1 runs
-.920–.999 of the floor's area and C = 2 runs .843–.960. But that width is
-coming straight out of the coverage margin.
+other two, by up to 3.5 points. The shortfall is entirely the window's doing,
+not an artifact of splicing two bands together: the in-region miss rate is
+.000–.011, and the whole-grid failure probability equals the unfloored-region
+failure probability to three decimals in every cell (at 5,000 balanced on
+`sliver`, 1 − .902 = .098 = the unfloored miss rate exactly). The width does
+drop: at α = .05 windowed C = 1 runs .920–.999 of the floor's area and C = 2
+runs .843–.960. But that width is coming straight out of the coverage margin.
 
 **No candidate was frozen, and the gate that blocked it is the right one.**
 `normal_0.95` never reaches the 400-eligible threshold in any group — 0, 5, 20,
@@ -340,7 +356,60 @@ imbalanced directions at that size were never run.
 
 ---
 
-## 3. Likelihood inversion: measuring the losses before building a solver
+## 3. Follow-up: the unmeasured n = 50,000 directions
+
+The screen never touched the 1:9 and 9:1 directions at n = 50,000. Running
+them through the full kernel turned out to cost more than eleven minutes per
+unit — the fiducial cloud scales with `max(n₀, n₁)`, so the 1:9 direction is as
+expensive as 9:1, and 2,000 units would have taken about 330 hours.
+
+That compute is avoidable. At these class sizes the exact left cutoff is at
+most 16 native columns for *every* realizable trim depth, against a guard
+column at 200 (n₀ = 10,000) to 1,800 (n₀ = 90,000), so the left mask can never
+reach the window. Eligibility is therefore decided entirely by the right start,
+which is a deterministic function of the trailing all-negative run — no cloud,
+no band, and no dependence on the cloud budget. Recomputing the screen's own
+510 stored balanced units this way reproduces the eligibility verdict and the
+right-start index **exactly, with zero mismatches**, which is what licenses
+using it. `scripts/methods_exploration/window_eligibility_50k.py` runs both the
+validation and the measurement; 2,000 replicates per cell take about three
+minutes.
+
+| eligibility at n = 50,000, 2,000 replicates | 1:9 (n₀=10,000, n₁=90,000) | 1:1 (50,000/50,000) | 9:1 (n₀=90,000, n₁=10,000) |
+|---|---:|---:|---:|
+| `interior_sliver` | 1.000 | 1.000 | 1.000 |
+| `kink` | 1.000 | 1.000 | 1.000 |
+| `t2_0.95` | 1.000 | 1.000 | 1.000 |
+| `sliver` | .532 | .541 | .537 |
+| `normal_0.95` | **.926** | **.818** | **.298** |
+
+Three shapes are eligible everywhere and `sliver` is eligible about half the
+time regardless of direction. Everything interesting is in the binormal row,
+and it moves by a factor of three across directions at a fixed total sample
+size of 100,000.
+
+The mechanism is that the right floor's reach is set by **n₁, the positive
+count** — not by n₀ and not by the total. The saturated run is the number of
+negatives lying below the *lowest* positive; with fewer positives that minimum
+sits higher, so more negatives fall beneath it and the run lengthens as a
+fraction of n₀. The mean right-start FPR tracks n₁ monotonically (.9725, .9654,
+.9280 as n₁ goes 90,000 → 50,000 → 10,000) and the same ordering appears at
+n = 5,000 (eligibility .164, .130, .025 as n₁ goes 9,000 → 5,000 → 1,000).
+
+So the answer to "does direction matter at n = 50,000" is yes, and in the
+direction that matters for practice: the common case of a scarce positive class
+is the one where a high-AUC ROC still has no unprotected interior even at a
+hundred thousand observations. This tightens §2's conclusion rather than
+changing it — the gated window is inert in exactly the regime where evaluation
+sets usually sit.
+
+What this follow-up does **not** provide is coverage at these cells. That would
+need the full kernel, and at eleven minutes a unit it was not worth buying a
+handful of replicates of the starved parent band described in §2.
+
+---
+
+## 4. Likelihood inversion: measuring the losses before building a solver
 
 ### The uncertainty
 
@@ -411,8 +480,13 @@ on the four smooth truths is .392–.503 of M3, nonempty on 100% of replicates,
 with 95% upper ratios of .42–.53 and 32-cell upper hulls of .66–.87. That
 passes the spec's gate. The
 prototype the gate enables then ran a certified rational box enclosure over the
-whole ordered knot cube on 48 datasets, and returned a mean area of **0.986** —
-the unit square, with 62.4 of 63 boxes unresolved.
+whole ordered knot cube on 48 datasets, and returned a mean area of **0.986**
+with 62.4 of 63 boxes unresolved — the unit square. Two numbers on different
+grids should not be set side by side without saying so: the hull ratios above
+are computed on the fine reporting grid, while the outer band lives on the
+five-point knot grid [0, .25, .5, .75, 1]. On the same 48 datasets the outer
+band's area is **1.34× M3's**, which is the honest comparison, and it lands in
+the same range as the projection track's independent 1.19–1.67 at three knots.
 
 Two smaller things. The projection slack — rejected library curves lying
 entirely inside the hull of accepted ones — is .006–.133 on smooth truths but
@@ -430,13 +504,15 @@ cells moved the gap by three orders of magnitude and left five to go. The gate
 passed on the optimistic diagnostic and the prototype it authorized
 immediately produced the whole unit square, which is the cleanest possible
 demonstration that the finite-library hull and the certifiable object are not
-the same thing. The factor-of-two-versus-M3 that the inner hull advertises is
-the prize; the gap between it and 0.986 is the entire research problem, and it
-is a cell-bounding problem, not a search problem.
+the same thing. The inner hull advertises half of M3; the certified version at
+the same budget is 1.34× M3. That gap is the entire research problem, and the
+cell-loss table says it is a cell-bounding problem rather than a search one —
+though the coarse knot grid the prototype inherits contributes too, which §5
+quantifies separately.
 
 ---
 
-## 4. Certified outer projection of rank tests
+## 5. Certified outer projection of rank tests
 
 ### The uncertainty
 
@@ -513,7 +589,7 @@ than fixing it globally.
 
 ---
 
-## 5. M3 deterministic boundary optimization
+## 6. M3 deterministic boundary optimization
 
 ### The uncertainty
 
@@ -596,20 +672,30 @@ boundary-shape problem.
 
 ---
 
-## 6. Things we did not anticipate
+## 7. Things we did not anticipate
 
 **Eligibility for the interior window is a strongly informative event, and it
 points in opposite directions on different shapes.** This is the most important
 unanticipated result. For `normal_0.95` at n = 500, n₀ = 900, the floor band
 covers .983 on the 1,995 ineligible datasets and **.400 on the 5 eligible
 ones**; at n = 500 balanced, α = .5, it is .774 ineligible against **.000 on 20
-eligible**. A binormal at AUC .95 has a long trailing all-negative run, so the
-window clears only when that run comes out anomalously short — which is exactly
-the sample where the band is in trouble. But the sign is not universal: for
-`kink` and `t2_0.95` at α = .5 the same conditioning selects *better* datasets
-(+.20 and +.22). Any construction that switches behaviour on a rank-selected
-event inherits a conditional law that can be badly worse or modestly better
-than the marginal one, and we now have both signs measured in the same study.
+eligible**. Both of those have disjoint exact intervals, and so does the
+5-observation cell — [.053, .853] against [.976, .988]. A binormal at AUC .95
+has a long trailing all-negative run, so the window clears only when that run
+comes out anomalously short, which is exactly the sample where the band is in
+trouble. The effect replicates at n = 5,000 (9:1, α = .5: .240 [.094, .451]
+eligible against .694 [.664, .723] ineligible) and appears in the same
+direction on `sliver` at several cells.
+
+The sign is not universal, but the evidence for the other direction is thinner
+than the first draft of this report claimed. Only one cell shows eligibility
+selecting *better* datasets with disjoint intervals — `t2_0.95` at n = 500
+balanced, α = .5, .718 [.697, .738] against .500 [.368, .632]. The `kink` and
+`interior_sliver` cells that point the same way rest on 16 and 17 ineligible
+observations and do not resolve. So: the harmful direction is established
+across shapes and sizes; the beneficial direction is a single resolved cell.
+Either way, a construction that switches behaviour on a rank-selected event
+inherits a conditional law that can differ sharply from the marginal one.
 
 **A flat coverage ladder reads as "C = 8 is safe" and means "nothing
 happened."** When the window is ineligible the interior kernel never fires and
@@ -689,7 +775,7 @@ decision-gating simulation.
 
 ---
 
-## 7. Where this leaves the shortlist
+## 8. Where this leaves the shortlist
 
 No method here is promoted. The interior and M3 tracks both wrote
 `eligible: false` and fell back to their baselines. The likelihood track's gate
@@ -725,11 +811,10 @@ to buy. In priority order:
    0.465, so about an hour and a half. It tests the floor band's absolute
    coverage at deployed resolution, which is the number this screen could not
    measure.
-2. **The two imbalanced directions at n = 50,000, at low replication.**
-   Eligibility is a proportion, so a few hundred replicates pin it, and
-   direction moved it sharply at n = 5,000 (`normal_0.95` eligibility .164,
-   .130, .025 at n₀ = 1,000, 5,000, 9,000). At n = 50,000 those cells are
-   entirely unmeasured.
+2. ~~The two imbalanced directions at n = 50,000.~~ **Done — §3.** Measured at
+   2,000 replicates per cell without the cloud, validated exactly against the
+   510 stored balanced units. Direction moves binormal .95 eligibility from
+   .926 to .298, and the driver is n₁ rather than n₀.
 3. **More balanced n = 50,000 replicates.** Lowest value. The eligibility
    geometry is already qualitatively settled there, the coverage direction is
    what Theorem 7 predicts and what n = 5,000 already resolves at 1,000
