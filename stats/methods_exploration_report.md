@@ -226,15 +226,26 @@ reports operational coverage over all datasets, eligible-only coverage, and
 fallback-only coverage separately. §6 shows how far from neutral the
 conditioning turned out to be.
 
-The cloud budget is below production. Per the spec the study used M = 2,000 at
-n ≤ 500 and 4,000 above; production's automatic rule would use 5,158 at
-n₀ = 500, 9,599 at n₀ = 5,000 and 17,874 at n₀ = 50,000. The consequence is
-visible in the realized trim depth on eligible datasets at α = .05: cell means
-run 1.99–6.42, and sixteen of the twenty-three cells sit below 3.2, with every
-n = 50,000 cell at 2.0. That is the regime where the band falls back toward the
-conservative full envelope of its own cloud. It makes the α = .05 arm *more*
-conservative than production would be, not less, which matters for how the
-result below should be read.
+The cloud budget is below production, and it bites asymmetrically — this is
+the caveat that most constrains what follows. Per the spec the study used
+M = 2,000 at n ≤ 500 and 4,000 above, against production's 5,158 at n₀ = 500,
+9,599 at n₀ = 5,000 and 17,874 at n₀ = 50,000. What matters is not M itself but
+the realized pointwise level j/(M+1): a *lower* level means a shallower trim
+and a wider band. At α = .05 the study's level runs **1.3–2.1× the level
+production's budget targets** (1.61, 1.32, 1.36, 2.14 at the four sizes). So
+the full-grid parent band here is trimmed harder — narrower, covering less —
+than a deployed band would be.
+
+The windowed interior arm is not starved in the same way, because it trims on
+about a thousand columns rather than the whole grid: across the 17,906 eligible
+α = .05 datasets the parent depth has median 3 and sits below the resolution
+floor of three 27.5% of the time, while the windowed depth has median 13 and
+falls below three in 0.09%. A same-labels check at n₀ = n₁ = 5,000 confirms the
+asymmetry: moving from M = 4,000 to production's 9,599 widens the floor band by
+2.7% and moves the windowed C = 1 arm by 0.6%. The headline below — that
+windowed C = 1 is already at or below nominal — is therefore robust to the
+budget, while the floor-versus-window coverage gap is, if anything, understated
+here.
 
 ### What was found
 
@@ -303,12 +314,18 @@ depth below three at α = .05 blocks it independently.
 Stage S's surplus was mostly tail surplus. Once the exact floor owns the tails
 and the trim is confined to a fixed interior, what remains is not conservative
 enough to spend: on three of five shapes at n = 5,000 the ladder's first rung
-is already at or under nominal. And the cloud-budget caveat pushes the same
-way — the α = .05 arm here was *more* conservative than a production-budget
-band would be, so a production band would show even less interior surplus, not
-more. The honest inference is that an interior exponent schedule is not the
-place to look for width after flooring. That is a genuine update: it does not
-contradict Stage S, it relocates Stage S's finding.
+is already at or under nominal, and that arm is the well-resolved one, so the
+budget shortfall does not explain it away. The budget does bite on the
+comparison: a production-budget floor band would be wider and cover more, which
+widens the floor-versus-window gap rather than closing it. Both readings point
+the same way — an interior exponent schedule is not the place to look for width
+after flooring. That is a genuine update: it does not contradict Stage S, it
+relocates Stage S's finding.
+
+The claim that would need a production-budget run to defend is a different and
+narrower one: the *absolute* coverage of the floor band at n ≥ 5,000. Those
+numbers are measured on a band trimmed 1.3–2.1× harder than the deployed one
+and should not be quoted as production behaviour.
 
 The second inference is about the window as an idea. A fixed [.02, .95]
 interior is unreachable below n₀ ≈ 350 and, for high-AUC ROCs, unreachable
@@ -641,17 +658,19 @@ shape substantially eligible at that size and α (41.8%), for a reason that has
 nothing to do with its ROC geometry and everything to do with how its cloud
 trims. The floor's left edge is data-adaptive in a way that is easy to forget.
 
-**The study's cloud budget put the α = .05 band into its fallback regime.** At
-M = 2,000–4,000 the realized trim depth on eligible datasets has cell means of
-1.99–6.42, with sixteen of twenty-three cells below 3.2 and every n = 50,000
-cell at 2.0 — at or under the resolution floor of three, where the band sits
-near the conservative full envelope of its own cloud. Production's automatic
-rule would have used 2.5–4.5× that budget (5,158 at n₀ = 500 against 2,000;
-17,874 at n₀ = 50,000 against 4,000). This does not overturn the interior
-result — it strengthens it,
-since a tighter production band would show even less interior surplus — but it
-does mean the α = .05 interior coverage numbers are systematically conservative
-and should not be quoted as production behaviour.
+**The cloud budget starves the parent band and not the windowed one.** This
+was easy to get backwards, and the direction matters. Across the 17,906
+eligible α = .05 datasets the full-grid parent trim depth has median 3 and sits
+below the resolution floor of three 27.5% of the time; the windowed interior
+depth, computed on ~1,000 columns instead of the whole grid, has median 13 and
+falls below three in 0.09%. Because band width is governed by the realized
+level j/(M+1), and the study's level runs 1.3–2.1× the level production's
+budget targets, the parent band here is *narrower* than a deployed one, not
+wider. A same-labels run at n₀ = n₁ = 5,000 confirms it: going from M = 4,000
+to production's 9,599 widens the floor band 2.7% and moves the windowed C = 1
+arm 0.6%. So the interior conclusion is safe, but the floor band's absolute
+coverage at n ≥ 5,000 is measured on the wrong object and should not be quoted
+as production behaviour.
 
 **`jump` is not a small-sample problem.** Raw C = 1 coverage on the
 step-function ROC gets *worse* with sample size: .238 at 10/10, .184 at 20/20,
@@ -697,6 +716,24 @@ unit square. Read against `next_method_ideas.md` §3, the update is:
 - **Small samples** (n ≤ 50 per class) are effectively an M3 regime today. If
   that matters, it is a new-construction problem, not a floor-tuning problem.
 
-The interior design should be finished at n = 50,000 in both imbalanced
-directions before anything from track 4 enters the decision-gating simulation,
-and it should be re-run at production cloud budgets.
+On finishing track 4, the missing replicates are the least valuable thing left
+to buy. In priority order:
+
+1. **Production cloud budgets at n = 5,000, a few hundred replicates per cell,
+   all three directions.** This is the only open question that could change a
+   headline, and it is cheap — roughly 1.1 s per unit against the study's
+   0.465, so about an hour and a half. It tests the floor band's absolute
+   coverage at deployed resolution, which is the number this screen could not
+   measure.
+2. **The two imbalanced directions at n = 50,000, at low replication.**
+   Eligibility is a proportion, so a few hundred replicates pin it, and
+   direction moved it sharply at n = 5,000 (`normal_0.95` eligibility .164,
+   .130, .025 at n₀ = 1,000, 5,000, 9,000). At n = 50,000 those cells are
+   entirely unmeasured.
+3. **More balanced n = 50,000 replicates.** Lowest value. The eligibility
+   geometry is already qualitatively settled there, the coverage direction is
+   what Theorem 7 predicts and what n = 5,000 already resolves at 1,000
+   replicates per cell, and running 14,490 more units at M = 4,000 would buy
+   precision on a band trimmed 2.1× harder than the deployed one. The one
+   thing it would settle is `kink`, whose .902 on 102 datasets carries an
+   interval of [.827, .952] and so does not individually exclude nominal.
