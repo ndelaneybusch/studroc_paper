@@ -86,13 +86,13 @@ class-specific spacings do not specify the other class's locations inside
 those gaps. Sorted-uniform completion behaves like local ROC linearity.
 Convex tail hooks and unobserved slivers can invalidate the resulting band.
 
-The [boundary follow-up](c_calibration_followup_report.md) located a curved,
+The boundary follow-up ([research record](research_record.md) Q2) located a curved,
 nonmonotone failure wedge in AUC and sample size. More importantly, the sliver
 construction and its subsequent prospective replication show that **the
 problem is not confined to high AUC or small samples**. AUC and class counts
 alone cannot certify that the fiducial band is safe.
 
-The completed [Stage F report](hybrid_floor_report.md) changes the practical
+The completed Stage F study ([research record](research_record.md) Q3) changes the practical
 assessment:
 
 | Study, at alpha = .05 | Cells | C = 1 macro coverage | Frontier hybrid | Hybrid minimum | Hybrid width cost versus C = 1 |
@@ -270,8 +270,8 @@ Keep it as a geometry experiment, not the leading universal replacement.
 
 ### 4.5 New paired screen: what is actually supported
 
-The [script](experiments/ideation_exact_20260905.py) and
-[results](experiments/res_ideation_exact_20260905.json) use 400 shared
+The script `experiments/ideation_exact_20260905.py` and its results
+`experiments/res_ideation_exact_20260905.json` (archived at git `8f904e6`) use 400 shared
 replicates per shape/count combination: 12 combinations, two alpha levels,
 five arms, 4,800 generated datasets. Runtime was about 20 seconds.
 Shapes are the diagonal, binormal AUC .95, a shifted $t_2$ pair with shift

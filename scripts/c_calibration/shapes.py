@@ -1,6 +1,7 @@
 """Shape library for the trim-exponent calibration study.
 
-Implements section 5.1 of ``stats/c_calibration_spec.md``: ten fitting
+Implements section 5.1 of the archived C-calibration spec
+(``git show 8f904e6:stats/c_calibration_spec.md``): ten fitting
 shapes and six held-out shapes, each a true ROC curve represented as a dense
 piecewise-linear ``Curve``. By rank invariance (``fiducial_band_theory.md``
 Proposition 2) a cell of the study is fully specified by (curve shape, n0,

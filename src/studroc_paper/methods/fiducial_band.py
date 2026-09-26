@@ -33,7 +33,7 @@ The band is assembled in four steps:
    hull with the exact M3 band there (:mod:`.hybrid_floor`); use
    ``m3_band_rs`` alone when a full-curve guarantee is required — see
    ``stats/fiducial_band_theory.md`` section 7.4 and
-   ``stats/hybrid_floor_report.md``. Exponents above 1 trim
+   ``stats/research_record.md`` Q2-Q3. Exponents above 1 trim
    deeper and are anti-conservative on heavy-tailed shapes: Stage S
    measured C = 2 at 92-94% realized coverage at alpha = .05 on
    t(2)-shaped cells at every n >= 500 (75% at n = 100), which retired
@@ -93,9 +93,9 @@ def production_trim_rows(n_grid: int) -> NDArray | None:
     (returns ``None``). Larger grids are thinned to every
     ``ceil(n_grid / 1000)``-th point plus the first and last 50 points; the
     band is still built and evaluated on the full grid. Validated leak-free
-    in ``stats/experiments/m2_report.md`` P4 and adopted as the production
-    rule by ``stats/c_calibration_spec.md`` section 5.3 (the trim-exponent
-    map is calibrated under exactly this rule).
+    in round 2 (``stats/research_record.md`` Q1) and adopted as the production
+    rule by section 5.3 of the C-calibration spec (archived at git
+    ``8f904e6``).
 
     Args:
         n_grid: Number of native grid points (``n0 + 1``).
@@ -268,7 +268,7 @@ def _auto_n_draws(n_grid: int, alpha_eff: float) -> int:
 
     The realized local level of the trimmed band is approximately
     ``ell(K, a) = 9.7e-4 * (a / 0.05)**1.2 * (K / 500)**-0.27`` (fitted in
-    ``stats/experiments/m2_report.md`` P4); requiring a trim depth of at
+    round 2, ``stats/research_record.md`` Q1); requiring a trim depth of at
     least ~5 for alpha-resolution gives ``n_draws ~ 5 / ell``.
     """
     ell = 9.7e-4 * (alpha_eff / 0.05) ** 1.2 * (n_grid / 500.0) ** (-0.27)
@@ -297,7 +297,7 @@ def fiducial_band(
     the CP upper bound at the band's own local level (the upper
     edge must reach 1 wherever the empirical TPR is 1) and a zero lower
     bound wherever the empirical TPR is 0. See the module docstring for the
-    construction and ``stats/experiments/m2_report.md`` for its measured
+    construction and ``stats/research_record.md`` for its measured
     behavior.
 
     Args:

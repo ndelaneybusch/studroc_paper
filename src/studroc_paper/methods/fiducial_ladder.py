@@ -1,7 +1,7 @@
 """Per-replicate ladder profiles of the fiducial band (Rust-accelerated).
 
 Study infrastructure for the offline calibration of the fiducial band's trim
-exponent (``stats/c_calibration_spec.md``). For one replicate — one merged
+exponent (``stats/research_record.md`` Q4). For one replicate — one merged
 label sequence — the ``fiducial_core.fiducial_ladder_profile`` kernel draws
 the fiducial cloud once and returns, for every trim depth ``j`` on a
 caller-supplied ladder, whether the allowance-augmented band at depth ``j``
@@ -33,8 +33,9 @@ def make_ladder(n_draws: int) -> NDArray[np.int64]:
     """Trim-depth ladder for profiling: dense small depths, geometric above.
 
     Every depth 1-40 plus ~70 geometrically spaced depths up to
-    ``n_draws // 2``, deduplicated. Matches the harness convention of
-    ``stats/experiments/m2_experiments.py``.
+    ``n_draws // 2``, deduplicated. Matches the convention of the round-2
+    harness ``stats/experiments/m2_experiments.py`` (archived at git
+    ``8f904e6``).
 
     Args:
         n_draws: Monte Carlo cloud size ``M``.

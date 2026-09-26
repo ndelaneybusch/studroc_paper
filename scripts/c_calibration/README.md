@@ -1,7 +1,9 @@
 # Trim-exponent calibration study — runbook
 
 Infrastructure for deciding whether, then calibrating, the fiducial band's
-`trim_exponent="auto"` map. Spec: `stats/c_calibration_spec.md`. Theory:
+`trim_exponent="auto"` map. Spec: `stats/c_calibration_spec.md` (archived:
+`git show 8f904e6:stats/c_calibration_spec.md`; all results are consolidated
+in `stats/research_record.md`). Theory:
 `stats/fiducial_band_theory.md` §7/§7.1.
 
 The full factorial campaign is deliberately conditional. Run the 27-cell
@@ -116,7 +118,7 @@ full design, not the default execution plan.
 ## Follow-up runs after the Stage S STOP (2026-08-30)
 
 Stage S returned its pre-registered STOP (see the OUTCOME entry in
-`stats/c_calibration_spec.md`): Stage A/B above will not run, and the
+the archived `stats/c_calibration_spec.md`): Stage A/B above will not run, and the
 sections describing them are historical. What remains is
 `followup_runs.py` (revised 2026-08-31 after external review; unit tests
 in `tests/test_followup_runs.py`), detailed in the spec's dated
@@ -148,7 +150,8 @@ item 5).
 
 ## Stage F (2026-09-02): the frontier M3 floor
 
-The theory-driven revision in `stats/hybrid_floor_spec.md` supersedes the
+The theory-driven revision in `stats/hybrid_floor_spec.md` (archived at git
+`8f904e6`) supersedes the
 current Stage F learned-region path. Proposition 14 / Corollary 14.1 rule
 out treating an `(AUC_ub,n0,n1)`-conditioned fit as distribution-free. The
 new primary object is a fixed rank-only frontier floor: the left honesty
@@ -187,7 +190,8 @@ stored cell definition matches the requested cell.
 
 ### Reporting
 
-Two analysis passes feed `stats/hybrid_floor_report.md`. Both re-score the
+Two analysis passes fed the Stage F report (archived at git `8f904e6`;
+summarized in `stats/research_record.md` Q3). Both re-score the
 stored paired parents; neither re-simulates.
 
 ```bash

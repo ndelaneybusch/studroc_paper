@@ -3,7 +3,8 @@
 The study summaries written by :mod:`stage_f_analysis` aggregate coverage and
 width but discard where a violation sat. This module re-scores stored records
 to recover the direction, FPR location, and TPR level of every miss, and
-renders the per-study tables quoted in ``stats/hybrid_floor_report.md``.
+renders the per-study tables of the Stage F report (archived at git
+``8f904e6``; summarized in ``stats/research_record.md`` Q3).
 """
 
 from __future__ import annotations

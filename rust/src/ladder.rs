@@ -1,5 +1,6 @@
 //! Ladder-profile kernel for the offline trim-exponent calibration study
-//! (`stats/c_calibration_spec.md` section 5.6).
+//! (C-calibration spec section 5.6, archived at git `8f904e6`;
+//! results in `stats/research_record.md`).
 //!
 //! For one replicate (one merged label sequence), the calibration study needs
 //! the full coverage-vs-depth profile of the fiducial band: at every trim

@@ -21,12 +21,7 @@ def fingerprint() -> dict:
     root = Path(__file__).resolve().parents[2]
     files = sorted((root / "scripts/methods_exploration").glob("*.py"))
     files.extend(sorted((root / "src/studroc_paper/methods").glob("*.py")))
-    files.extend(
-        [
-            root / "scripts/c_calibration/shapes.py",
-            root / "stats/methods_exploration_spec.md",
-        ]
-    )
+    files.extend([root / "scripts/c_calibration/shapes.py"])
     hashes = {
         str(path.relative_to(root)): hashlib.sha256(path.read_bytes()).hexdigest()
         for path in files

@@ -1,6 +1,7 @@
 # Bounded method exploration
 
-The [specification](../../stats/methods_exploration_spec.md) defines the methods,
+The specification (archived: `git show 8f904e6:stats/methods_exploration_spec.md`;
+results in [the research record](../../stats/research_record.md)) defines the methods,
 estimands, seed separation, limits, and gates. This package changes no production
 method. It uses the installed Rust extension and existing NumPy/SciPy environment;
 no new dependencies or uncommitted floor modules are required.

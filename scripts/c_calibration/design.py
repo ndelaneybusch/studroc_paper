@@ -1,6 +1,7 @@
 """Pre-registered design of the trim-exponent calibration study.
 
-Implements sections 4-5, 7 and 9 of ``stats/c_calibration_spec.md``: the
+Implements sections 4-5, 7 and 9 of the archived C-calibration spec
+(``git show 8f904e6:stats/c_calibration_spec.md``): the
 cell grids of every arm, the Monte Carlo budget rule (with its x2 safety
 factor), the alpha grids, the reference maps recorded per cell, and the
 deterministic per-(cell, rep) seeding. Rep counts are 2x the spec baseline
@@ -85,7 +86,7 @@ SCREEN_IMBALANCE_PAIRS = ((4_500, 500), (1_500, 500), (500, 1_500), (500, 4_500)
 
 
 def local_level_law(k_trim: int, alpha: float) -> float:
-    """Empirical local-level law of the trimmed band (m2_report.md P4).
+    """Empirical local-level law of the trimmed band (round 2, ``stats/research_record.md`` Q1).
 
     ``ell(K, a) = 9.7e-4 * (a / 0.05)**1.2 * (K / 500)**-0.27``, with ``K``
     the number of trim-grid points and ``a`` the effective trim level. The

@@ -2,7 +2,8 @@
 
 Stage S returned STOP on the auto-map effort; these items are what remains
 worth running on this infrastructure (see the dated follow-up entry in
-``stats/c_calibration_spec.md``, revised 2026-08-31 after review):
+the archived ``stats/c_calibration_spec.md`` at git ``8f904e6``, revised
+2026-08-31 after review; results in ``stats/research_record.md`` Q2-Q4):
 
 1. ``boundary``   — locate the small-n heavy-tail validity boundary of the
                     C = 1 default. Hybrid design (rev. 2026-08-31):

@@ -2,7 +2,7 @@
 
 *Working theory, 2026-09-06. Companion to the
 [method assessment](next_method_ideas.md), the
-[Stage F measurements](hybrid_floor_report.md), and the
+[research record](research_record.md) (all measurements), and the
 [Python implementation](../src/studroc_paper/methods/fiducial_band.py).
 This document describes the current construction and separates what we can
 prove from what still needs calibration. It does not change the implementation.*
@@ -670,9 +670,9 @@ none remains bounded away from zero.
 
 ### 7.2 What the completed experiments establish
 
-The [boundary follow-up](c_calibration_followup_report.md) found a curved,
+The boundary follow-up ([research record](research_record.md) Q2) found a curved,
 nonmonotone failure wedge for shifted heavy-tailed families. The
-[Stage F report](hybrid_floor_report.md) subsequently tested 160 cells
+Stage F study (research record Q3) subsequently tested 160 cells
 with 42,000 paired replicates. At $\alpha=.05$:
 
 | Design | Cells | Raw $C=1$ coverage, cell macro | Frontier hybrid |
@@ -1268,8 +1268,9 @@ This certifies conditional cloud content only, not population coverage.
 ### 11.3 Short verification experiment
 
 The reproducible
-[theory-check script](experiments/theory_checks_20260905.py) and
-[results](experiments/res_theory_checks_20260905.json) check:
+theory-check script `experiments/theory_checks_20260905.py` and its
+results `experiments/res_theory_checks_20260905.json` (archived at git
+`8f904e6`) check:
 
 - the bracket-area formula by two independent calculations, its
   largest-spacing bound, and the shift inequality on 10,726 cases;
@@ -1743,8 +1744,9 @@ Two consequences make this useful for unrestricted outer inversion:
   assume piecewise linearity of the truth.
 
 **Verification and practical status.** The
-[exact-arithmetic script](experiments/rank_likelihood_checks_20260906.py)
-and [results](experiments/res_rank_likelihood_checks_20260906.json)
+exact-arithmetic script `experiments/rank_likelihood_checks_20260906.py`
+and its results `experiments/res_rank_likelihood_checks_20260906.json`
+(archived at git `8f904e6`)
 check 2,358 exact anchor/path compatibility cases against independently
 merged quantile draws, 210 path/model combinations, normalization of
 25 complete rank laws, and 544 one-cut/subdivision identities. They verify the known
@@ -1933,8 +1935,8 @@ protection that cannot be removed.
   The bracket identity, path-prefix relaxation, and cell bounds are
   derived here; that paper does not establish their efficiency.
 - Empirical claims come from the
-  [boundary follow-up](c_calibration_followup_report.md),
-  [Stage F report](hybrid_floor_report.md), and linked experiment results,
+  boundary follow-up and Stage F studies as consolidated in the
+  [research record](research_record.md), and their archived results,
   not from these literature theorems.
 
 The gap-area, coverage-algebra, boundary-inversion, missing-mass,

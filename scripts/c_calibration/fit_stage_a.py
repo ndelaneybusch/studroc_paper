@@ -1,8 +1,8 @@
 """Stage A fitting protocol: the pre-registered D1-D6 decisions.
 
 Consumes the Stage A cell summaries produced by ``run.py --stage A`` and
-mechanically applies the decision rules of ``stats/c_calibration_spec.md``
-sections 2 and 6:
+mechanically applies the decision rules of the archived C-calibration spec
+(``git show 8f904e6:stats/c_calibration_spec.md``) sections 2 and 6:
 
 - **D1 (coordinate):** C is fixed as the production coordinate; dispersion
   of alpha_eff and ell is descriptive because coordinate rankings are not
