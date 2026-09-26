@@ -810,6 +810,8 @@ In rough order of how much each could change the picture:
    rates by FPR region, and pointwise miss distributions for M3. These were reported
    only piecemeal.
 10. **What drives the interior's finite-n conservatism and its shape spread** (§7.1). The end-geometry explanation was tested and mostly failed.
+    A related width lever, trimming only on the unfloored columns, is specced in
+    [`experiments/complement_trim_spec.md`](experiments/complement_trim_spec.md) (not yet run).
 11. **Class-split M3 follow-up** with a stated tolerance and more training shapes.
 12. **Adaptive refinement** for likelihood and test inversion. Only fixed coarse
     resolutions were tried.
