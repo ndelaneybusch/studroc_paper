@@ -475,8 +475,10 @@ alpha = .05 and .965× at .5, with macro coverage .976 against .980
 (minimum cell .948) and .680 against .729. None of the added misses fell
 inside the floor region. The gain shrinks with n, because the floor
 region is a shrinking fraction of the grid. The variant gives up the
-hybrid's domination of the raw C = 1 band. The proof that
-$j_{\rm recal}\ge j$ is open (theory §10.6). A declared alpha/2 + alpha/2
+hybrid's domination of the raw C = 1 band. Restricting the trim rows on the
+same cloud proves $j_{\rm recal}\ge j$ and nesting inside the original
+hybrid (theory §10.6); it does not prove population coverage.
+A declared alpha/2 + alpha/2
 budget split was wider than production in every cell and is not
 preferred.
 

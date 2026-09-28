@@ -1182,21 +1182,112 @@ geometric candidate: use the largest $t_L$ and smallest $t_R$ over that
 set. A data-derived parameter set needs its own coverage allowance, and
 covering the hook geometry still does not bound all non-hook failures.
 
-### 10.6 The tails-recalibrated trim depth (placeholder)
+### 10.6 The tails-recalibrated trim depth: deterministic monotonicity
 
 The preferred hybrid variant builds the band in two steps on one cloud.
-Step one computes the full-grid trim depth $j$ and, from it, the exact floor
-region $A$. Step two recomputes the trim depth $j_{\rm recal}$ on the
+Step one computes the production trim depth $j$ on rows $J$ (possibly
+thinned, as in §6.2) and, from it, the exact floor region $A$.
+Step two recomputes the trim depth $j_{\rm recal}$ on the
 production trim rows outside $A$ and floors $A$ as before. Definitions,
 arms, and measurements are in
 [`experiments/complement_trim_spec.md`](experiments/complement_trim_spec.md)
 and [`experiments/complement_trim_report.md`](experiments/complement_trim_report.md).
 
-**TODO (proof):** show $j_{\rm recal}\ge j$ for every cloud and every
-region, so that the region computed at $j$ keeps its defining property
-(10.1) at the deeper band. The experiment runner enforces
-$\max(j, j_{\rm recal})$, and the maximum never bound in 88,800 measured
-builds.
+**Proposition 10b (restriction of the trim domain). [Exact; derived here]**
+Fix any finite cloud with $M\ge2$ draws, the inclusive pointwise ranks
+$d_{bk}$ of §5, and a common trim level $a\in(0,1)$. For nonempty
+$J'\subseteq J$, define
+$$
+ D_b(J)=\min_{k\in J}d_{bk},\qquad
+ r=\lfloor aM\rfloor+1,\qquad
+ j(J)=\max\{1,\min\{D_{(r)}(J),\lfloor M/2\rfloor\}\}.
+$$
+Then
+$$
+ D_b(J')\ge D_b(J)\quad\text{for every }b,
+ \qquad \boxed{j(J')\ge j(J).}                          \tag{10.13}
+$$
+In particular, $j_{\rm recal}\ge j$ for $J'=J\setminus A$,
+even when $A$ is selected using the data, the entire cloud, and $j$.
+No independence or distributional assumption on that selection is needed.
+
+*Proof.* Removing terms from a minimum cannot decrease it. Consequently,
+for every threshold $x$,
+$$
+ \#\{b:D_b(J')\le x\}\le\#\{b:D_b(J)\le x\}.
+$$
+At $x=D_{(r)}(J')$, the left count is at least $r$, so the right
+count is at least $r$ and $D_{(r)}(J)\le D_{(r)}(J')$.
+The common clipping function is nondecreasing, proving (10.13).
+This argument is pointwise in the realized cloud and region, so it also
+covers adaptive selection, ties, and quantile clipping. $\square$
+
+If $J'$ is empty, the runner returns the original hybrid and sets
+$j_{\rm recal}=j$, giving equality. An alternative mathematical convention
+$\min\varnothing=M$ would give $j(\varnothing)=\lfloor M/2\rfloor$ and
+also preserve the inequality, but that is not the implemented fallback.
+Equality is possible even for a strict subset, because the selected
+order statistic or its clipped value need not change.
+
+**Implementation consequence.** `scripts/complement_trim/core.py`
+uses the same labels, draw count, seed, and trim level in both Rust calls,
+and obtains the complement by filtering the original production rows.
+The Rust cloud is generated independently of the trim rows, with a random
+stream indexed by draw. The two calls therefore have identical stored
+clouds, even across thread counts. Ranking, depth minima, quantile
+selection, and clipping use integer ranks. Float32 rounding can create
+ties but cannot invalidate the proof on the common stored cloud.
+Thus `max(j, j_recalibrated)` is mathematically redundant for this
+implementation. It can be removed; an assertion of the inequality would
+diagnose violations of the same-cloud/subset contract more directly than
+silently substituting the original tube. The 88,800 builds without a binding
+maximum are an implementation check, not the basis of the theorem.
+Changing the cloud, draw count, rank convention, level, or using trim
+domains that are not nested falls outside this result.
+
+**Corollary 10c (nesting of the complete hybrid). [Exact]** Hold the
+cloud, empirical counts, M3 band, and floor region $A$ fixed. Then
+$$
+ B_{\rm recal}\subseteq B_{\rm hybrid},\qquad
+ W(B_{\rm recal})\le W(B_{\rm hybrid}).                  \tag{10.14}
+$$
+Indeed, increasing $j$ raises the raw lower order statistic and lowers
+the raw upper order statistic at every output column, including columns
+omitted from trimming. The CP-form upper allowance also decreases:
+its quantile level $1-j/(M+1)$ decreases. Zeroing the same lower-edge
+coordinates, taking pointwise maxima with those upper allowances, and
+the running maximum preserve this nesting. Taking the hull with the same
+M3 band on the same $A$, followed by reverse cumulative minima for lower
+edges and forward cumulative maxima for upper edges, also preserves it.
+Thus coverage of the recalibrated hybrid implies coverage of the original
+hybrid for each coupled realization, while the reverse need not hold.
+Both hybrids still contain M3 on $A$, so the regional error bound of §8
+survives. Their edges need not coincide on $A$; absence of added in-region
+misses in the experiment is not a universal consequence of nesting.
+
+**Corollary 10d (monotonicity of the implemented left-cut criterion).
+[Exact]** The implemented left cut uses the fixed-parameter function
+$$
+ h(k,q)=P\{\operatorname{Binomial}(M,p_k)\ge q\},\qquad
+ p_k=(1-k/n_0)^{n_0},\qquad
+ k_L(q)=\min\{k:h(k,q)\le\epsilon\}.
+$$
+For $q'\ge q$, $h(k,q')\le h(k,q)$ at every $k$, hence
+$k_L(q')\le k_L(q)$. The right cut does not depend on $q$, so
+$A(q')\subseteq A(q)$. In particular, the region frozen at $j$ still
+satisfies this numerical binomial-tail criterion at $j_{\rm recal}$.
+This is the count-based refinement discussed after (10.1), not (10.1)
+itself, whose fixed-budget cutoff has no $j$ argument.
+
+This corollary does **not** turn a plug-in tail probability into a
+conditional or unconditional error guarantee for a cutoff selected from
+the same cloud. For fixed $k$, the count of end gaps reaching $t_k$ has
+the stated binomial law; conditioning on a cloud-selected $j$ or $k$
+does not preserve that law in general. Nor does the count alone identify
+which draw supplies the lower order statistic without an additional
+ordering argument. These limitations do not affect (10.13) or (10.14).
+The finite-sample population coverage of the recalibrated hybrid remains
+unproved, as does the exterior error bound in §10.4.
 
 ## 11. Width and the Monte Carlo layer
 

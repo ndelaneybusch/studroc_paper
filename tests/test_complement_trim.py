@@ -32,7 +32,7 @@ from studroc_paper.methods.fiducial_band_rs import (
 from studroc_paper.methods.fiducial_ladder import khat_from_labels  # noqa: E402
 from studroc_paper.methods.hybrid_floor import M3Floor, apply_m3_floor  # noqa: E402
 
-pytest.importorskip("fiducial_core")
+fiducial_core = pytest.importorskip("fiducial_core")
 
 
 def _labels(n0: int, n1: int, shift: float, seed: int) -> np.ndarray:
@@ -59,13 +59,48 @@ def test_complement_rows_are_production_rows_outside_the_region() -> None:
         assert set(rows) | set(np.flatnonzero(region)) >= set(full_trim_rows(n_grid))
 
 
+@pytest.mark.parametrize("n0", [12, 2002], ids=["full-grid", "thinned-grid"])
+@pytest.mark.parametrize("n_draws", [31, 32], ids=["odd-cloud", "even-cloud"])
+@pytest.mark.parametrize("alpha", [0.05, 0.5, 0.95], ids=["tail", "median", "deep"])
+def test_unguarded_kernel_depth_and_tube_are_nested_under_row_removal(
+    n0: int, n_draws: int, alpha: float
+) -> None:
+    """Check domain restriction through the kernel, including tied endpoints.
+
+    Regenerating the cloud on different thread counts must preserve nesting;
+    endpoint-only trimming must reach the clipped maximum despite all ties.
+    """
+    labels = _labels(n0=n0, n1=7, shift=1.5, seed=19)
+    rows = full_trim_rows(n0 + 1)
+    endpoints = np.array([0, n0], dtype=np.int64)
+    domains = (rows, np.unique(np.r_[rows[::3], endpoints]), endpoints)
+    previous = None
+    for index, domain in enumerate(domains):
+        lower, upper, depth = fiducial_core.fiducial_trimmed_tube(
+            labels=labels,
+            n_draws=n_draws,
+            alpha_eff=alpha,
+            seed=23,
+            n_threads=1 + index % 2,
+            trim_cols=domain.astype(np.uint64),
+        )
+        if previous is not None:
+            prev_lower, prev_upper, prev_depth = previous
+            assert depth >= prev_depth
+            assert np.all(lower >= prev_lower)
+            assert np.all(upper <= prev_upper)
+        previous = (lower, upper, depth)
+    assert depth == n_draws // 2
+
+
 @pytest.mark.parametrize(("n0", "n1", "shift"), [(200, 200, 2.5), (300, 100, 1.5)])
 def test_level_nesting_and_production_parity(n0: int, n1: int, shift: float) -> None:
     labels = _labels(n0, n1, shift, seed=n0 + n1)
     khat = khat_from_labels(lab_s=labels)
     level = build_level(labels=labels, khat=khat, level=0.05, seed=11, n_threads=1)
     diag = level["diag"]
-    assert diag["j_comp"] >= diag["j_full"]
+    assert diag["j_raw"] >= diag["j_full"]
+    assert diag["j_comp"] == diag["j_raw"]
     # Deeper trim on the same cloud gives a pointwise-nested band.
     raw_lo, raw_up = level["raw"]
     assert level["region"].any()
@@ -119,6 +154,7 @@ def test_fully_floored_grid_falls_back_to_the_hybrid() -> None:
     khat = khat_from_labels(lab_s=labels)
     level = build_level(labels=labels, khat=khat, level=0.05, seed=2, n_threads=1)
     assert level["diag"]["fallback"]
+    assert level["diag"]["j_raw"] == level["diag"]["j_full"]
     for a, b in zip(level["comp"], level["hybrid"], strict=True):
         np.testing.assert_array_equal(a, b)
 
