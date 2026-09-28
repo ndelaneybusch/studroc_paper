@@ -1182,6 +1182,22 @@ geometric candidate: use the largest $t_L$ and smallest $t_R$ over that
 set. A data-derived parameter set needs its own coverage allowance, and
 covering the hook geometry still does not bound all non-hook failures.
 
+### 10.6 The tails-recalibrated trim depth (placeholder)
+
+The preferred hybrid variant builds the band in two steps on one cloud.
+Step one computes the full-grid trim depth $j$ and, from it, the exact floor
+region $A$. Step two recomputes the trim depth $j_{\rm recal}$ on the
+production trim rows outside $A$ and floors $A$ as before. Definitions,
+arms, and measurements are in
+[`experiments/complement_trim_spec.md`](experiments/complement_trim_spec.md)
+and [`experiments/complement_trim_report.md`](experiments/complement_trim_report.md).
+
+**TODO (proof):** show $j_{\rm recal}\ge j$ for every cloud and every
+region, so that the region computed at $j$ keeps its defining property
+(10.1) at the deeper band. The experiment runner enforces
+$\max(j, j_{\rm recal})$, and the maximum never bound in 88,800 measured
+builds.
+
 ## 11. Width and the Monte Carlo layer
 
 ### 11.1 First-order width and its limits

@@ -138,7 +138,7 @@ not proof that it can be removed.
 |---|---|---|---|---|
 | **M3 with optimized deterministic marginal bands and class split** | Existing finite-sample proof carries through | Modest, credible gains; especially imbalance and near-diagonal ROCs | Limited ability to cure projection overcoverage | Fast after calibration; first exact implementation experiment |
 | **Direct rank-test inversion, with certified outer projection** | Exact in principle; general computation unresolved | Largest plausible improvement over M3 | Can target both signs and FPR regions directly | Main research investment |
-| **Fiducial band with localized exact protection and bracket completion** | Empirically strong; no general whole-band theorem | Best demonstrated practical compromise | Tail balance much improved; central-alpha surplus remains | Retain as empirical incumbent; targeted refinement |
+| **Fiducial band with localized exact protection (tails-recalibrated j) and bracket completion** | Empirically strong; no general whole-band theorem | Best demonstrated practical compromise; the tails-recalibrated j variant saves a further 1–6% | Tail balance much improved; central-alpha surplus remains | Retain as empirical incumbent, in its tails-recalibrated j form; targeted refinement |
 | **Rank-likelihood e-value inversion** | A direct finite-sample argument is available | Uncertain; likelihood/prediction penalties may be costly | One global budget; calibration may still be conservative | Bounded exploratory project |
 | **Direct ROC-process calibration with exact tails** | Interior asymptotics under explicit regularity | Plausible width and central-alpha gains | Most direct approximate control of local error shape | Secondary route if approximate validity is acceptable |
 
@@ -463,6 +463,23 @@ as a new arm, since both severe corner channels are lower-edge; it retains
 only the corresponding one-sided regional certificate and needs its own
 validation. Never infer its coverage from the two-sided arm.
 
+**Preferred variant: tails-recalibrated j.** Build the hybrid in two
+steps on one cloud. First compute the full-grid trim depth $j$ and the
+exact floor region from it. Then recompute the depth $j_{\rm recal}$ on the
+trim columns outside the region, and floor the region as before. The
+interior then stops paying for ends the floor already protects. On the
+50-cell complement-trim study (22,200 paired replicates per alpha,
+[report](experiments/complement_trim_report.md)), it was narrower than the
+production hybrid in every cell. It was .981× the hybrid's width at
+alpha = .05 and .965× at .5, with macro coverage .976 against .980
+(minimum cell .948) and .680 against .729. None of the added misses fell
+inside the floor region. The gain shrinks with n, because the floor
+region is a shrinking fraction of the grid. The variant gives up the
+hybrid's domination of the raw C = 1 band. The proof that
+$j_{\rm recal}\ge j$ is open (theory §10.6). A declared alpha/2 + alpha/2
+budget split was wider than production in every cell and is not
+preferred.
+
 Keep a small complete reference set at alpha = .05, .2 and .5. The
 current alpha-independent region can plausibly waste width at .5, but
 its actual required extent must be derived or measured. Simply shrinking
@@ -700,8 +717,8 @@ confirmation.
   Unconditional coverage can be manipulated this way without improving
   the information conveyed by a realized dataset.
 
-The recommended allocation of effort is therefore: keep M3 and the frozen
-hybrid as anchors, take the inexpensive exact class-split improvement
+The recommended allocation of effort is therefore: keep M3 and the
+hybrid, in its tails-recalibrated j form (§6.2), as anchors, take the inexpensive exact class-split improvement
 through a broader screen, and put the main methodological effort into
 certified direct rank inversion. Pursue bracket completion alongside it
 because it addresses the measured fiducial failure at its source.

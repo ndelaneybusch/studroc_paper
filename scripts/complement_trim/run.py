@@ -237,8 +237,8 @@ def summarize(root: Path) -> dict:
             entry["levels"][key] = level
         cells.append(entry)
     summary = {"schema": "complement-trim-summary/v1", "cells": cells}
-    (root / "summary.json").write_text(json.dumps(summary, indent=1))
-    (root / "report.md").write_text(_report(cells))
+    (root / "summary.json").write_text(json.dumps(summary, indent=1), encoding="utf-8")
+    (root / "report.md").write_text(_report(cells), encoding="utf-8")
     return summary
 
 
