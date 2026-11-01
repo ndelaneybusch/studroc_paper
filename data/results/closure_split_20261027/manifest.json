@@ -1,0 +1,4121 @@
+{
+ "schema": "closure-split-cell/v1",
+ "cells": [
+  {
+   "name": "t-typ-beta_opposing-a0.564--n50x50",
+   "study": "T",
+   "block": "typical",
+   "n0": 50,
+   "n1": 50,
+   "truth": {
+    "kind": "lhs",
+    "family": "beta_opposing",
+    "auc": 0.5639306347424222,
+    "params": {
+     "alpha": 2.106681361129084
+    }
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "",
+   "meta": {
+    "redraws": 0
+   }
+  },
+  {
+   "name": "t-typ-bimodal_negative-a0.941--n50x50",
+   "study": "T",
+   "block": "typical",
+   "n0": 50,
+   "n1": 50,
+   "truth": {
+    "kind": "lhs",
+    "family": "bimodal_negative",
+    "auc": 0.9413332872265149,
+    "params": {
+     "mixture_weight": 0.11732135056142204,
+     "mode_separation": 2.2854552788791462
+    }
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "",
+   "meta": {
+    "redraws": 0
+   }
+  },
+  {
+   "name": "t-typ-binormal-a0.603--n50x50",
+   "study": "T",
+   "block": "typical",
+   "n0": 50,
+   "n1": 50,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.6034983028936185
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "",
+   "meta": {
+    "redraws": 0
+   }
+  },
+  {
+   "name": "t-typ-hetero_gaussian-a0.947--n50x50",
+   "study": "T",
+   "block": "typical",
+   "n0": 50,
+   "n1": 50,
+   "truth": {
+    "kind": "lhs",
+    "family": "hetero_gaussian",
+    "auc": 0.9473415420298699,
+    "params": {
+     "sigma_ratio": 3.2256663833712858
+    }
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "",
+   "meta": {
+    "redraws": 0
+   }
+  },
+  {
+   "name": "t-typ-student_t-a0.701--n50x50",
+   "study": "T",
+   "block": "typical",
+   "n0": 50,
+   "n1": 50,
+   "truth": {
+    "kind": "lhs",
+    "family": "student_t",
+    "auc": 0.7011135037504006,
+    "params": {
+     "df": 6.8298795780549995
+    }
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "",
+   "meta": {
+    "redraws": 0
+   }
+  },
+  {
+   "name": "t-typ-weibull-a0.913--n50x50",
+   "study": "T",
+   "block": "typical",
+   "n0": 50,
+   "n1": 50,
+   "truth": {
+    "kind": "lhs",
+    "family": "weibull",
+    "auc": 0.912759779569424,
+    "params": {
+     "shape": 1.0
+    }
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "",
+   "meta": {
+    "redraws": 0
+   }
+  },
+  {
+   "name": "t-typ-beta_opposing-a0.972--n150x150",
+   "study": "T",
+   "block": "typical",
+   "n0": 150,
+   "n1": 150,
+   "truth": {
+    "kind": "lhs",
+    "family": "beta_opposing",
+    "auc": 0.9724859933214967,
+    "params": {
+     "alpha": 5.894736342548617
+    }
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "",
+   "meta": {
+    "redraws": 0
+   }
+  },
+  {
+   "name": "t-typ-bimodal_negative-a0.789--n150x150",
+   "study": "T",
+   "block": "typical",
+   "n0": 150,
+   "n1": 150,
+   "truth": {
+    "kind": "lhs",
+    "family": "bimodal_negative",
+    "auc": 0.7885904021674128,
+    "params": {
+     "mixture_weight": 0.6463205261447931,
+     "mode_separation": 0.8309126423716631
+    }
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "",
+   "meta": {
+    "redraws": 0
+   }
+  },
+  {
+   "name": "t-typ-binormal-a0.982--n150x150",
+   "study": "T",
+   "block": "typical",
+   "n0": 150,
+   "n1": 150,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.9824896166502717
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "",
+   "meta": {
+    "redraws": 0
+   }
+  },
+  {
+   "name": "t-typ-hetero_gaussian-a0.990--n150x150",
+   "study": "T",
+   "block": "typical",
+   "n0": 150,
+   "n1": 150,
+   "truth": {
+    "kind": "lhs",
+    "family": "hetero_gaussian",
+    "auc": 0.9895319025288042,
+    "params": {
+     "sigma_ratio": 1.4453318034173124
+    }
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "",
+   "meta": {
+    "redraws": 0
+   }
+  },
+  {
+   "name": "t-typ-student_t-a0.981--n150x150",
+   "study": "T",
+   "block": "typical",
+   "n0": 150,
+   "n1": 150,
+   "truth": {
+    "kind": "lhs",
+    "family": "student_t",
+    "auc": 0.9809831738493879,
+    "params": {
+     "df": 23.023335851164532
+    }
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "",
+   "meta": {
+    "redraws": 0
+   }
+  },
+  {
+   "name": "t-typ-weibull-a0.837--n150x150",
+   "study": "T",
+   "block": "typical",
+   "n0": 150,
+   "n1": 150,
+   "truth": {
+    "kind": "lhs",
+    "family": "weibull",
+    "auc": 0.8366063174791063,
+    "params": {
+     "shape": 1.0
+    }
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "",
+   "meta": {
+    "redraws": 0
+   }
+  },
+  {
+   "name": "t-typ-beta_opposing-a0.782--n150x150",
+   "study": "T",
+   "block": "typical",
+   "n0": 150,
+   "n1": 150,
+   "truth": {
+    "kind": "lhs",
+    "family": "beta_opposing",
+    "auc": 0.7819073374484019,
+    "params": {
+     "alpha": 6.133508045759189
+    }
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "",
+   "meta": {
+    "redraws": 0
+   }
+  },
+  {
+   "name": "t-typ-bimodal_negative-a0.973--n150x150",
+   "study": "T",
+   "block": "typical",
+   "n0": 150,
+   "n1": 150,
+   "truth": {
+    "kind": "lhs",
+    "family": "bimodal_negative",
+    "auc": 0.9731411087258386,
+    "params": {
+     "mixture_weight": 0.1513244729187532,
+     "mode_separation": 0.2312000693702959
+    }
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "",
+   "meta": {
+    "redraws": 0
+   }
+  },
+  {
+   "name": "t-typ-binormal-a0.930--n150x150",
+   "study": "T",
+   "block": "typical",
+   "n0": 150,
+   "n1": 150,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.9302678707738387
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "",
+   "meta": {
+    "redraws": 0
+   }
+  },
+  {
+   "name": "t-typ-hetero_gaussian-a0.612--n150x150",
+   "study": "T",
+   "block": "typical",
+   "n0": 150,
+   "n1": 150,
+   "truth": {
+    "kind": "lhs",
+    "family": "hetero_gaussian",
+    "auc": 0.611981037130384,
+    "params": {
+     "sigma_ratio": 4.956985642322252
+    }
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "",
+   "meta": {
+    "redraws": 0
+   }
+  },
+  {
+   "name": "t-typ-student_t-a0.789--n150x150",
+   "study": "T",
+   "block": "typical",
+   "n0": 150,
+   "n1": 150,
+   "truth": {
+    "kind": "lhs",
+    "family": "student_t",
+    "auc": 0.7889923615776784,
+    "params": {
+     "df": 7.577105150675637
+    }
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "",
+   "meta": {
+    "redraws": 0
+   }
+  },
+  {
+   "name": "t-typ-weibull-a0.942--n150x150",
+   "study": "T",
+   "block": "typical",
+   "n0": 150,
+   "n1": 150,
+   "truth": {
+    "kind": "lhs",
+    "family": "weibull",
+    "auc": 0.9419472353544408,
+    "params": {
+     "shape": 1.0
+    }
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "",
+   "meta": {
+    "redraws": 0
+   }
+  },
+  {
+   "name": "t-typ-beta_opposing-a0.984--n500x500",
+   "study": "T",
+   "block": "typical",
+   "n0": 500,
+   "n1": 500,
+   "truth": {
+    "kind": "lhs",
+    "family": "beta_opposing",
+    "auc": 0.9839854759970443,
+    "params": {
+     "alpha": 5.298507834525008
+    }
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "",
+   "meta": {
+    "redraws": 0
+   }
+  },
+  {
+   "name": "t-typ-bimodal_negative-a0.979--n500x500",
+   "study": "T",
+   "block": "typical",
+   "n0": 500,
+   "n1": 500,
+   "truth": {
+    "kind": "lhs",
+    "family": "bimodal_negative",
+    "auc": 0.9790757893939896,
+    "params": {
+     "mixture_weight": 0.4373223543754434,
+     "mode_separation": 0.9533454088777626
+    }
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "",
+   "meta": {
+    "redraws": 0
+   }
+  },
+  {
+   "name": "t-typ-binormal-a0.945--n500x500",
+   "study": "T",
+   "block": "typical",
+   "n0": 500,
+   "n1": 500,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.945327174207304
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "",
+   "meta": {
+    "redraws": 0
+   }
+  },
+  {
+   "name": "t-typ-hetero_gaussian-a0.924--n500x500",
+   "study": "T",
+   "block": "typical",
+   "n0": 500,
+   "n1": 500,
+   "truth": {
+    "kind": "lhs",
+    "family": "hetero_gaussian",
+    "auc": 0.9243496995776912,
+    "params": {
+     "sigma_ratio": 1.5034829976420658
+    }
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "",
+   "meta": {
+    "redraws": 0
+   }
+  },
+  {
+   "name": "t-typ-student_t-a0.948--n500x500",
+   "study": "T",
+   "block": "typical",
+   "n0": 500,
+   "n1": 500,
+   "truth": {
+    "kind": "lhs",
+    "family": "student_t",
+    "auc": 0.9483940766052061,
+    "params": {
+     "df": 13.641291505791095
+    }
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "",
+   "meta": {
+    "redraws": 0
+   }
+  },
+  {
+   "name": "t-typ-weibull-a0.620--n500x500",
+   "study": "T",
+   "block": "typical",
+   "n0": 500,
+   "n1": 500,
+   "truth": {
+    "kind": "lhs",
+    "family": "weibull",
+    "auc": 0.6195142081921376,
+    "params": {
+     "shape": 1.0
+    }
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "",
+   "meta": {
+    "redraws": 0
+   }
+  },
+  {
+   "name": "t-typ-beta_opposing-a0.664--n500x500",
+   "study": "T",
+   "block": "typical",
+   "n0": 500,
+   "n1": 500,
+   "truth": {
+    "kind": "lhs",
+    "family": "beta_opposing",
+    "auc": 0.6638435402406037,
+    "params": {
+     "alpha": 5.1738770974899655
+    }
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "",
+   "meta": {
+    "redraws": 0
+   }
+  },
+  {
+   "name": "t-typ-bimodal_negative-a0.942--n500x500",
+   "study": "T",
+   "block": "typical",
+   "n0": 500,
+   "n1": 500,
+   "truth": {
+    "kind": "lhs",
+    "family": "bimodal_negative",
+    "auc": 0.9424101522820352,
+    "params": {
+     "mixture_weight": 0.7460176454245271,
+     "mode_separation": 3.763968274298916
+    }
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "",
+   "meta": {
+    "redraws": 0
+   }
+  },
+  {
+   "name": "t-typ-binormal-a0.960--n500x500",
+   "study": "T",
+   "block": "typical",
+   "n0": 500,
+   "n1": 500,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.9595094754948265
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "",
+   "meta": {
+    "redraws": 0
+   }
+  },
+  {
+   "name": "t-typ-hetero_gaussian-a0.634--n500x500",
+   "study": "T",
+   "block": "typical",
+   "n0": 500,
+   "n1": 500,
+   "truth": {
+    "kind": "lhs",
+    "family": "hetero_gaussian",
+    "auc": 0.6342299117839052,
+    "params": {
+     "sigma_ratio": 2.4662367358096753
+    }
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "",
+   "meta": {
+    "redraws": 0
+   }
+  },
+  {
+   "name": "t-typ-student_t-a0.987--n500x500",
+   "study": "T",
+   "block": "typical",
+   "n0": 500,
+   "n1": 500,
+   "truth": {
+    "kind": "lhs",
+    "family": "student_t",
+    "auc": 0.9866821865082706,
+    "params": {
+     "df": 27.06394406637075
+    }
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "",
+   "meta": {
+    "redraws": 0
+   }
+  },
+  {
+   "name": "t-typ-weibull-a0.954--n500x500",
+   "study": "T",
+   "block": "typical",
+   "n0": 500,
+   "n1": 500,
+   "truth": {
+    "kind": "lhs",
+    "family": "weibull",
+    "auc": 0.9535893553517776,
+    "params": {
+     "shape": 1.0
+    }
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "",
+   "meta": {
+    "redraws": 0
+   }
+  },
+  {
+   "name": "t-typ-beta_opposing-a0.954--n900x100",
+   "study": "T",
+   "block": "typical",
+   "n0": 900,
+   "n1": 100,
+   "truth": {
+    "kind": "lhs",
+    "family": "beta_opposing",
+    "auc": 0.9540138697607384,
+    "params": {
+     "alpha": 6.933648714869887
+    }
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "",
+   "meta": {
+    "redraws": 0
+   }
+  },
+  {
+   "name": "t-typ-bimodal_negative-a0.627--n900x100",
+   "study": "T",
+   "block": "typical",
+   "n0": 900,
+   "n1": 100,
+   "truth": {
+    "kind": "lhs",
+    "family": "bimodal_negative",
+    "auc": 0.6274252115095322,
+    "params": {
+     "mixture_weight": 0.4324078266072413,
+     "mode_separation": 2.0243413762612357
+    }
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "",
+   "meta": {
+    "redraws": 0
+   }
+  },
+  {
+   "name": "t-typ-binormal-a0.890--n900x100",
+   "study": "T",
+   "block": "typical",
+   "n0": 900,
+   "n1": 100,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.8900712485165938
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "",
+   "meta": {
+    "redraws": 0
+   }
+  },
+  {
+   "name": "t-typ-hetero_gaussian-a0.988--n900x100",
+   "study": "T",
+   "block": "typical",
+   "n0": 900,
+   "n1": 100,
+   "truth": {
+    "kind": "lhs",
+    "family": "hetero_gaussian",
+    "auc": 0.9878236323570261,
+    "params": {
+     "sigma_ratio": 2.5376263836842736
+    }
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "",
+   "meta": {
+    "redraws": 0
+   }
+  },
+  {
+   "name": "t-typ-student_t-a0.729--n900x100",
+   "study": "T",
+   "block": "typical",
+   "n0": 900,
+   "n1": 100,
+   "truth": {
+    "kind": "lhs",
+    "family": "student_t",
+    "auc": 0.729451262750836,
+    "params": {
+     "df": 8.559359359219721
+    }
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "",
+   "meta": {
+    "redraws": 0
+   }
+  },
+  {
+   "name": "t-typ-weibull-a0.968--n900x100",
+   "study": "T",
+   "block": "typical",
+   "n0": 900,
+   "n1": 100,
+   "truth": {
+    "kind": "lhs",
+    "family": "weibull",
+    "auc": 0.9682447068099682,
+    "params": {
+     "shape": 1.0
+    }
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "",
+   "meta": {
+    "redraws": 0
+   }
+  },
+  {
+   "name": "t-typ-beta_opposing-a0.851--n900x100",
+   "study": "T",
+   "block": "typical",
+   "n0": 900,
+   "n1": 100,
+   "truth": {
+    "kind": "lhs",
+    "family": "beta_opposing",
+    "auc": 0.8513840290948161,
+    "params": {
+     "alpha": 4.650005393217881
+    }
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "",
+   "meta": {
+    "redraws": 0
+   }
+  },
+  {
+   "name": "t-typ-bimodal_negative-a0.858--n900x100",
+   "study": "T",
+   "block": "typical",
+   "n0": 900,
+   "n1": 100,
+   "truth": {
+    "kind": "lhs",
+    "family": "bimodal_negative",
+    "auc": 0.8575647497422378,
+    "params": {
+     "mixture_weight": 0.720340964007442,
+     "mode_separation": 2.3246433805233546
+    }
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "",
+   "meta": {
+    "redraws": 0
+   }
+  },
+  {
+   "name": "t-typ-binormal-a0.886--n900x100",
+   "study": "T",
+   "block": "typical",
+   "n0": 900,
+   "n1": 100,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.886455946329155
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "",
+   "meta": {
+    "redraws": 0
+   }
+  },
+  {
+   "name": "t-typ-hetero_gaussian-a0.599--n900x100",
+   "study": "T",
+   "block": "typical",
+   "n0": 900,
+   "n1": 100,
+   "truth": {
+    "kind": "lhs",
+    "family": "hetero_gaussian",
+    "auc": 0.5988707202542233,
+    "params": {
+     "sigma_ratio": 2.585920984600143
+    }
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "",
+   "meta": {
+    "redraws": 0
+   }
+  },
+  {
+   "name": "t-typ-student_t-a0.966--n900x100",
+   "study": "T",
+   "block": "typical",
+   "n0": 900,
+   "n1": 100,
+   "truth": {
+    "kind": "lhs",
+    "family": "student_t",
+    "auc": 0.9660312255814224,
+    "params": {
+     "df": 8.871974769113763
+    }
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "",
+   "meta": {
+    "redraws": 0
+   }
+  },
+  {
+   "name": "t-typ-weibull-a0.905--n900x100",
+   "study": "T",
+   "block": "typical",
+   "n0": 900,
+   "n1": 100,
+   "truth": {
+    "kind": "lhs",
+    "family": "weibull",
+    "auc": 0.9052470812753289,
+    "params": {
+     "shape": 1.0
+    }
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "",
+   "meta": {
+    "redraws": 0
+   }
+  },
+  {
+   "name": "t-typ-beta_opposing-a0.924--n5000x5000",
+   "study": "T",
+   "block": "typical",
+   "n0": 5000,
+   "n1": 5000,
+   "truth": {
+    "kind": "lhs",
+    "family": "beta_opposing",
+    "auc": 0.9237662196969054,
+    "params": {
+     "alpha": 7.942105670420334
+    }
+   },
+   "quantize": null,
+   "reps": 500,
+   "reps_max": 1500,
+   "mechanism": "",
+   "meta": {
+    "redraws": 0
+   }
+  },
+  {
+   "name": "t-typ-bimodal_negative-a0.952--n5000x5000",
+   "study": "T",
+   "block": "typical",
+   "n0": 5000,
+   "n1": 5000,
+   "truth": {
+    "kind": "lhs",
+    "family": "bimodal_negative",
+    "auc": 0.9524888844001977,
+    "params": {
+     "mixture_weight": 0.4843219348012122,
+     "mode_separation": 2.014206937561427
+    }
+   },
+   "quantize": null,
+   "reps": 500,
+   "reps_max": 1500,
+   "mechanism": "",
+   "meta": {
+    "redraws": 0
+   }
+  },
+  {
+   "name": "t-typ-hetero_gaussian-a0.970--n5000x5000",
+   "study": "T",
+   "block": "typical",
+   "n0": 5000,
+   "n1": 5000,
+   "truth": {
+    "kind": "lhs",
+    "family": "hetero_gaussian",
+    "auc": 0.969848614290017,
+    "params": {
+     "sigma_ratio": 1.0802266249596149
+    }
+   },
+   "quantize": null,
+   "reps": 500,
+   "reps_max": 1500,
+   "mechanism": "",
+   "meta": {
+    "redraws": 0
+   }
+  },
+  {
+   "name": "t-typ-weibull-a0.823--n5000x5000",
+   "study": "T",
+   "block": "typical",
+   "n0": 5000,
+   "n1": 5000,
+   "truth": {
+    "kind": "lhs",
+    "family": "weibull",
+    "auc": 0.8231420767054568,
+    "params": {
+     "shape": 1.0
+    }
+   },
+   "quantize": null,
+   "reps": 500,
+   "reps_max": 1500,
+   "mechanism": "",
+   "meta": {
+    "redraws": 0
+   }
+  },
+  {
+   "name": "t-fav-bn99--n300x300",
+   "study": "T",
+   "block": "favored",
+   "n0": 300,
+   "n1": 300,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.99
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "very long run, smooth concave truth",
+   "meta": {}
+  },
+  {
+   "name": "t-fav-hetero0.5-97--n600x600",
+   "study": "T",
+   "block": "favored",
+   "n0": 600,
+   "n1": 600,
+   "truth": {
+    "kind": "hetero_gaussian",
+    "auc": 0.97,
+    "sigma_ratio": 0.5
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "narrow positives: long run at n = 600",
+   "meta": {}
+  },
+  {
+   "name": "t-fav-beta-a0.7-98--n1000x1000",
+   "study": "T",
+   "block": "favored",
+   "n0": 1000,
+   "n1": 1000,
+   "truth": {
+    "kind": "lhs",
+    "family": "beta_opposing",
+    "auc": 0.98,
+    "params": {
+     "alpha": 0.7
+    }
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "U-shaped scores, long run at n = 1,000",
+   "meta": {}
+  },
+  {
+   "name": "t-fav-bimodal-97--n400x400",
+   "study": "T",
+   "block": "favored",
+   "n0": 400,
+   "n1": 400,
+   "truth": {
+    "kind": "bimodal_negative",
+    "auc": 0.97,
+    "mode_separation": 3.5,
+    "mixture_weight": 0.7
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "mid-curve plateau with a long run",
+   "meta": {}
+  },
+  {
+   "name": "t-fav-anchor-wedge01-t2-99--n500x500",
+   "study": "T",
+   "block": "favored",
+   "n0": 500,
+   "n1": 500,
+   "truth": {
+    "kind": "student_t",
+    "auc": 0.99,
+    "df": 2.0
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "probe anchor (wedge-01)",
+   "meta": {}
+  },
+  {
+   "name": "t-fav-anchor-imb17-t2-98--n1500x300",
+   "study": "T",
+   "block": "favored",
+   "n0": 1500,
+   "n1": 300,
+   "truth": {
+    "kind": "student_t",
+    "auc": 0.98,
+    "df": 2.0
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "probe anchor (imbalance-17), scarce positives",
+   "meta": {}
+  },
+  {
+   "name": "t-red-R1-hetero3-97--n300x300",
+   "study": "T",
+   "block": "red",
+   "n0": 300,
+   "n1": 300,
+   "truth": {
+    "kind": "hetero_gaussian",
+    "auc": 0.97,
+    "sigma_ratio": 3.0
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "upper-corner hook wider than the right floor",
+   "meta": {}
+  },
+  {
+   "name": "t-red-R1-hetero3-97--n2000x2000",
+   "study": "T",
+   "block": "red",
+   "n0": 2000,
+   "n1": 2000,
+   "truth": {
+    "kind": "hetero_gaussian",
+    "auc": 0.97,
+    "sigma_ratio": 3.0
+   },
+   "quantize": null,
+   "reps": 750,
+   "reps_max": 2250,
+   "mechanism": "upper-corner hook wider than the right floor",
+   "meta": {}
+  },
+  {
+   "name": "t-red-R1-t1.3-95--n1000x1000",
+   "study": "T",
+   "block": "red",
+   "n0": 1000,
+   "n1": 1000,
+   "truth": {
+    "kind": "student_t",
+    "auc": 0.95,
+    "df": 1.3
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "near-Cauchy hooks at both corners",
+   "meta": {}
+  },
+  {
+   "name": "t-red-R2-hardpos2-t2-99--n500x500",
+   "study": "T",
+   "block": "red",
+   "n0": 500,
+   "n1": 500,
+   "truth": {
+    "kind": "hard_positive",
+    "body": {
+     "kind": "student_t",
+     "auc": 0.99,
+     "df": 2.0
+    },
+    "fraction": 0.02
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "hard positives: interior hook just outside a short right region",
+   "meta": {}
+  },
+  {
+   "name": "t-red-R2-hardpos1-t2-99--n2000x2000",
+   "study": "T",
+   "block": "red",
+   "n0": 2000,
+   "n1": 2000,
+   "truth": {
+    "kind": "hard_positive",
+    "body": {
+     "kind": "student_t",
+     "auc": 0.99,
+     "df": 2.0
+    },
+    "fraction": 0.01
+   },
+   "quantize": null,
+   "reps": 750,
+   "reps_max": 2250,
+   "mechanism": "hard positives: interior hook just outside a short right region",
+   "meta": {}
+  },
+  {
+   "name": "t-red-R2-hardpos4-bn97--n300x300",
+   "study": "T",
+   "block": "red",
+   "n0": 300,
+   "n1": 300,
+   "truth": {
+    "kind": "hard_positive",
+    "body": {
+     "kind": "binormal",
+     "auc": 0.97
+    },
+    "fraction": 0.04
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "hard positives on a smooth body",
+   "meta": {}
+  },
+  {
+   "name": "t-red-R3-hardneg1-t2-99--n1000x1000",
+   "study": "T",
+   "block": "red",
+   "n0": 1000,
+   "n1": 1000,
+   "truth": {
+    "kind": "hard_negative",
+    "body": {
+     "kind": "student_t",
+     "auc": 0.99,
+     "df": 2.0
+    },
+    "fraction": 0.01
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "hard negatives: low-FPR hook at about 10 grid points",
+   "meta": {}
+  },
+  {
+   "name": "t-red-R3-hardneg2-t2-99--n300x300",
+   "study": "T",
+   "block": "red",
+   "n0": 300,
+   "n1": 300,
+   "truth": {
+    "kind": "hard_negative",
+    "body": {
+     "kind": "student_t",
+     "auc": 0.99,
+     "df": 2.0
+    },
+    "fraction": 0.02
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "hard negatives: low-FPR hook at about 6 grid points",
+   "meta": {}
+  },
+  {
+   "name": "t-red-R4-obvious-c12-bn75--n500x500",
+   "study": "T",
+   "block": "red",
+   "n0": 500,
+   "n1": 500,
+   "truth": {
+    "kind": "obvious_subgroup",
+    "body": {
+     "kind": "binormal",
+     "auc": 0.75
+    },
+    "fraction": 0.5,
+    "top_count": 12
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "near-vertical rise over the first 12 negatives",
+   "meta": {}
+  },
+  {
+   "name": "t-red-R4-obvious-c12-bn75--n2000x500",
+   "study": "T",
+   "block": "red",
+   "n0": 2000,
+   "n1": 500,
+   "truth": {
+    "kind": "obvious_subgroup",
+    "body": {
+     "kind": "binormal",
+     "auc": 0.75
+    },
+    "fraction": 0.5,
+    "top_count": 12
+   },
+   "quantize": null,
+   "reps": 750,
+   "reps_max": 2250,
+   "mechanism": "near-vertical rise over the first 12 negatives, scarce positives",
+   "meta": {}
+  },
+  {
+   "name": "t-red-R5-septop25-bn80--n300x300",
+   "study": "T",
+   "block": "red",
+   "n0": 300,
+   "n1": 300,
+   "truth": {
+    "kind": "separated_top",
+    "body": {
+     "kind": "binormal",
+     "auc": 0.8
+    },
+    "fraction": 0.25
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "R(0) = .25: upper edge at the left cut",
+   "meta": {}
+  },
+  {
+   "name": "t-red-R5-septop25-bn80--n2000x2000",
+   "study": "T",
+   "block": "red",
+   "n0": 2000,
+   "n1": 2000,
+   "truth": {
+    "kind": "separated_top",
+    "body": {
+     "kind": "binormal",
+     "auc": 0.8
+    },
+    "fraction": 0.25
+   },
+   "quantize": null,
+   "reps": 750,
+   "reps_max": 2250,
+   "mechanism": "R(0) = .25: upper edge at the left cut",
+   "meta": {}
+  },
+  {
+   "name": "t-red-R6-scarce-t3-95--n4500x500",
+   "study": "T",
+   "block": "red",
+   "n0": 4500,
+   "n1": 500,
+   "truth": {
+    "kind": "student_t",
+    "auc": 0.95,
+    "df": 3.0
+   },
+   "quantize": null,
+   "reps": 750,
+   "reps_max": 2250,
+   "mechanism": "negative majority: long run governed by n1",
+   "meta": {}
+  },
+  {
+   "name": "t-red-R6-scarce-bn95--n9000x1000",
+   "study": "T",
+   "block": "red",
+   "n0": 9000,
+   "n1": 1000,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.95
+   },
+   "quantize": null,
+   "reps": 500,
+   "reps_max": 1500,
+   "mechanism": "rare positives at the main suite's largest n",
+   "meta": {}
+  },
+  {
+   "name": "t-red-R6-mirror-t3-95--n500x4500",
+   "study": "T",
+   "block": "red",
+   "n0": 500,
+   "n1": 4500,
+   "truth": {
+    "kind": "student_t",
+    "auc": 0.95,
+    "df": 3.0
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "positive-majority mirror of R6",
+   "meta": {}
+  },
+  {
+   "name": "t-red-R7-jump3--n50x50",
+   "study": "T",
+   "block": "red",
+   "n0": 50,
+   "n1": 50,
+   "truth": {
+    "kind": "interior_jump",
+    "height": 0.3
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "interior jump in the short unfloored gap",
+   "meta": {}
+  },
+  {
+   "name": "t-red-R7-jump3--n150x150",
+   "study": "T",
+   "block": "red",
+   "n0": 150,
+   "n1": 150,
+   "truth": {
+    "kind": "interior_jump",
+    "height": 0.3
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "interior jump in the short unfloored gap",
+   "meta": {}
+  },
+  {
+   "name": "t-red-R8-ties-q10-bn90--n500x500",
+   "study": "T",
+   "block": "red",
+   "n0": 500,
+   "n1": 500,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.9
+   },
+   "quantize": 10,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "ten score levels, trapezoid estimand",
+   "meta": {}
+  },
+  {
+   "name": "t-red-R9-weibull-large13--n8000x8000",
+   "study": "T",
+   "block": "red",
+   "n0": 8000,
+   "n1": 8000,
+   "truth": {
+    "kind": "lhs",
+    "family": "weibull",
+    "auc": 0.95,
+    "params": {
+     "shape": 0.7418830851020262
+    }
+   },
+   "quantize": null,
+   "reps": 500,
+   "reps_max": 1500,
+   "mechanism": "complement study's lowest cell",
+   "meta": {}
+  },
+  {
+   "name": "t-red-R9-gamma-large03--n8000x8000",
+   "study": "T",
+   "block": "red",
+   "n0": 8000,
+   "n1": 8000,
+   "truth": {
+    "kind": "lhs",
+    "family": "gamma",
+    "auc": 0.925,
+    "params": {
+     "shape": 0.5
+    }
+   },
+   "quantize": null,
+   "reps": 500,
+   "reps_max": 1500,
+   "mechanism": "complement study near-binding cell",
+   "meta": {}
+  },
+  {
+   "name": "t-red-R10-sliver-80--n1000x1000",
+   "study": "T",
+   "block": "red",
+   "n0": 1000,
+   "n1": 1000,
+   "truth": {
+    "kind": "sliver",
+    "auc": 0.8,
+    "expected_sliver_count": 0.8,
+    "tail_extent": 0.25
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 3000,
+   "mechanism": "unsampled sliver at the upper corner, new n",
+   "meta": {}
+  },
+  {
+   "name": "s-diagonal--n500x500",
+   "study": "S",
+   "block": "balanced",
+   "n0": 500,
+   "n1": 500,
+   "truth": {
+    "kind": "diagonal"
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-diagonal--n250x750",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 250,
+   "n1": 750,
+   "truth": {
+    "kind": "diagonal"
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-diagonal--n750x250",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 750,
+   "n1": 250,
+   "truth": {
+    "kind": "diagonal"
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-diagonal--n100x900",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 100,
+   "n1": 900,
+   "truth": {
+    "kind": "diagonal"
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-diagonal--n900x100",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 900,
+   "n1": 100,
+   "truth": {
+    "kind": "diagonal"
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-diagonal--n500x4500",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 500,
+   "n1": 4500,
+   "truth": {
+    "kind": "diagonal"
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-diagonal--n4500x500",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 4500,
+   "n1": 500,
+   "truth": {
+    "kind": "diagonal"
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-diagonal--n150x4500",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 150,
+   "n1": 4500,
+   "truth": {
+    "kind": "diagonal"
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-diagonal--n4500x150",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 4500,
+   "n1": 150,
+   "truth": {
+    "kind": "diagonal"
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-diagonal--n100x10000",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 100,
+   "n1": 10000,
+   "truth": {
+    "kind": "diagonal"
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-diagonal--n10000x100",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 10000,
+   "n1": 100,
+   "truth": {
+    "kind": "diagonal"
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-diagonal--n20x180",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 20,
+   "n1": 180,
+   "truth": {
+    "kind": "diagonal"
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-diagonal--n180x20",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 180,
+   "n1": 20,
+   "truth": {
+    "kind": "diagonal"
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn65--n500x500",
+   "study": "S",
+   "block": "balanced",
+   "n0": 500,
+   "n1": 500,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.65
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn65--n250x750",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 250,
+   "n1": 750,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.65
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn65--n750x250",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 750,
+   "n1": 250,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.65
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn65--n100x900",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 100,
+   "n1": 900,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.65
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn65--n900x100",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 900,
+   "n1": 100,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.65
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn65--n500x4500",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 500,
+   "n1": 4500,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.65
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn65--n4500x500",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 4500,
+   "n1": 500,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.65
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn65--n150x4500",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 150,
+   "n1": 4500,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.65
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn65--n4500x150",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 4500,
+   "n1": 150,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.65
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn65--n100x10000",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 100,
+   "n1": 10000,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.65
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn65--n10000x100",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 10000,
+   "n1": 100,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.65
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn65--n20x180",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 20,
+   "n1": 180,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.65
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn65--n180x20",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 180,
+   "n1": 20,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.65
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn80--n500x500",
+   "study": "S",
+   "block": "balanced",
+   "n0": 500,
+   "n1": 500,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.8
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn80--n250x750",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 250,
+   "n1": 750,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.8
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn80--n750x250",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 750,
+   "n1": 250,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.8
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn80--n100x900",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 100,
+   "n1": 900,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.8
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn80--n900x100",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 900,
+   "n1": 100,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.8
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn80--n500x4500",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 500,
+   "n1": 4500,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.8
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn80--n4500x500",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 4500,
+   "n1": 500,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.8
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn80--n150x4500",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 150,
+   "n1": 4500,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.8
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn80--n4500x150",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 4500,
+   "n1": 150,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.8
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn80--n100x10000",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 100,
+   "n1": 10000,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.8
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn80--n10000x100",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 10000,
+   "n1": 100,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.8
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn80--n20x180",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 20,
+   "n1": 180,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.8
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn80--n180x20",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 180,
+   "n1": 20,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.8
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn95--n500x500",
+   "study": "S",
+   "block": "balanced",
+   "n0": 500,
+   "n1": 500,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.95
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn95--n250x750",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 250,
+   "n1": 750,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.95
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn95--n750x250",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 750,
+   "n1": 250,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.95
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn95--n100x900",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 100,
+   "n1": 900,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.95
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn95--n900x100",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 900,
+   "n1": 100,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.95
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn95--n500x4500",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 500,
+   "n1": 4500,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.95
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn95--n4500x500",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 4500,
+   "n1": 500,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.95
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn95--n150x4500",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 150,
+   "n1": 4500,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.95
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn95--n4500x150",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 4500,
+   "n1": 150,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.95
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn95--n100x10000",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 100,
+   "n1": 10000,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.95
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn95--n10000x100",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 10000,
+   "n1": 100,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.95
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn95--n20x180",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 20,
+   "n1": 180,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.95
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn95--n180x20",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 180,
+   "n1": 20,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.95
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn99--n500x500",
+   "study": "S",
+   "block": "balanced",
+   "n0": 500,
+   "n1": 500,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.99
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn99--n250x750",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 250,
+   "n1": 750,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.99
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn99--n750x250",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 750,
+   "n1": 250,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.99
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn99--n100x900",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 100,
+   "n1": 900,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.99
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn99--n900x100",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 900,
+   "n1": 100,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.99
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn99--n500x4500",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 500,
+   "n1": 4500,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.99
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn99--n4500x500",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 4500,
+   "n1": 500,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.99
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn99--n150x4500",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 150,
+   "n1": 4500,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.99
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn99--n4500x150",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 4500,
+   "n1": 150,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.99
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn99--n100x10000",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 100,
+   "n1": 10000,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.99
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn99--n10000x100",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 10000,
+   "n1": 100,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.99
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn99--n20x180",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 20,
+   "n1": 180,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.99
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bn99--n180x20",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 180,
+   "n1": 20,
+   "truth": {
+    "kind": "binormal",
+    "auc": 0.99
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-hetero0.5-90--n500x500",
+   "study": "S",
+   "block": "balanced",
+   "n0": 500,
+   "n1": 500,
+   "truth": {
+    "kind": "hetero_gaussian",
+    "auc": 0.9,
+    "sigma_ratio": 0.5
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-hetero0.5-90--n250x750",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 250,
+   "n1": 750,
+   "truth": {
+    "kind": "hetero_gaussian",
+    "auc": 0.9,
+    "sigma_ratio": 0.5
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-hetero0.5-90--n750x250",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 750,
+   "n1": 250,
+   "truth": {
+    "kind": "hetero_gaussian",
+    "auc": 0.9,
+    "sigma_ratio": 0.5
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-hetero0.5-90--n100x900",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 100,
+   "n1": 900,
+   "truth": {
+    "kind": "hetero_gaussian",
+    "auc": 0.9,
+    "sigma_ratio": 0.5
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-hetero0.5-90--n900x100",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 900,
+   "n1": 100,
+   "truth": {
+    "kind": "hetero_gaussian",
+    "auc": 0.9,
+    "sigma_ratio": 0.5
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-hetero0.5-90--n500x4500",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 500,
+   "n1": 4500,
+   "truth": {
+    "kind": "hetero_gaussian",
+    "auc": 0.9,
+    "sigma_ratio": 0.5
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-hetero0.5-90--n4500x500",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 4500,
+   "n1": 500,
+   "truth": {
+    "kind": "hetero_gaussian",
+    "auc": 0.9,
+    "sigma_ratio": 0.5
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-hetero0.5-90--n150x4500",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 150,
+   "n1": 4500,
+   "truth": {
+    "kind": "hetero_gaussian",
+    "auc": 0.9,
+    "sigma_ratio": 0.5
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-hetero0.5-90--n4500x150",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 4500,
+   "n1": 150,
+   "truth": {
+    "kind": "hetero_gaussian",
+    "auc": 0.9,
+    "sigma_ratio": 0.5
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-hetero0.5-90--n100x10000",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 100,
+   "n1": 10000,
+   "truth": {
+    "kind": "hetero_gaussian",
+    "auc": 0.9,
+    "sigma_ratio": 0.5
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-hetero0.5-90--n10000x100",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 10000,
+   "n1": 100,
+   "truth": {
+    "kind": "hetero_gaussian",
+    "auc": 0.9,
+    "sigma_ratio": 0.5
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-hetero0.5-90--n20x180",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 20,
+   "n1": 180,
+   "truth": {
+    "kind": "hetero_gaussian",
+    "auc": 0.9,
+    "sigma_ratio": 0.5
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-hetero0.5-90--n180x20",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 180,
+   "n1": 20,
+   "truth": {
+    "kind": "hetero_gaussian",
+    "auc": 0.9,
+    "sigma_ratio": 0.5
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-hetero2-90--n500x500",
+   "study": "S",
+   "block": "balanced",
+   "n0": 500,
+   "n1": 500,
+   "truth": {
+    "kind": "hetero_gaussian",
+    "auc": 0.9,
+    "sigma_ratio": 2.0
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-hetero2-90--n250x750",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 250,
+   "n1": 750,
+   "truth": {
+    "kind": "hetero_gaussian",
+    "auc": 0.9,
+    "sigma_ratio": 2.0
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-hetero2-90--n750x250",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 750,
+   "n1": 250,
+   "truth": {
+    "kind": "hetero_gaussian",
+    "auc": 0.9,
+    "sigma_ratio": 2.0
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-hetero2-90--n100x900",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 100,
+   "n1": 900,
+   "truth": {
+    "kind": "hetero_gaussian",
+    "auc": 0.9,
+    "sigma_ratio": 2.0
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-hetero2-90--n900x100",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 900,
+   "n1": 100,
+   "truth": {
+    "kind": "hetero_gaussian",
+    "auc": 0.9,
+    "sigma_ratio": 2.0
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-hetero2-90--n500x4500",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 500,
+   "n1": 4500,
+   "truth": {
+    "kind": "hetero_gaussian",
+    "auc": 0.9,
+    "sigma_ratio": 2.0
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-hetero2-90--n4500x500",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 4500,
+   "n1": 500,
+   "truth": {
+    "kind": "hetero_gaussian",
+    "auc": 0.9,
+    "sigma_ratio": 2.0
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-hetero2-90--n150x4500",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 150,
+   "n1": 4500,
+   "truth": {
+    "kind": "hetero_gaussian",
+    "auc": 0.9,
+    "sigma_ratio": 2.0
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-hetero2-90--n4500x150",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 4500,
+   "n1": 150,
+   "truth": {
+    "kind": "hetero_gaussian",
+    "auc": 0.9,
+    "sigma_ratio": 2.0
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-hetero2-90--n100x10000",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 100,
+   "n1": 10000,
+   "truth": {
+    "kind": "hetero_gaussian",
+    "auc": 0.9,
+    "sigma_ratio": 2.0
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-hetero2-90--n10000x100",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 10000,
+   "n1": 100,
+   "truth": {
+    "kind": "hetero_gaussian",
+    "auc": 0.9,
+    "sigma_ratio": 2.0
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-hetero2-90--n20x180",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 20,
+   "n1": 180,
+   "truth": {
+    "kind": "hetero_gaussian",
+    "auc": 0.9,
+    "sigma_ratio": 2.0
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-hetero2-90--n180x20",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 180,
+   "n1": 20,
+   "truth": {
+    "kind": "hetero_gaussian",
+    "auc": 0.9,
+    "sigma_ratio": 2.0
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-t2-95--n500x500",
+   "study": "S",
+   "block": "balanced",
+   "n0": 500,
+   "n1": 500,
+   "truth": {
+    "kind": "student_t",
+    "auc": 0.95,
+    "df": 2.0
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-t2-95--n250x750",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 250,
+   "n1": 750,
+   "truth": {
+    "kind": "student_t",
+    "auc": 0.95,
+    "df": 2.0
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-t2-95--n750x250",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 750,
+   "n1": 250,
+   "truth": {
+    "kind": "student_t",
+    "auc": 0.95,
+    "df": 2.0
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-t2-95--n100x900",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 100,
+   "n1": 900,
+   "truth": {
+    "kind": "student_t",
+    "auc": 0.95,
+    "df": 2.0
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-t2-95--n900x100",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 900,
+   "n1": 100,
+   "truth": {
+    "kind": "student_t",
+    "auc": 0.95,
+    "df": 2.0
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-t2-95--n500x4500",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 500,
+   "n1": 4500,
+   "truth": {
+    "kind": "student_t",
+    "auc": 0.95,
+    "df": 2.0
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-t2-95--n4500x500",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 4500,
+   "n1": 500,
+   "truth": {
+    "kind": "student_t",
+    "auc": 0.95,
+    "df": 2.0
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-t2-95--n150x4500",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 150,
+   "n1": 4500,
+   "truth": {
+    "kind": "student_t",
+    "auc": 0.95,
+    "df": 2.0
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-t2-95--n4500x150",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 4500,
+   "n1": 150,
+   "truth": {
+    "kind": "student_t",
+    "auc": 0.95,
+    "df": 2.0
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-t2-95--n100x10000",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 100,
+   "n1": 10000,
+   "truth": {
+    "kind": "student_t",
+    "auc": 0.95,
+    "df": 2.0
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-t2-95--n10000x100",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 10000,
+   "n1": 100,
+   "truth": {
+    "kind": "student_t",
+    "auc": 0.95,
+    "df": 2.0
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-t2-95--n20x180",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 20,
+   "n1": 180,
+   "truth": {
+    "kind": "student_t",
+    "auc": 0.95,
+    "df": 2.0
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-t2-95--n180x20",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 180,
+   "n1": 20,
+   "truth": {
+    "kind": "student_t",
+    "auc": 0.95,
+    "df": 2.0
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-beta-a0.7-98--n500x500",
+   "study": "S",
+   "block": "balanced",
+   "n0": 500,
+   "n1": 500,
+   "truth": {
+    "kind": "lhs",
+    "family": "beta_opposing",
+    "auc": 0.98,
+    "params": {
+     "alpha": 0.7
+    }
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-beta-a0.7-98--n250x750",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 250,
+   "n1": 750,
+   "truth": {
+    "kind": "lhs",
+    "family": "beta_opposing",
+    "auc": 0.98,
+    "params": {
+     "alpha": 0.7
+    }
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-beta-a0.7-98--n750x250",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 750,
+   "n1": 250,
+   "truth": {
+    "kind": "lhs",
+    "family": "beta_opposing",
+    "auc": 0.98,
+    "params": {
+     "alpha": 0.7
+    }
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-beta-a0.7-98--n100x900",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 100,
+   "n1": 900,
+   "truth": {
+    "kind": "lhs",
+    "family": "beta_opposing",
+    "auc": 0.98,
+    "params": {
+     "alpha": 0.7
+    }
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-beta-a0.7-98--n900x100",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 900,
+   "n1": 100,
+   "truth": {
+    "kind": "lhs",
+    "family": "beta_opposing",
+    "auc": 0.98,
+    "params": {
+     "alpha": 0.7
+    }
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-beta-a0.7-98--n500x4500",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 500,
+   "n1": 4500,
+   "truth": {
+    "kind": "lhs",
+    "family": "beta_opposing",
+    "auc": 0.98,
+    "params": {
+     "alpha": 0.7
+    }
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-beta-a0.7-98--n4500x500",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 4500,
+   "n1": 500,
+   "truth": {
+    "kind": "lhs",
+    "family": "beta_opposing",
+    "auc": 0.98,
+    "params": {
+     "alpha": 0.7
+    }
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-beta-a0.7-98--n150x4500",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 150,
+   "n1": 4500,
+   "truth": {
+    "kind": "lhs",
+    "family": "beta_opposing",
+    "auc": 0.98,
+    "params": {
+     "alpha": 0.7
+    }
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-beta-a0.7-98--n4500x150",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 4500,
+   "n1": 150,
+   "truth": {
+    "kind": "lhs",
+    "family": "beta_opposing",
+    "auc": 0.98,
+    "params": {
+     "alpha": 0.7
+    }
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-beta-a0.7-98--n100x10000",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 100,
+   "n1": 10000,
+   "truth": {
+    "kind": "lhs",
+    "family": "beta_opposing",
+    "auc": 0.98,
+    "params": {
+     "alpha": 0.7
+    }
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-beta-a0.7-98--n10000x100",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 10000,
+   "n1": 100,
+   "truth": {
+    "kind": "lhs",
+    "family": "beta_opposing",
+    "auc": 0.98,
+    "params": {
+     "alpha": 0.7
+    }
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-beta-a0.7-98--n20x180",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 20,
+   "n1": 180,
+   "truth": {
+    "kind": "lhs",
+    "family": "beta_opposing",
+    "auc": 0.98,
+    "params": {
+     "alpha": 0.7
+    }
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-beta-a0.7-98--n180x20",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 180,
+   "n1": 20,
+   "truth": {
+    "kind": "lhs",
+    "family": "beta_opposing",
+    "auc": 0.98,
+    "params": {
+     "alpha": 0.7
+    }
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bimodal-90--n500x500",
+   "study": "S",
+   "block": "balanced",
+   "n0": 500,
+   "n1": 500,
+   "truth": {
+    "kind": "bimodal_negative",
+    "auc": 0.9,
+    "mode_separation": 3.0,
+    "mixture_weight": 0.5
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bimodal-90--n250x750",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 250,
+   "n1": 750,
+   "truth": {
+    "kind": "bimodal_negative",
+    "auc": 0.9,
+    "mode_separation": 3.0,
+    "mixture_weight": 0.5
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bimodal-90--n750x250",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 750,
+   "n1": 250,
+   "truth": {
+    "kind": "bimodal_negative",
+    "auc": 0.9,
+    "mode_separation": 3.0,
+    "mixture_weight": 0.5
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bimodal-90--n100x900",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 100,
+   "n1": 900,
+   "truth": {
+    "kind": "bimodal_negative",
+    "auc": 0.9,
+    "mode_separation": 3.0,
+    "mixture_weight": 0.5
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bimodal-90--n900x100",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 900,
+   "n1": 100,
+   "truth": {
+    "kind": "bimodal_negative",
+    "auc": 0.9,
+    "mode_separation": 3.0,
+    "mixture_weight": 0.5
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bimodal-90--n500x4500",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 500,
+   "n1": 4500,
+   "truth": {
+    "kind": "bimodal_negative",
+    "auc": 0.9,
+    "mode_separation": 3.0,
+    "mixture_weight": 0.5
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bimodal-90--n4500x500",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 4500,
+   "n1": 500,
+   "truth": {
+    "kind": "bimodal_negative",
+    "auc": 0.9,
+    "mode_separation": 3.0,
+    "mixture_weight": 0.5
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bimodal-90--n150x4500",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 150,
+   "n1": 4500,
+   "truth": {
+    "kind": "bimodal_negative",
+    "auc": 0.9,
+    "mode_separation": 3.0,
+    "mixture_weight": 0.5
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bimodal-90--n4500x150",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 4500,
+   "n1": 150,
+   "truth": {
+    "kind": "bimodal_negative",
+    "auc": 0.9,
+    "mode_separation": 3.0,
+    "mixture_weight": 0.5
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bimodal-90--n100x10000",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 100,
+   "n1": 10000,
+   "truth": {
+    "kind": "bimodal_negative",
+    "auc": 0.9,
+    "mode_separation": 3.0,
+    "mixture_weight": 0.5
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bimodal-90--n10000x100",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 10000,
+   "n1": 100,
+   "truth": {
+    "kind": "bimodal_negative",
+    "auc": 0.9,
+    "mode_separation": 3.0,
+    "mixture_weight": 0.5
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bimodal-90--n20x180",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 20,
+   "n1": 180,
+   "truth": {
+    "kind": "bimodal_negative",
+    "auc": 0.9,
+    "mode_separation": 3.0,
+    "mixture_weight": 0.5
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-bimodal-90--n180x20",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 180,
+   "n1": 20,
+   "truth": {
+    "kind": "bimodal_negative",
+    "auc": 0.9,
+    "mode_separation": 3.0,
+    "mixture_weight": 0.5
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-sliver-80--n500x500",
+   "study": "S",
+   "block": "balanced",
+   "n0": 500,
+   "n1": 500,
+   "truth": {
+    "kind": "sliver",
+    "auc": 0.8,
+    "expected_sliver_count": 0.8,
+    "tail_extent": 0.25
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-sliver-80--n250x750",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 250,
+   "n1": 750,
+   "truth": {
+    "kind": "sliver",
+    "auc": 0.8,
+    "expected_sliver_count": 0.8,
+    "tail_extent": 0.25
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-sliver-80--n750x250",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 750,
+   "n1": 250,
+   "truth": {
+    "kind": "sliver",
+    "auc": 0.8,
+    "expected_sliver_count": 0.8,
+    "tail_extent": 0.25
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-sliver-80--n100x900",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 100,
+   "n1": 900,
+   "truth": {
+    "kind": "sliver",
+    "auc": 0.8,
+    "expected_sliver_count": 0.8,
+    "tail_extent": 0.25
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-sliver-80--n900x100",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 900,
+   "n1": 100,
+   "truth": {
+    "kind": "sliver",
+    "auc": 0.8,
+    "expected_sliver_count": 0.8,
+    "tail_extent": 0.25
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-sliver-80--n500x4500",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 500,
+   "n1": 4500,
+   "truth": {
+    "kind": "sliver",
+    "auc": 0.8,
+    "expected_sliver_count": 0.8,
+    "tail_extent": 0.25
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-sliver-80--n4500x500",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 4500,
+   "n1": 500,
+   "truth": {
+    "kind": "sliver",
+    "auc": 0.8,
+    "expected_sliver_count": 0.8,
+    "tail_extent": 0.25
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-sliver-80--n150x4500",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 150,
+   "n1": 4500,
+   "truth": {
+    "kind": "sliver",
+    "auc": 0.8,
+    "expected_sliver_count": 0.8,
+    "tail_extent": 0.25
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-sliver-80--n4500x150",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 4500,
+   "n1": 150,
+   "truth": {
+    "kind": "sliver",
+    "auc": 0.8,
+    "expected_sliver_count": 0.8,
+    "tail_extent": 0.25
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-sliver-80--n100x10000",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 100,
+   "n1": 10000,
+   "truth": {
+    "kind": "sliver",
+    "auc": 0.8,
+    "expected_sliver_count": 0.8,
+    "tail_extent": 0.25
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-sliver-80--n10000x100",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 10000,
+   "n1": 100,
+   "truth": {
+    "kind": "sliver",
+    "auc": 0.8,
+    "expected_sliver_count": 0.8,
+    "tail_extent": 0.25
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-sliver-80--n20x180",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 20,
+   "n1": 180,
+   "truth": {
+    "kind": "sliver",
+    "auc": 0.8,
+    "expected_sliver_count": 0.8,
+    "tail_extent": 0.25
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-sliver-80--n180x20",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 180,
+   "n1": 20,
+   "truth": {
+    "kind": "sliver",
+    "auc": 0.8,
+    "expected_sliver_count": 0.8,
+    "tail_extent": 0.25
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-jump-80--n500x500",
+   "study": "S",
+   "block": "balanced",
+   "n0": 500,
+   "n1": 500,
+   "truth": {
+    "kind": "interior_jump",
+    "height": 0.2
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-jump-80--n250x750",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 250,
+   "n1": 750,
+   "truth": {
+    "kind": "interior_jump",
+    "height": 0.2
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-jump-80--n750x250",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 750,
+   "n1": 250,
+   "truth": {
+    "kind": "interior_jump",
+    "height": 0.2
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-jump-80--n100x900",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 100,
+   "n1": 900,
+   "truth": {
+    "kind": "interior_jump",
+    "height": 0.2
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-jump-80--n900x100",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 900,
+   "n1": 100,
+   "truth": {
+    "kind": "interior_jump",
+    "height": 0.2
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-jump-80--n500x4500",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 500,
+   "n1": 4500,
+   "truth": {
+    "kind": "interior_jump",
+    "height": 0.2
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-jump-80--n4500x500",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 4500,
+   "n1": 500,
+   "truth": {
+    "kind": "interior_jump",
+    "height": 0.2
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-jump-80--n150x4500",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 150,
+   "n1": 4500,
+   "truth": {
+    "kind": "interior_jump",
+    "height": 0.2
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-jump-80--n4500x150",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 4500,
+   "n1": 150,
+   "truth": {
+    "kind": "interior_jump",
+    "height": 0.2
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-jump-80--n100x10000",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 100,
+   "n1": 10000,
+   "truth": {
+    "kind": "interior_jump",
+    "height": 0.2
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-jump-80--n10000x100",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 10000,
+   "n1": 100,
+   "truth": {
+    "kind": "interior_jump",
+    "height": 0.2
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-jump-80--n20x180",
+   "study": "S",
+   "block": "pos_major",
+   "n0": 20,
+   "n1": 180,
+   "truth": {
+    "kind": "interior_jump",
+    "height": 0.2
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  },
+  {
+   "name": "s-jump-80--n180x20",
+   "study": "S",
+   "block": "neg_major",
+   "n0": 180,
+   "n1": 20,
+   "truth": {
+    "kind": "interior_jump",
+    "height": 0.2
+   },
+   "quantize": null,
+   "reps": 1000,
+   "reps_max": 1000,
+   "mechanism": "",
+   "meta": {}
+  }
+ ]
+}
