@@ -11,11 +11,12 @@ unsampled slivers of positive mass turn that misrepresentation into a
 lower-edge miss (theory doc section 7.4; Stage F report sections 4 and 7).
 
 The floor repairs exactly those two regions by taking the pointwise hull of
-the fiducial band and the exact M3 band there, then closing the result by
-widening only. Three statements are exact for every ROC curve and every
-region rule, including rules that read the data or the cloud:
+the fiducial band and the exact M3 band there, then closing the result to a
+monotone band (see Closure below). Three statements are exact for every ROC
+curve and every region rule, including rules that read the data or the cloud:
 
-* the floored band contains the raw fiducial band pointwise;
+* the floored band contains the fiducial band it was built from pointwise
+  (the raw band, or the recalibrated band under ``recalibrate_trim``);
 * a miss inside the region implies a full-curve M3 miss, so the in-region
   miss probability is at most the M3 level;
 * the whole-band miss probability is at most the M3 level plus the
@@ -60,6 +61,34 @@ at ``alpha = .05`` and the frozen rule is longer at ``alpha = .5``. On the
 right it is a normal approximation to the Beta inversion, shorter for runs
 under about ten points and longer for runs in the hundreds. It is retained
 as a comparison arm.
+
+Closure
+-------
+The hull is monotone inside and outside the region but can step against
+monotonicity at the region boundaries, so it is closed in one of two ways:
+
+* ``"widen"`` lowers the lower edge to its reverse cumulative minimum and
+  raises the upper edge to its forward cumulative maximum. The result
+  contains the hull, so it covers whenever the hull does, and it can carry the
+  floor's room into the unfloored interior next to the region.
+* ``"tighten"`` raises the lower edge to its forward cumulative maximum and
+  lowers the upper edge to its reverse cumulative minimum. A monotone truth
+  inside the hull at every grid point is inside the tightened band at every
+  grid point, and conversely, because the tightened band lies inside the hull.
+  So the tightened band misses exactly when the unclosed hull does, and all
+  three exact statements above hold for it. When the fiducial edges are
+  monotone the tightened band still contains them, and it is contained in the
+  widened band. What it gives up is the room that widening adds outside the
+  region, which no theorem accounts for.
+
+Tails-recalibrated trim
+-----------------------
+With ``recalibrate_trim`` the trim depth is recomputed on the same cloud over
+the production trim rows outside the region, after the region has been fixed
+from the full-grid depth (theory doc section 10.6). The recalibrated depth is
+never smaller (Proposition 10b), so the band is nested inside the
+full-grid hybrid on the same cloud (Corollary 10c). It no longer contains the
+raw fiducial band.
 """
 
 import math
@@ -71,7 +100,13 @@ from numpy.typing import NDArray
 from scipy.stats import beta as beta_dist
 from scipy.stats import binom
 
+from .class_split import SplitRatio, validate_split_ratio
+
 FloorRule = Literal["exact", "stage_f"]
+Closure = Literal["widen", "tighten"]
+
+# Slack for monotonicity checks on float32-derived edges.
+_MONOTONE_TOL = 1e-9
 
 
 @dataclass(frozen=True)
@@ -89,14 +124,21 @@ class M3Floor:
             unfloored region.
         alpha: Level of the M3 component. ``None`` uses the band's own
             ``alpha``, the Stage F choice; smaller values widen the floor.
-        split_ratio: M3 log-confidence share assigned to the negative class.
+        split_ratio: M3 log-confidence share assigned to the negative class,
+            or ``"sample_size"`` for the class-size rule of
+            :mod:`.class_split`.
+        closure: ``"widen"`` or ``"tighten"``; see the module docstring.
+        recalibrate_trim: Whether to recompute the trim depth on the trim
+            rows outside the region before taking the hull.
     """
 
     rule: FloorRule = "exact"
     eps: float = 1e-3
     delta: float = 0.025
     alpha: float | None = None
-    split_ratio: float = 0.5
+    split_ratio: SplitRatio = 0.5
+    closure: Closure = "widen"
+    recalibrate_trim: bool = False
 
     def __post_init__(self) -> None:
         """Validate the region rule and its probability budgets."""
@@ -108,8 +150,11 @@ class M3Floor:
             raise ValueError(f"delta must be in (0, 0.5), got {self.delta}")
         if self.alpha is not None and not 0.0 < self.alpha < 1.0:
             raise ValueError(f"alpha must be in (0, 1) or None, got {self.alpha}")
-        if not 0.0 < self.split_ratio < 1.0:
-            raise ValueError(f"split_ratio must be in (0, 1), got {self.split_ratio}")
+        validate_split_ratio(self.split_ratio)
+        if self.closure not in ("widen", "tighten"):
+            raise ValueError(
+                f"closure must be 'widen' or 'tighten', got {self.closure!r}"
+            )
 
 
 def resolve_floor(m3_floor: bool | M3Floor) -> M3Floor | None:
@@ -255,6 +300,34 @@ def floor_region(
     return (index <= k_left) | (index >= right_start)
 
 
+def complement_trim_rows(
+    *, n_grid: int, region: NDArray, trim_rows: NDArray | None
+) -> NDArray[np.int64]:
+    """Return the production trim rows that lie outside the floor region.
+
+    Args:
+        n_grid: Number of native grid points (``n0 + 1``).
+        region: Boolean floor mask of length ``n_grid``.
+        trim_rows: Production trim rows, or ``None`` for the full grid.
+
+    Returns:
+        Sorted int64 grid-row indices; empty when the floor covers every
+        trim row.
+
+    Raises:
+        ValueError: If ``region`` does not have length ``n_grid``.
+    """
+    mask = np.asarray(region, dtype=bool)
+    if mask.shape != (n_grid,):
+        raise ValueError(f"region must have shape ({n_grid},), got {mask.shape}")
+    rows = (
+        np.arange(n_grid, dtype=np.int64)
+        if trim_rows is None
+        else np.asarray(trim_rows, dtype=np.int64)
+    )
+    return rows[~mask[rows]]
+
+
 def stitch_m3_floor(
     *,
     lower: NDArray,
@@ -262,12 +335,16 @@ def stitch_m3_floor(
     m3_lower: NDArray,
     m3_upper: NDArray,
     region: NDArray,
+    closure: Closure = "widen",
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Take the M3 hull on the region and close the result by widening only.
+    """Take the M3 hull on the region and close it to a monotone band.
 
-    The lower edge becomes its reverse cumulative minimum and the upper edge
-    its forward cumulative maximum, so every containment of the inputs is
-    preserved and the output is monotone.
+    ``"widen"`` takes the lower edge's reverse cumulative minimum and the
+    upper edge's forward cumulative maximum, preserving every containment of
+    the inputs. ``"tighten"`` takes the lower edge's forward cumulative
+    maximum and the upper edge's reverse cumulative minimum: the result lies
+    inside the hull and covers a monotone truth exactly when the hull does.
+    With monotone fiducial edges it still contains them.
 
     Args:
         lower: Raw fiducial lower edge on the native grid.
@@ -275,12 +352,14 @@ def stitch_m3_floor(
         m3_lower: M3 lower edge on the same grid.
         m3_upper: M3 upper edge on the same grid.
         region: Boolean mask selecting the floored grid points.
+        closure: ``"widen"`` or ``"tighten"``.
 
     Returns:
         Floored lower and upper edges, clipped to ``[0, 1]``.
 
     Raises:
-        ValueError: If the inputs do not share one shape.
+        ValueError: If the inputs do not share one shape, the closure is
+            unknown, or ``"tighten"`` receives non-monotone fiducial edges.
     """
     arrays = [
         np.asarray(a, dtype=np.float64) for a in (lower, upper, m3_lower, m3_upper)
@@ -291,33 +370,42 @@ def stitch_m3_floor(
     fid_lower, fid_upper, exact_lower, exact_upper = arrays
     out_lower = np.where(mask, np.minimum(fid_lower, exact_lower), fid_lower)
     out_upper = np.where(mask, np.maximum(fid_upper, exact_upper), fid_upper)
-    out_lower = np.minimum.accumulate(out_lower[::-1])[::-1]
-    out_upper = np.maximum.accumulate(out_upper)
+    if closure == "widen":
+        out_lower = np.minimum.accumulate(out_lower[::-1])[::-1]
+        out_upper = np.maximum.accumulate(out_upper)
+    elif closure == "tighten":
+        # Monotone parents guarantee the tightened band contains them, hence
+        # a non-empty interval at every grid point.
+        if np.any(np.diff(fid_lower) < -_MONOTONE_TOL) or np.any(
+            np.diff(fid_upper) < -_MONOTONE_TOL
+        ):
+            raise ValueError("tightening requires monotone fiducial edges")
+        out_lower = np.maximum.accumulate(out_lower)
+        out_upper = np.minimum.accumulate(out_upper[::-1])[::-1]
+    else:
+        raise ValueError(f"closure must be 'widen' or 'tighten', got {closure!r}")
     return np.clip(out_lower, 0.0, 1.0), np.clip(out_upper, 0.0, 1.0)
 
 
 def apply_m3_floor(
     *,
     lab_s: NDArray,
-    khat: NDArray,
     lower: NDArray,
     upper: NDArray,
+    region: NDArray,
     alpha: float,
-    n_draws: int,
-    trim_depth: int,
     floor: M3Floor,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Floor a native-grid fiducial band with the exact M3 band.
 
     Args:
         lab_s: Tie-resolved 0/1 labels in descending score order.
-        khat: Empirical positive counts on the native grid.
-        lower: Raw fiducial lower edge after its corner allowances.
-        upper: Raw fiducial upper edge after its corner allowances.
+        lower: Fiducial lower edge after its corner allowances, at the trim
+            depth the floor settings call for.
+        upper: Fiducial upper edge after its corner allowances.
+        region: Floor mask from :func:`floor_region` at the full-grid depth.
         alpha: Level of the fiducial band; the M3 level when
             ``floor.alpha`` is ``None``.
-        n_draws: Fiducial cloud size.
-        trim_depth: Realized one-indexed trim depth.
         floor: Floor settings.
 
     Returns:
@@ -332,9 +420,11 @@ def apply_m3_floor(
         alpha=alpha if floor.alpha is None else floor.alpha,
         split_ratio=floor.split_ratio,
     )
-    region = floor_region(
-        khat=khat, n_draws=n_draws, trim_depth=trim_depth, floor=floor
-    )
     return stitch_m3_floor(
-        lower=lower, upper=upper, m3_lower=m3_lower, m3_upper=m3_upper, region=region
+        lower=lower,
+        upper=upper,
+        m3_lower=m3_lower,
+        m3_upper=m3_upper,
+        region=region,
+        closure=floor.closure,
     )

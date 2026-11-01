@@ -813,6 +813,8 @@ In rough order of how much each could change the picture:
     A related width lever, trimming only on the unfloored columns, is specced in
     [`experiments/complement_trim_spec.md`](experiments/complement_trim_spec.md) (not yet run).
 11. **Class-split M3 follow-up** with a stated tolerance and more training shapes.
+    Specified, with the tightened floor closure, in
+    [`experiments/closure_split_spec.md`](experiments/closure_split_spec.md).
 12. **Adaptive refinement** for likelihood and test inversion. Only fixed coarse
     resolutions were tried.
 

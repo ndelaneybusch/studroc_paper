@@ -15,7 +15,7 @@ pytest.importorskip("fiducial_core")
 
 import fiducial_core  # noqa: E402
 
-from studroc_paper.methods import m3_band_rs  # noqa: E402
+from studroc_paper.methods import m3_band_rs, resolve_split_ratio  # noqa: E402
 from studroc_paper.methods.fiducial_band import _merged_labels  # noqa: E402
 from studroc_paper.methods.m3_band_rs import (  # noqa: E402
     _ell_bounds,
@@ -280,3 +280,83 @@ def test_invalid_inputs():
         m3_band_rs(y, s, tie_break="neg_first")
     with pytest.raises(ValueError):
         m3_band_rs(y, s, k=1)
+
+
+# ---------------------------------------------------------------------------
+# the sample-size class split
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("n0", "n1", "expected"),
+    [
+        pytest.param(100, 900, 0.75, id="few-negatives"),
+        pytest.param(900, 100, 0.25, id="few-positives"),
+        pytest.param(400, 400, 0.5, id="balanced"),
+        pytest.param(1, 10_000, 100 / 101, id="extreme"),
+    ],
+)
+def test_sample_size_split_gives_the_smaller_class_the_larger_error_share(
+    n0, n1, expected
+):
+    rho = resolve_split_ratio(split_ratio="sample_size", n0=n0, n1=n1)
+    assert rho == pytest.approx(expected, rel=1e-12)
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [0.0, 1.0, -0.1, "sidak", "Sample_Size"],
+    ids=["zero", "one", "negative", "unknown-name", "wrong-case"],
+)
+def test_invalid_split_ratios_are_rejected(bad, gaussian_data):
+    y_true, y_score = gaussian_data
+    with pytest.raises(ValueError):
+        m3_band_rs(y_true, y_score, split_ratio=bad)
+
+
+@pytest.mark.parametrize(("n0", "n1"), [(90, 30), (30, 90), (60, 60)])
+def test_sample_size_split_equals_the_resolved_fixed_ratio(n0, n1):
+    """The named rule is exactly the fixed-ratio band at its resolved rho."""
+    rng = np.random.default_rng(n0 * 7 + n1)
+    labels = rng.permutation(np.r_[np.zeros(n0), np.ones(n1)]).astype(np.uint8)
+    rho = resolve_split_ratio(split_ratio="sample_size", n0=n0, n1=n1)
+    named = _m3_band_from_labels_rs(labels, alpha=0.1, split_ratio="sample_size")
+    fixed = _m3_band_from_labels_rs(labels, alpha=0.1, split_ratio=rho)
+    for a, b in zip(named, fixed, strict=True):
+        np.testing.assert_array_equal(a, b)
+    if n0 == n1:
+        sidak = _m3_band_from_labels_rs(labels, alpha=0.1, split_ratio=0.5)
+        for a, b in zip(named, sidak, strict=True):
+            np.testing.assert_array_equal(a, b)
+
+
+@pytest.mark.parametrize(("n0", "n1"), [(100, 900), (900, 100), (20, 400)])
+@pytest.mark.parametrize("alpha", [0.05, 0.5])
+def test_sample_size_split_keeps_the_exact_joint_class_coverage(n0, n1, alpha):
+    """The product of the exact class coverages is at least 1 - alpha."""
+    rho = resolve_split_ratio(split_ratio="sample_size", n0=n0, n1=n1)
+    coverage = 1.0
+    for n, a_class in (
+        (n0, 1 - (1 - alpha) ** rho),
+        (n1, 1 - (1 - alpha) ** (1 - rho)),
+    ):
+        lower, upper = _ell_bounds(fiducial_core, n, a_class)
+        coverage *= fiducial_core.ell_crossing_probability(lower, upper)
+    assert 1 - alpha <= coverage <= 1 - alpha + 5e-4
+
+
+def test_sample_size_split_narrows_the_band_where_the_scarce_class_dominates():
+    """At 900/100 on a near-diagonal truth the positive band sets the width,
+    so moving error allowance to the positives must narrow M3."""
+    rng = np.random.default_rng(5)
+    n0, n1 = 900, 100
+    y_true = np.r_[np.zeros(n0, int), np.ones(n1, int)]
+    ratios = []
+    for _ in range(20):
+        y_score = np.r_[rng.normal(0, 1, n0), rng.normal(0.4, 1, n1)]
+        _, lo_s, hi_s = m3_band_rs(y_true, y_score, random_state=1)
+        _, lo_n, hi_n = m3_band_rs(
+            y_true, y_score, random_state=1, split_ratio="sample_size"
+        )
+        ratios.append(np.mean(hi_n - lo_n) / np.mean(hi_s - lo_s))
+    assert np.max(ratios) < 1.0

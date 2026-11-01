@@ -1289,6 +1289,55 @@ ordering argument. These limitations do not affect (10.13) or (10.14).
 The finite-sample population coverage of the recalibrated hybrid remains
 unproved, as does the exterior error bound in §10.4.
 
+### 10.7 Tightened closure: the hull's coverage at less width
+
+The hybrid's region hull, before closure, is
+$\tilde L=\min(L_F,L_M)\mathbb 1_A+L_F\mathbb 1_{A^c}$ and
+$\tilde U=\max(U_F,U_M)\mathbb 1_A+U_F\mathbb 1_{A^c}$ on the grid. Both
+pieces are monotone, but $\tilde L$ can step down entering the right region
+and $\tilde U$ can step down leaving the left region. Production closes
+them by widening (§8). The alternative is the shape tightening of §8:
+$$
+ L_T(t_k)=\max_{i\le k}\tilde L(t_i),\qquad
+ U_T(t_k)=\min_{i\ge k}\tilde U(t_i).
+$$
+
+**Proposition 10e (tightened closure). [Exact; derived here]**
+For every grid band built this way, every data-dependent region $A$, and
+every nondecreasing truth $R$:
+
+1. $\{L_T\le R\le U_T\ \text{on the grid}\}=\{\tilde L\le R\le\tilde U\ \text{on the grid}\}$.
+2. If $L_F$ and $U_F$ are nondecreasing, then
+   $L_W\le\tilde L\le L_T\le L_F$ and $U_F\le U_T\le\tilde U\le U_W$, with
+   $W$ the widened band. In particular $L_T\le U_T$.
+3. The hybrid inequality (8.2) holds with $B_T$ in place of $B_H$.
+
+*Proof.* (1) $L_T\ge\tilde L$ and $U_T\le\tilde U$ give one inclusion. For
+the other, if $\tilde L(t_i)\le R(t_i)$ for all $i$, then for $i\le k$,
+$\tilde L(t_i)\le R(t_i)\le R(t_k)$; take the maximum over $i\le k$. The upper
+edge is symmetric. (2) $\tilde L\le L_F$ pointwise and $L_F$ is
+nondecreasing, so $\max_{i\le k}\tilde L(t_i)\le\max_{i\le k}L_F(t_i)=L_F(t_k)$;
+the widened edge is a reverse cumulative minimum of $\tilde L$ and so lies
+below it. The upper edge is symmetric, and $L_F\le U_F$ closes the chain.
+(3) By (1), $B_T$ misses exactly when the unclosed hull misses, and the proof
+of (8.2) uses only the hull. $\square$
+
+The production raw and recalibrated edges are pointwise order statistics of
+monotone curves, a zeroed prefix, and running maxima, so they are
+nondecreasing, and (2) applies. Consequently
+
+$$
+ q_R(B_T)-q_R(B_W)=P_R\{B_W\text{ covers},\ \text{the hull misses}\}\ \ge0 .
+$$
+
+These are replicates where the truth leaves the hull outside $A$, but inside
+the room that widening carries out of the region: lower edges left of the
+right region, upper edges right of the left region. Nothing bounds that
+event; the [closure/split experiment](experiments/closure_split_spec.md)
+measures it. Tightening keeps every exact statement the hybrid has: domination
+of its fiducial parent, the regional M3 cap, and (8.2). It gives up only the
+unaccounted protection that widening adds next to the region.
+
 ## 11. Width and the Monte Carlo layer
 
 ### 11.1 First-order width and its limits

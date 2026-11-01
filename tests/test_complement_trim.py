@@ -113,12 +113,10 @@ def test_level_nesting_and_production_parity(n0: int, n1: int, shift: float) -> 
     # The hybrid arm equals the production floor applied to the raw band.
     ref = apply_m3_floor(
         lab_s=labels,
-        khat=khat,
         lower=raw_lo,
         upper=raw_up,
+        region=level["region"],
         alpha=0.05,
-        n_draws=diag["n_draws"],
-        trim_depth=diag["j_full"],
         floor=M3Floor(rule="exact", alpha=0.05),
     )
     np.testing.assert_array_equal(ref[0], hyb_lo)

@@ -10,6 +10,7 @@ from scipy.stats import binom
 
 from studroc_paper.methods import (
     M3Floor,
+    complement_trim_rows,
     exact_left_cutoff,
     exact_right_start,
     floor_region,
@@ -264,6 +265,125 @@ def test_stitch_reproduces_the_stage_f_widening_closure_and_contains_both_parent
         assert np.all(np.diff(lower) >= 0) and np.all(np.diff(upper) >= 0)
 
 
+def _random_monotone_band(rng, n):
+    """Monotone fiducial-like edges, an M3-like hull partner, and a region."""
+    lower = np.sort(rng.uniform(0, 0.9, n))
+    upper = np.maximum.accumulate(np.clip(lower + rng.uniform(0, 0.3, n), 0, 1))
+    m3_lower = np.sort(np.clip(lower - rng.uniform(0, 0.25, n), 0, 1))
+    m3_upper = np.sort(np.clip(upper + rng.uniform(0, 0.25, n), 0, 1))
+    k_left = int(rng.integers(0, n // 3 + 1))
+    right_start = int(rng.integers(2 * n // 3, n))
+    region = (np.arange(n) <= k_left) | (np.arange(n) >= right_start)
+    return lower, upper, m3_lower, m3_upper, region
+
+
+def test_tightened_floor_sits_between_its_parent_and_the_widened_floor():
+    """Tightening never re-opens the parent band and never exceeds widening."""
+    rng = np.random.default_rng(17)
+    for _ in range(300):
+        n = int(rng.integers(3, 300))
+        lower, upper, m3_lower, m3_upper, region = _random_monotone_band(rng, n)
+        kwargs = dict(
+            lower=lower,
+            upper=upper,
+            m3_lower=m3_lower,
+            m3_upper=m3_upper,
+            region=region,
+        )
+        t_lo, t_up = stitch_m3_floor(**kwargs, closure="tighten")
+        w_lo, w_up = stitch_m3_floor(**kwargs, closure="widen")
+        assert np.all(t_lo <= lower) and np.all(t_up >= upper)
+        assert np.all(t_lo >= w_lo) and np.all(t_up <= w_up)
+        assert np.all(np.diff(t_lo) >= 0) and np.all(np.diff(t_up) >= 0)
+        assert np.all(t_lo <= t_up)
+
+
+def test_tightened_floor_covers_a_monotone_truth_exactly_when_the_unclosed_hull_does():
+    """The coverage event of the tightened band is the unclosed hull's.
+
+    Truths are monotone curves drawn near the band edges so both outcomes
+    occur often; any disagreement would void the regional M3 cap.
+    """
+    rng = np.random.default_rng(23)
+    outcomes = set()
+    for _ in range(2000):
+        n = int(rng.integers(3, 120))
+        lower, upper, m3_lower, m3_upper, region = _random_monotone_band(rng, n)
+        hull_lo = np.where(region, np.minimum(lower, m3_lower), lower)
+        hull_up = np.where(region, np.maximum(upper, m3_upper), upper)
+        centre = 0.5 * (hull_lo + hull_up) + rng.normal(0, 0.12, n)
+        truth = np.maximum.accumulate(np.clip(centre, 0, 1))
+        t_lo, t_up = stitch_m3_floor(
+            lower=lower,
+            upper=upper,
+            m3_lower=m3_lower,
+            m3_upper=m3_upper,
+            region=region,
+            closure="tighten",
+        )
+        hull_covers = bool(np.all((hull_lo <= truth) & (truth <= hull_up)))
+        tight_covers = bool(np.all((t_lo <= truth) & (truth <= t_up)))
+        assert tight_covers == hull_covers
+        outcomes.add(hull_covers)
+    assert outcomes == {True, False}
+
+
+def test_tightening_cuts_the_floor_back_only_where_a_monotone_truth_cannot_reach():
+    """Worked case: the right-region lower floor stops at the last free edge."""
+    lower = np.array([0.0, 0.2, 0.5, 0.8, 0.9, 0.95])
+    upper = np.array([0.3, 0.5, 0.7, 0.95, 1.0, 1.0])
+    m3_lower = np.array([0.0, 0.0, 0.1, 0.3, 0.4, 0.6])
+    m3_upper = np.array([0.6, 0.8, 0.9, 1.0, 1.0, 1.0])
+    region = np.array([True, False, False, True, True, True])
+    t_lo, t_up = stitch_m3_floor(
+        lower=lower,
+        upper=upper,
+        m3_lower=m3_lower,
+        m3_upper=m3_upper,
+        region=region,
+        closure="tighten",
+    )
+    np.testing.assert_allclose(t_lo, [0.0, 0.2, 0.5, 0.5, 0.5, 0.6])
+    np.testing.assert_allclose(t_up, [0.5, 0.5, 0.7, 1.0, 1.0, 1.0])
+    w_lo, w_up = stitch_m3_floor(
+        lower=lower,
+        upper=upper,
+        m3_lower=m3_lower,
+        m3_upper=m3_upper,
+        region=region,
+        closure="widen",
+    )
+    np.testing.assert_allclose(w_lo, [0.0, 0.2, 0.3, 0.3, 0.4, 0.6])
+    np.testing.assert_allclose(w_up, [0.6, 0.6, 0.7, 1.0, 1.0, 1.0])
+
+
+def test_tightening_rejects_non_monotone_parents():
+    with pytest.raises(ValueError, match="monotone"):
+        stitch_m3_floor(
+            lower=np.array([0.0, 0.5, 0.4]),
+            upper=np.array([0.6, 0.7, 1.0]),
+            m3_lower=np.zeros(3),
+            m3_upper=np.ones(3),
+            region=np.array([True, False, True]),
+            closure="tighten",
+        )
+
+
+def test_complement_trim_rows_drop_exactly_the_floored_production_rows():
+    region = np.zeros(5001, dtype=bool)
+    region[:9] = True
+    region[-120:] = True
+    thinned = np.array(sorted({*range(0, 5001, 6), *range(50), *range(4951, 5001)}))
+    rows = complement_trim_rows(n_grid=5001, region=region, trim_rows=thinned)
+    assert np.array_equal(rows, thinned[~region[thinned]])
+    small = np.zeros(11, dtype=bool)
+    small[:9] = True
+    full = complement_trim_rows(n_grid=11, region=small, trim_rows=None)
+    assert np.array_equal(full, np.arange(9, 11))
+    with pytest.raises(ValueError):
+        complement_trim_rows(n_grid=12, region=small, trim_rows=None)
+
+
 def test_stitch_rejects_shape_mismatch():
     with pytest.raises(ValueError):
         stitch_m3_floor(
@@ -322,6 +442,8 @@ def test_floor_region_rejects_invalid_count_maps(khat):
         pytest.param({"delta": 0.5}, id="delta"),
         pytest.param({"alpha": 1.0}, id="alpha"),
         pytest.param({"split_ratio": 1.0}, id="split"),
+        pytest.param({"split_ratio": "proportional"}, id="split-name"),
+        pytest.param({"closure": "shrink"}, id="closure"),
     ],
 )
 def test_m3_floor_settings_are_validated(kwargs):
@@ -456,3 +578,52 @@ def test_output_grid_resampling_preserves_the_floor_containment(dataset):
     assert np.array_equal(grid, grid_f) and len(grid) == 41
     assert np.all(lo <= raw_lo) and np.all(hi >= raw_hi)
     assert lo[0] == 0.0 and hi[-1] == 1.0
+
+
+@pytest.mark.parametrize("closure", ["widen", "tighten"])
+def test_recalibrated_floor_is_nested_inside_the_full_grid_floor(dataset, closure):
+    """Corollary 10c through the production entry point, for both closures."""
+    y_true, y_score = dataset
+    seed = 21
+    full = fiducial_band_rs(
+        y_true, y_score, random_state=seed, m3_floor=M3Floor(closure=closure)
+    )
+    rec = fiducial_band_rs(
+        y_true,
+        y_score,
+        random_state=seed,
+        m3_floor=M3Floor(closure=closure, recalibrate_trim=True),
+    )
+    assert np.all(rec[1] >= full[1] - 1e-12) and np.all(rec[2] <= full[2] + 1e-12)
+    assert np.mean(rec[2] - rec[1]) < np.mean(full[2] - full[1])
+
+
+def test_tightened_production_floor_contains_raw_and_sits_inside_widened(dataset):
+    y_true, y_score = dataset
+    seed = 31
+    _, raw_lo, raw_hi = fiducial_band_rs(y_true, y_score, random_state=seed)
+    _, w_lo, w_hi = fiducial_band_rs(y_true, y_score, random_state=seed, m3_floor=True)
+    _, t_lo, t_hi = fiducial_band_rs(
+        y_true, y_score, random_state=seed, m3_floor=M3Floor(closure="tighten")
+    )
+    assert np.all(t_lo <= raw_lo) and np.all(t_hi >= raw_hi)
+    assert np.all(t_lo >= w_lo) and np.all(t_hi <= w_hi)
+    assert np.mean(t_hi - t_lo) < np.mean(w_hi - w_lo)
+
+
+def test_reference_and_rust_paths_apply_the_same_floor_options():
+    """Both entry points accept the options and keep the same nestings."""
+    rng = np.random.default_rng(12)
+    n0, n1 = 80, 60
+    y_true = np.concatenate([np.zeros(n0, dtype=int), np.ones(n1, dtype=int)])
+    y_score = np.concatenate([rng.standard_t(2, n0), rng.standard_t(2, n1) + 4.0])
+    options = M3Floor(
+        closure="tighten", recalibrate_trim=True, split_ratio="sample_size"
+    )
+    for band in (fiducial_band, fiducial_band_rs):
+        base = band(y_true, y_score, n_draws=3000, random_state=2, m3_floor=True)
+        option = band(y_true, y_score, n_draws=3000, random_state=2, m3_floor=options)
+        assert np.all(option[1] >= base[1] - 1e-12)
+        assert np.all(option[2] <= base[2] + 1e-12)
+        assert np.all(np.diff(option[1]) >= 0) and np.all(np.diff(option[2]) >= 0)
+        assert option[1][0] == 0.0 and option[2][-1] == 1.0

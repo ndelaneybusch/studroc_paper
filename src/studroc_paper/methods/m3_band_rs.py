@@ -35,8 +35,9 @@ calibrated (cached per ``(n, alpha_class)``).
 The class levels multiply (independent samples): ``alpha_class`` per class is
 set by ``(1 - alpha_F)(1 - alpha_G) = 1 - alpha`` with the split ratio
 ``rho``: ``1 - alpha_F = (1-alpha)^rho``. The default ``rho = 0.5`` is the
-Sidak split; the ratio is data-independent, so any fixed choice preserves
-the theorem (a lever for heavy class imbalance).
+Sidak split; ``"sample_size"`` sets ``rho`` from the class sizes
+(:mod:`.class_split`). The ratio never reads the ranks, so any such choice
+preserves the theorem.
 
 Corner honesty: the upper edge at ``t = 0`` is the composition's own value
 (the exact Beta bound at the count of positives ranked above the top
@@ -54,6 +55,7 @@ from numpy.typing import NDArray
 from scipy.stats import beta as beta_dist
 from torch import Tensor
 
+from .class_split import SplitRatio, resolve_split_ratio, validate_split_ratio
 from .fiducial_band import TieBreak, _merged_labels
 from .fiducial_band_rs import _require_fiducial_core
 from .method_utils import torch_to_numpy
@@ -146,7 +148,7 @@ def _m3_band_from_labels_rs(
     *,
     alpha: float = 0.05,
     k: int | None = None,
-    split_ratio: float = 0.5,
+    split_ratio: SplitRatio = 0.5,
     assume_r0_zero: bool = False,
 ) -> tuple[NDArray, NDArray, NDArray]:
     """Compute M3 from an already tie-resolved merged label sequence.
@@ -159,7 +161,8 @@ def _m3_band_from_labels_rs(
         lab_s: One-dimensional 0/1 labels ordered by descending score.
         alpha: Significance level for the simultaneous band.
         k: Optional output-grid size.
-        split_ratio: Log-confidence split assigned to the negative class.
+        split_ratio: Log-confidence split assigned to the negative class, or
+            ``"sample_size"``.
         assume_r0_zero: Whether to impose the optional upper-edge zero pin.
 
     Returns:
@@ -170,8 +173,7 @@ def _m3_band_from_labels_rs(
     """
     if not 0.0 < alpha < 1.0:
         raise ValueError(f"alpha must be in (0, 1), got {alpha}")
-    if not 0.0 < split_ratio < 1.0:
-        raise ValueError(f"split_ratio must be in (0, 1), got {split_ratio}")
+    validate_split_ratio(split_ratio)
 
     labels_raw = np.asarray(lab_s)
     if labels_raw.ndim != 1 or not np.all((labels_raw == 0) | (labels_raw == 1)):
@@ -183,8 +185,9 @@ def _m3_band_from_labels_rs(
         raise ValueError(f"Both classes must be present (n0={n0}, n1={n1})")
 
     core = _require_fiducial_core()
-    alpha_f = 1.0 - (1.0 - alpha) ** split_ratio
-    alpha_g = 1.0 - (1.0 - alpha) ** (1.0 - split_ratio)
+    rho = resolve_split_ratio(split_ratio=split_ratio, n0=n0, n1=n1)
+    alpha_f = 1.0 - (1.0 - alpha) ** rho
+    alpha_g = 1.0 - (1.0 - alpha) ** (1.0 - rho)
     b0lo, b0hi = _ell_bounds(core, n0, alpha_f)
     b1lo, b1hi = _ell_bounds(core, n1, alpha_g)
 
@@ -227,7 +230,7 @@ def m3_band_rs(
     alpha: float = 0.05,
     k: int | None = None,
     tie_break: TieBreak = "random",
-    split_ratio: float = 0.5,
+    split_ratio: SplitRatio = 0.5,
     assume_r0_zero: bool = False,
     random_state: int | np.random.Generator | None = None,
 ) -> tuple[NDArray, NDArray, NDArray]:
@@ -257,6 +260,9 @@ def m3_band_rs(
             the negative-class band: ``1 - alpha_F = (1 - alpha)**rho`` and
             ``1 - alpha_G = (1 - alpha)**(1 - rho)``. The default 0.5 is the
             Sidak split; any fixed value in (0, 1) preserves the theorem.
+            ``"sample_size"`` uses ``rho = n0**-0.5 / (n0**-0.5 + n1**-0.5)``,
+            which also preserves it because the class sizes are fixed by the
+            design.
         assume_r0_zero: If True, pin ``U(0) = 0``. Valid only under the
             *user-asserted* assumption ``R(0) = 0`` (class supports overlap
             at the top); the distribution-free default is the composition's
@@ -285,8 +291,7 @@ def m3_band_rs(
     """
     if not 0.0 < alpha < 1.0:
         raise ValueError(f"alpha must be in (0, 1), got {alpha}")
-    if not 0.0 < split_ratio < 1.0:
-        raise ValueError(f"split_ratio must be in (0, 1), got {split_ratio}")
+    validate_split_ratio(split_ratio)
 
     y_true_np = (
         torch_to_numpy(y_true) if isinstance(y_true, Tensor) else np.asarray(y_true)

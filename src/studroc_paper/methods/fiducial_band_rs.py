@@ -22,50 +22,23 @@ import warnings
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy.stats import beta as beta_dist
 from torch import Tensor
 
-from .fiducial_band import TieBreak, _auto_n_draws, _merged_labels, production_trim_rows
-from .hybrid_floor import M3Floor, apply_m3_floor, resolve_floor
+from .fiducial_band import (
+    TieBreak,
+    _apply_corner_allowances,
+    _auto_n_draws,
+    _merged_labels,
+    production_trim_rows,
+)
+from .hybrid_floor import (
+    M3Floor,
+    apply_m3_floor,
+    complement_trim_rows,
+    floor_region,
+    resolve_floor,
+)
 from .method_utils import torch_to_numpy
-
-
-def _apply_corner_allowances(
-    *,
-    lower: NDArray,
-    upper: NDArray,
-    khat: NDArray,
-    n1: int,
-    trim_depth: int,
-    n_draws: int,
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Apply the production corner allowances to raw tube edges.
-
-    Args:
-        lower: Raw lower tube edge on the native grid.
-        upper: Raw upper tube edge on the native grid.
-        khat: Empirical positive counts at the native grid points.
-        n1: Positive-class sample size.
-        trim_depth: Realized one-indexed pointwise trim depth.
-        n_draws: Fiducial cloud size.
-
-    Returns:
-        Allowance-augmented lower and upper edges.
-    """
-    lower_out = np.clip(np.asarray(lower, dtype=np.float64), 0.0, 1.0)
-    upper_out = np.clip(np.asarray(upper, dtype=np.float64), 0.0, 1.0)
-    local_level = trim_depth / (n_draws + 1)
-    cp_upper = np.ones(len(khat))
-    interior = khat < n1
-    cp_upper[interior] = beta_dist.ppf(
-        1.0 - local_level, khat[interior] + 1, n1 - khat[interior]
-    )
-    upper_out = np.maximum.accumulate(np.maximum(upper_out, cp_upper))
-    lower_out[khat == 0] = 0.0
-    upper_out = np.clip(upper_out, 0.0, 1.0)
-    lower_out[0] = 0.0
-    upper_out[-1] = 1.0
-    return lower_out, upper_out
 
 
 def _require_fiducial_core():
@@ -139,11 +112,13 @@ def fiducial_band_rs(
             (:mod:`.hybrid_floor`). ``False`` (default) returns the raw
             fiducial band. ``True`` takes the pointwise hull with the M3
             band, at this ``alpha``, on the exact-rule region and closes it
-            by widening; an :class:`M3Floor` sets the rule and its budgets.
-            The floored band contains the raw band pointwise and caps the
-            in-region miss probability at the M3 level. Widening cannot
-            increase misses outside the region, but their probability has
-            no distribution-free bound.
+            by widening; an :class:`M3Floor` sets the rule, its budgets, the
+            closure (``"widen"`` or ``"tighten"``), the M3 class split, and
+            whether the trim depth is recalibrated on the rows outside the
+            region. Without recalibration the floored band contains the raw
+            band pointwise; under either closure the in-region miss
+            probability is capped at the M3 level, and misses outside the
+            region have no distribution-free bound.
 
     Returns:
         Tuple of ``(fpr_grid, lower_envelope, upper_envelope)`` numpy
@@ -230,14 +205,41 @@ def fiducial_band_rs(
 
     floor = resolve_floor(m3_floor)
     if floor is not None:
+        region = floor_region(khat=khat, n_draws=n_draws, trim_depth=j, floor=floor)
+        if floor.recalibrate_trim:
+            rows = complement_trim_rows(
+                n_grid=len(grid), region=region, trim_rows=trim_rows
+            )
+            if len(rows):
+                # Same seed and draw count: the kernel regenerates the
+                # identical cloud, so the depth can only rise (Prop. 10b).
+                rec_lower, rec_upper, j_rec = core.fiducial_trimmed_tube(
+                    lab_s.astype(np.uint8),
+                    n_draws,
+                    alpha_eff,
+                    seed,
+                    n_threads,
+                    rows.astype(np.uint64),
+                )
+                if j_rec < j:
+                    raise RuntimeError(
+                        f"Recalibrated depth {j_rec} fell below the full-grid "
+                        f"depth {j}; the kernel did not regenerate the same cloud."
+                    )
+                lower, upper = _apply_corner_allowances(
+                    lower=rec_lower,
+                    upper=rec_upper,
+                    khat=khat,
+                    n1=n1,
+                    trim_depth=j_rec,
+                    n_draws=n_draws,
+                )
         lower, upper = apply_m3_floor(
             lab_s=lab_s,
-            khat=khat,
             lower=lower,
             upper=upper,
+            region=region,
             alpha=alpha,
-            n_draws=n_draws,
-            trim_depth=j,
             floor=floor,
         )
 

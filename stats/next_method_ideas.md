@@ -239,7 +239,10 @@ so the theorem is unchanged under the current sampling design.
 The new screen found 0.9–5.8% lower paired area at alpha = .05 across
 eight imbalanced cells, and 1.9–5.8% at alpha = .5. This is a useful
 low-cost candidate. It is not a proof of narrower bands everywhere:
-ROC slope can amplify the larger class's horizontal uncertainty.
+ROC slope can amplify the larger class's horizontal uncertainty. The rule is available in production as
+`split_ratio="sample_size"` (M3 and the floor); a screen across shapes and
+class-size ratios, with an oracle-split headroom sweep, is Study S of
+[`experiments/closure_split_spec.md`](experiments/closure_split_spec.md).
 
 ### 4.4 Joint class regions: valid, but the first screen is mixed
 
@@ -481,6 +484,17 @@ hybrid (theory §10.6); it does not prove population coverage.
 A declared alpha/2 + alpha/2
 budget split was wider than production in every cell and is not
 preferred.
+
+**Candidate refinement: tightened closure.** Close the region hull by
+shape tightening instead of widening (theory §10.7). The tightened band
+misses exactly when the unclosed hull does, so it keeps domination of its
+fiducial parent, the regional M3 cap, and (8.2), and it is never wider.
+It gives up only the room widening carries into the interior next to the
+region. A scratch probe on 18 Stage F cells found 4% less width than the
+recalibrated hybrid for 7 lost replicates in 3,600 at alpha = .05. A
+prospective test, with a red-team block aimed at that adjacent strip, is
+specified in
+[`experiments/closure_split_spec.md`](experiments/closure_split_spec.md).
 
 Keep a small complete reference set at alpha = .05, .2 and .5. The
 current alpha-independent region can plausibly waste width at .5, but

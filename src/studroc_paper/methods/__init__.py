@@ -1,6 +1,7 @@
 """ROC confidence band methods."""
 
 from .bp_smoothed_boot import BernsteinCDF, ExactBPROC, bp_smoothed_bootstrap_band
+from .class_split import SplitRatio, resolve_split_ratio
 from .ellipse_envelope import ellipse_envelope_band
 from .envelope_boot import (
     envelope_band_suite,
@@ -18,6 +19,7 @@ from .fiducial_ladder import (
 from .hsieh_turnbull_band import hsieh_turnbull_band
 from .hybrid_floor import (
     M3Floor,
+    complement_trim_rows,
     exact_left_cutoff,
     exact_right_start,
     floor_region,
@@ -48,6 +50,9 @@ __all__ = [
     "khat_from_labels",
     "M3Floor",
     "stitch_m3_floor",
+    "complement_trim_rows",
+    "SplitRatio",
+    "resolve_split_ratio",
     "ladder_profile",
     "LadderProfile",
     "make_ladder",
