@@ -185,7 +185,9 @@ def probe_cell(
                 n_threads=n_threads,
                 random_state=seed,
             )
-            _, mlo, mhi = m3_band_rs(y_true, y_score, alpha=ALPHA, random_state=rep)
+            _, mlo, mhi = m3_band_rs(
+                y_true, y_score, alpha=ALPHA, split_ratio=0.5, random_state=rep
+            )
 
             fid_miss = (flo > rtrue + COV_TOL) | (rtrue > fhi + COV_TOL)
             m3_miss = (mlo > rtrue + COV_TOL) | (rtrue > mhi + COV_TOL)

@@ -875,7 +875,7 @@ def sliver_check(auc: float, n: int, c: float, s1: float, reps: int, M: int, see
         mf = bool(np.any(truth < lo - 1e-12) or np.any(truth > hi + 1e-12)); miss_f += mf
         if mf:
             miss_ksat.append(k)
-        _, lo2, hi2 = m3_band_rs(y, score, alpha=0.05)
+        _, lo2, hi2 = m3_band_rs(y, score, alpha=0.05, split_ratio=0.5)
         miss_m += bool(np.any(truth < lo2 - 1e-12) or np.any(truth > hi2 + 1e-12))
     out = dict(auc=auc, auc_numerical=auc_num, body_auc=auc_b, n0=n, n1=n, c=c, s1=s1, reps=reps, M=M,
                cov_c1=1 - miss_f / reps, cov_m3=1 - miss_m / reps, k_sat_median=float(np.median(ksat)),

@@ -254,6 +254,7 @@ def test_stitch_reproduces_the_stage_f_widening_closure_and_contains_both_parent
             m3_lower=m3_lower,
             m3_upper=m3_upper,
             region=region,
+            closure="widen",
         )
         ref_lower, ref_upper = stitch_hybrid(
             raw_lower, raw_upper, m3_lower, m3_upper, region, closure="widening"
@@ -392,6 +393,7 @@ def test_stitch_rejects_shape_mismatch():
             m3_lower=np.zeros(5),
             m3_upper=np.ones(5),
             region=np.ones(4, dtype=bool),
+            closure="widen",
         )
 
 
@@ -453,7 +455,12 @@ def test_m3_floor_settings_are_validated(kwargs):
 
 def test_resolve_floor_maps_the_public_toggle():
     assert resolve_floor(False) is None
-    assert resolve_floor(True) == M3Floor()
+    assert resolve_floor(True) == M3Floor(
+        rule="exact",
+        split_ratio="sample_size",
+        closure="tighten",
+        recalibrate_trim=True,
+    )
     custom = M3Floor(rule="stage_f", alpha=0.01)
     assert resolve_floor(custom) is custom
 
@@ -491,6 +498,11 @@ def dataset(request):
     return y_true, np.concatenate([neg, pos])
 
 
+# The original hybrid: full-grid trim, Sidak split, widened closure. It is the
+# configuration that contains the raw fiducial band.
+CONTAINING = M3Floor(split_ratio=0.5, closure="widen", recalibrate_trim=False)
+
+
 def _saturation_index(y_true, y_score, seed):
     labels = _merged_labels(y_true, y_score, "random", np.random.default_rng(seed))
     khat = khat_from_labels(labels)
@@ -501,8 +513,10 @@ def test_floored_band_contains_the_raw_band_and_m3_at_both_ends(dataset):
     y_true, y_score = dataset
     seed = 11
     _, raw_lo, raw_hi = fiducial_band_rs(y_true, y_score, random_state=seed)
-    fpr, lo, hi = fiducial_band_rs(y_true, y_score, random_state=seed, m3_floor=True)
-    _, m3_lo, m3_hi = m3_band_rs(y_true, y_score, random_state=seed)
+    fpr, lo, hi = fiducial_band_rs(
+        y_true, y_score, random_state=seed, m3_floor=CONTAINING
+    )
+    _, m3_lo, m3_hi = m3_band_rs(y_true, y_score, random_state=seed, split_ratio=0.5)
     assert fpr.shape == lo.shape == hi.shape == raw_lo.shape
     assert np.all(lo <= raw_lo) and np.all(hi >= raw_hi)
     assert np.all(np.diff(lo) >= 0) and np.all(np.diff(hi) >= 0)
@@ -534,7 +548,9 @@ def test_stage_f_toggle_reproduces_the_frozen_construction_bit_for_bit(dataset, 
     _, raw_lo, raw_hi = fiducial_band_rs(
         y_true, y_score, alpha=alpha, n_draws=n_draws, random_state=seed
     )
-    _, m3_lo, m3_hi = m3_band_rs(y_true, y_score, alpha=alpha, random_state=seed)
+    _, m3_lo, m3_hi = m3_band_rs(
+        y_true, y_score, alpha=alpha, split_ratio=0.5, random_state=seed
+    )
     left, right = frontier_region_masks(
         "frontier_floor_v1", observables=observables, khat=khat, m_draws=n_draws
     )
@@ -547,7 +563,9 @@ def test_stage_f_toggle_reproduces_the_frozen_construction_bit_for_bit(dataset, 
         alpha=alpha,
         n_draws=n_draws,
         random_state=seed,
-        m3_floor=M3Floor(rule="stage_f"),
+        m3_floor=M3Floor(
+            rule="stage_f", split_ratio=0.5, closure="widen", recalibrate_trim=False
+        ),
     )
     assert np.array_equal(got_lo, want_lo) and np.array_equal(got_hi, want_hi)
     assert np.any(got_lo < raw_lo)
@@ -560,7 +578,7 @@ def test_reference_implementation_supports_the_same_floor():
     y_score = np.concatenate([rng.standard_t(2, n0), rng.standard_t(2, n1) + 5.0])
     raw = fiducial_band(y_true, y_score, n_draws=2000, random_state=4)
     floored = fiducial_band(
-        y_true, y_score, n_draws=2000, random_state=4, m3_floor=True
+        y_true, y_score, n_draws=2000, random_state=4, m3_floor=CONTAINING
     )
     assert np.all(floored[1] <= raw[1]) and np.all(floored[2] >= raw[2])
     assert np.any(floored[1] < raw[1])
@@ -573,7 +591,7 @@ def test_output_grid_resampling_preserves_the_floor_containment(dataset):
     seed = 13
     grid, raw_lo, raw_hi = fiducial_band_rs(y_true, y_score, k=41, random_state=seed)
     grid_f, lo, hi = fiducial_band_rs(
-        y_true, y_score, k=41, random_state=seed, m3_floor=True
+        y_true, y_score, k=41, random_state=seed, m3_floor=CONTAINING
     )
     assert np.array_equal(grid, grid_f) and len(grid) == 41
     assert np.all(lo <= raw_lo) and np.all(hi >= raw_hi)
@@ -586,7 +604,10 @@ def test_recalibrated_floor_is_nested_inside_the_full_grid_floor(dataset, closur
     y_true, y_score = dataset
     seed = 21
     full = fiducial_band_rs(
-        y_true, y_score, random_state=seed, m3_floor=M3Floor(closure=closure)
+        y_true,
+        y_score,
+        random_state=seed,
+        m3_floor=M3Floor(closure=closure, recalibrate_trim=False),
     )
     rec = fiducial_band_rs(
         y_true,
@@ -602,9 +623,14 @@ def test_tightened_production_floor_contains_raw_and_sits_inside_widened(dataset
     y_true, y_score = dataset
     seed = 31
     _, raw_lo, raw_hi = fiducial_band_rs(y_true, y_score, random_state=seed)
-    _, w_lo, w_hi = fiducial_band_rs(y_true, y_score, random_state=seed, m3_floor=True)
+    _, w_lo, w_hi = fiducial_band_rs(
+        y_true, y_score, random_state=seed, m3_floor=CONTAINING
+    )
     _, t_lo, t_hi = fiducial_band_rs(
-        y_true, y_score, random_state=seed, m3_floor=M3Floor(closure="tighten")
+        y_true,
+        y_score,
+        random_state=seed,
+        m3_floor=M3Floor(split_ratio=0.5, closure="tighten", recalibrate_trim=False),
     )
     assert np.all(t_lo <= raw_lo) and np.all(t_hi >= raw_hi)
     assert np.all(t_lo >= w_lo) and np.all(t_hi <= w_hi)
@@ -617,12 +643,9 @@ def test_reference_and_rust_paths_apply_the_same_floor_options():
     n0, n1 = 80, 60
     y_true = np.concatenate([np.zeros(n0, dtype=int), np.ones(n1, dtype=int)])
     y_score = np.concatenate([rng.standard_t(2, n0), rng.standard_t(2, n1) + 4.0])
-    options = M3Floor(
-        closure="tighten", recalibrate_trim=True, split_ratio="sample_size"
-    )
     for band in (fiducial_band, fiducial_band_rs):
-        base = band(y_true, y_score, n_draws=3000, random_state=2, m3_floor=True)
-        option = band(y_true, y_score, n_draws=3000, random_state=2, m3_floor=options)
+        base = band(y_true, y_score, n_draws=3000, random_state=2, m3_floor=CONTAINING)
+        option = band(y_true, y_score, n_draws=3000, random_state=2, m3_floor=True)
         assert np.all(option[1] >= base[1] - 1e-12)
         assert np.all(option[2] <= base[2] + 1e-12)
         assert np.all(np.diff(option[1]) >= 0) and np.all(np.diff(option[2]) >= 0)

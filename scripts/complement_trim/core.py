@@ -116,9 +116,14 @@ def build_level(
     )
     floor = M3Floor(rule="exact", alpha=level)
     region = floor_region(khat=khat, n_draws=draws, trim_depth=j_full, floor=floor)
-    _, m3_lo, m3_up = _m3_band_from_labels_rs(labels, alpha=level)
+    _, m3_lo, m3_up = _m3_band_from_labels_rs(labels, alpha=level, split_ratio=0.5)
     hybrid = stitch_m3_floor(
-        lower=raw[0], upper=raw[1], m3_lower=m3_lo, m3_upper=m3_up, region=region
+        lower=raw[0],
+        upper=raw[1],
+        m3_lower=m3_lo,
+        m3_upper=m3_up,
+        region=region,
+        closure="widen",
     )
 
     comp_rows = complement_rows(n_grid, region)
@@ -147,6 +152,7 @@ def build_level(
             m3_lower=m3_lo,
             m3_upper=m3_up,
             region=region,
+            closure="widen",
         )
     return {
         "raw": raw,

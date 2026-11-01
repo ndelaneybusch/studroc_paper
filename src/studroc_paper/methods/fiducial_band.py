@@ -391,15 +391,17 @@ def fiducial_band(
             draws (and random tie-breaking). ``None`` draws fresh entropy.
         m3_floor: Localized exact M3 floor at the two ends of the curve
             (:mod:`.hybrid_floor`). ``False`` (default) returns the raw
-            fiducial band. ``True`` takes the pointwise hull with the M3
-            band, at this ``alpha``, on the exact-rule region and closes it
-            by widening; an :class:`M3Floor` sets the rule, its budgets, the
-            closure (``"widen"`` or ``"tighten"``), the M3 class split, and
-            whether the trim depth is recalibrated on the rows outside the
-            region. Without recalibration the floored band contains the raw
-            band pointwise; under either closure the in-region miss
-            probability is capped at the M3 level, and misses outside the
-            region have no distribution-free bound. Requires the
+            fiducial band. ``True`` applies the default :class:`M3Floor`: the
+            trim depth is recalibrated on the rows outside the exact-rule
+            region, the hull with the M3 band (at this ``alpha``, with the
+            sample-size class split) is taken on the region, and the result
+            is closed by tightening. An :class:`M3Floor` sets the rule, its
+            budgets, the closure (``"widen"`` or ``"tighten"``), the M3 class
+            split, and whether the trim depth is recalibrated. Without
+            recalibration the floored band contains the raw band pointwise;
+            under either closure the in-region miss probability is capped at
+            the M3 level, and misses outside the region have no
+            distribution-free bound. Requires the
             ``fiducial_core`` extension for the M3 component.
 
     Returns:

@@ -211,13 +211,11 @@ def test_core_arms_equal_the_production_entry_point(alpha):
         n_threads=1,
     )
     floors = {
-        "hyb_W": M3Floor(),
-        "hyb_T": M3Floor(closure="tighten"),
-        "rec_W": M3Floor(recalibrate_trim=True),
-        "rec_T": M3Floor(closure="tighten", recalibrate_trim=True),
-        "rec_T_ss": M3Floor(
-            closure="tighten", recalibrate_trim=True, split_ratio="sample_size"
-        ),
+        "hyb_W": M3Floor(split_ratio=0.5, closure="widen", recalibrate_trim=False),
+        "hyb_T": M3Floor(split_ratio=0.5, closure="tighten", recalibrate_trim=False),
+        "rec_W": M3Floor(split_ratio=0.5, closure="widen", recalibrate_trim=True),
+        "rec_T": M3Floor(split_ratio=0.5, closure="tighten", recalibrate_trim=True),
+        "rec_T_ss": M3Floor(),
     }
     for arm, floor in floors.items():
         _, lo, up = fiducial_band_rs(

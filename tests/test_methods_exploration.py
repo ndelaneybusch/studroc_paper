@@ -304,7 +304,7 @@ def test_general_boundary_composition_matches_production_in_both_directions(n0, 
     for path in paths(n0=n0, n1=n1):
         labels = np.asarray(path)
         actual = compose(labels=labels, bounds0=bounds[0], bounds1=bounds[1])
-        expected = _m3_band_from_labels_rs(lab_s=labels, alpha=alpha)
+        expected = _m3_band_from_labels_rs(lab_s=labels, alpha=alpha, split_ratio=0.5)
         np.testing.assert_array_equal(actual, expected)
     lower, upper, probability = calibrated(n=n0, alpha=0.1, eta=0.5, theta=0.5)
     assert 0.9 <= probability <= 0.900001

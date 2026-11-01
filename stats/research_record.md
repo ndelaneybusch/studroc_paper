@@ -34,7 +34,7 @@ negative/positive counts; a bare `n` means per class, balanced.
 |---|---|---|---|
 | **M3** (composed exact order-statistic bands) | **[Exact]** finite-sample, every continuous score law | 1.3–2.0× the C = 1 fiducial band; 0.37–0.88× KS | Covers .92–1.00 against nominal .50 |
 | **C = 1 fiducial band** (production default) | None. Asymptotic interior theorem only (Theorem 7) | The narrowest candidate we have | Covers ~.58–.86 |
-| **Hybrid**: C = 1 with an M3 floor at both ends (optional `m3_floor`) | **[Exact]** never covers less than C = 1; misses inside the floored region are capped at α₂. **No bound** on misses outside it | C = 1 + 9–16% macro on the Stage F designs (+4% at n = 8,000; +12–49% on shapes that needed no repair at n = 500); equal to M3 at n ≤ 15 | Covers ~.78–.90 |
+| **Hybrid**: C = 1 with an M3 floor at both ends (optional `m3_floor`). Default since 2026-10-31: tails-recalibrated trim, tightened closure, sample-size M3 split | **[Exact]** misses inside the floored region are capped at α₂; the original (widened, full-grid trim) hybrid also never covers less than C = 1. **No bound** on misses outside the region | Original: C = 1 + 9–16% macro on the Stage F designs (+4% at n = 8,000; +12–49% on shapes that needed no repair at n = 500); equal to M3 at n ≤ 15. Default: .89–.93× the original on typical cells | Original covers ~.78–.90; default ~.60–.76 on typical cells |
 | **Named-curve exact test** | **[Exact]** size, measured .046–.051 at α = .05 | — | — |
 
 **What was learned.**
@@ -111,7 +111,7 @@ are ROC *shapes*, parameter sweeps within a score family are redundant, and
 | CP allowance | Upper edge unioned with a Clopper–Pearson-form bound at level ℓ, plus a lower edge of 0 where the empirical TPR count is 0 |
 | Saturated run, `K` | Negatives scoring below the lowest positive, i.e. the grid points where empirical TPR = 1 |
 | M3 | Exact composition of two one-sample equal-local-level order-statistic bands, one per class (theory Prop. 12) |
-| Hybrid / floored band | Pointwise hull of C = 1 and M3 on a rank-selected end region, closed by widening |
+| Hybrid / floored band | Pointwise hull of C = 1 and M3 on a rank-selected end region, closed to a monotone band. Studies before the closure/split study close by widening; production now recalibrates the trim on the unfloored columns and closes by tightening |
 | Oracle | The fiducial trim calibrated against the true curve: a benchmark, not a method |
 
 ### 1.3 The early-round cells
@@ -813,8 +813,9 @@ In rough order of how much each could change the picture:
     A related width lever, trimming only on the unfloored columns, is specced in
     [`experiments/complement_trim_spec.md`](experiments/complement_trim_spec.md) (not yet run).
 11. **Class-split M3 follow-up** with a stated tolerance and more training shapes.
-    Specified, with the tightened floor closure, in
-    [`experiments/closure_split_spec.md`](experiments/closure_split_spec.md).
+    Done, with the tightened floor closure
+    ([report](experiments/closure_split_report.md)). The sample-size split and the
+    tightened, recalibrated floor are now the production defaults.
 12. **Adaptive refinement** for likelihood and test inversion. Only fixed coarse
     resolutions were tried.
 

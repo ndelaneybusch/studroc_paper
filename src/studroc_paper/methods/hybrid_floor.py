@@ -113,6 +113,11 @@ _MONOTONE_TOL = 1e-9
 class M3Floor:
     """Settings for the localized M3 floor.
 
+    The defaults are the tails-recalibrated, tightened floor with the
+    sample-size class split; ``M3Floor(split_ratio=0.5, closure="widen",
+    recalibrate_trim=False)`` is the original hybrid, which contains the raw
+    fiducial band.
+
     Attributes:
         rule: Region rule, ``"exact"`` (declared-budget cut points) or
             ``"stage_f"`` (the frozen Stage F frontier rule).
@@ -136,9 +141,9 @@ class M3Floor:
     eps: float = 1e-3
     delta: float = 0.025
     alpha: float | None = None
-    split_ratio: SplitRatio = 0.5
-    closure: Closure = "widen"
-    recalibrate_trim: bool = False
+    split_ratio: SplitRatio = "sample_size"
+    closure: Closure = "tighten"
+    recalibrate_trim: bool = True
 
     def __post_init__(self) -> None:
         """Validate the region rule and its probability budgets."""
@@ -162,7 +167,8 @@ def resolve_floor(m3_floor: bool | M3Floor) -> M3Floor | None:
 
     Args:
         m3_floor: ``False`` disables the floor, ``True`` selects the default
-            exact rule, and an :class:`M3Floor` supplies explicit settings.
+            :class:`M3Floor` settings, and an :class:`M3Floor` supplies explicit
+            settings.
 
     Returns:
         Floor settings, or ``None`` when the floor is disabled.
@@ -335,7 +341,7 @@ def stitch_m3_floor(
     m3_lower: NDArray,
     m3_upper: NDArray,
     region: NDArray,
-    closure: Closure = "widen",
+    closure: Closure,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Take the M3 hull on the region and close it to a monotone band.
 

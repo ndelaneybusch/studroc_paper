@@ -232,7 +232,7 @@ def fiducial_edges(
 
 def m3_edges(*, labels: np.ndarray, alpha: float) -> tuple:
     """Build the production exact reference from the paired rank sequence."""
-    return _m3_band_from_labels_rs(lab_s=labels, alpha=alpha)
+    return _m3_band_from_labels_rs(lab_s=labels, alpha=alpha, split_ratio=0.5)
 
 
 class Store:

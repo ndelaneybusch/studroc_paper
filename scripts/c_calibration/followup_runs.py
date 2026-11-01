@@ -600,7 +600,7 @@ def run_m3_arm(cell: Cell, out_dir: Path, reps: int, verbose: bool = True) -> di
             rng=np.random.default_rng(rep),
         )
         for alpha in M3_ALPHAS:
-            _, lo, hi = _m3_band_from_labels_rs(lab_s, alpha=alpha)
+            _, lo, hi = _m3_band_from_labels_rs(lab_s, alpha=alpha, split_ratio=0.5)
             ok_low = bool(np.all(lo <= rtrue + COV_TOL))
             ok_high = bool(np.all(rtrue <= hi + COV_TOL))
             coverage_counts[alpha] += ok_low and ok_high

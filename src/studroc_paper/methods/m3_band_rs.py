@@ -148,7 +148,7 @@ def _m3_band_from_labels_rs(
     *,
     alpha: float = 0.05,
     k: int | None = None,
-    split_ratio: SplitRatio = 0.5,
+    split_ratio: SplitRatio = "sample_size",
     assume_r0_zero: bool = False,
 ) -> tuple[NDArray, NDArray, NDArray]:
     """Compute M3 from an already tie-resolved merged label sequence.
@@ -230,7 +230,7 @@ def m3_band_rs(
     alpha: float = 0.05,
     k: int | None = None,
     tie_break: TieBreak = "random",
-    split_ratio: SplitRatio = 0.5,
+    split_ratio: SplitRatio = "sample_size",
     assume_r0_zero: bool = False,
     random_state: int | np.random.Generator | None = None,
 ) -> tuple[NDArray, NDArray, NDArray]:
@@ -258,11 +258,11 @@ def m3_band_rs(
             ROC) or ``"even"`` (deterministic, slightly conservative).
         split_ratio: Fraction ``rho`` of the log confidence budget spent on
             the negative-class band: ``1 - alpha_F = (1 - alpha)**rho`` and
-            ``1 - alpha_G = (1 - alpha)**(1 - rho)``. The default 0.5 is the
-            Sidak split; any fixed value in (0, 1) preserves the theorem.
+            ``1 - alpha_G = (1 - alpha)**(1 - rho)``. The default
             ``"sample_size"`` uses ``rho = n0**-0.5 / (n0**-0.5 + n1**-0.5)``,
-            which also preserves it because the class sizes are fixed by the
-            design.
+            which gives the smaller class the larger error share and preserves
+            the theorem because the class sizes are fixed by the design. Any
+            fixed value in (0, 1) also preserves it; 0.5 is the Sidak split.
         assume_r0_zero: If True, pin ``U(0) = 0``. Valid only under the
             *user-asserted* assumption ``R(0) = 0`` (class supports overlap
             at the top); the distribution-free default is the composition's

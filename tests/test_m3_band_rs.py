@@ -345,18 +345,21 @@ def test_sample_size_split_keeps_the_exact_joint_class_coverage(n0, n1, alpha):
     assert 1 - alpha <= coverage <= 1 - alpha + 5e-4
 
 
-def test_sample_size_split_narrows_the_band_where_the_scarce_class_dominates():
+def test_default_sample_size_split_narrows_the_band_where_scarce_class_dominates():
     """At 900/100 on a near-diagonal truth the positive band sets the width,
-    so moving error allowance to the positives must narrow M3."""
+    so the default split, which moves error allowance to the positives, must
+    narrow M3 relative to Sidak and equal the named sample-size rule."""
     rng = np.random.default_rng(5)
     n0, n1 = 900, 100
     y_true = np.r_[np.zeros(n0, int), np.ones(n1, int)]
     ratios = []
     for _ in range(20):
         y_score = np.r_[rng.normal(0, 1, n0), rng.normal(0.4, 1, n1)]
-        _, lo_s, hi_s = m3_band_rs(y_true, y_score, random_state=1)
-        _, lo_n, hi_n = m3_band_rs(
+        _, lo_s, hi_s = m3_band_rs(y_true, y_score, random_state=1, split_ratio=0.5)
+        _, lo_n, hi_n = m3_band_rs(y_true, y_score, random_state=1)
+        _, lo_named, hi_named = m3_band_rs(
             y_true, y_score, random_state=1, split_ratio="sample_size"
         )
+        assert np.array_equal(lo_n, lo_named) and np.array_equal(hi_n, hi_named)
         ratios.append(np.mean(hi_n - lo_n) / np.mean(hi_s - lo_s))
     assert np.max(ratios) < 1.0

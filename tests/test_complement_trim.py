@@ -117,7 +117,13 @@ def test_level_nesting_and_production_parity(n0: int, n1: int, shift: float) -> 
         upper=raw_up,
         region=level["region"],
         alpha=0.05,
-        floor=M3Floor(rule="exact", alpha=0.05),
+        floor=M3Floor(
+            rule="exact",
+            alpha=0.05,
+            split_ratio=0.5,
+            closure="widen",
+            recalibrate_trim=False,
+        ),
     )
     np.testing.assert_array_equal(ref[0], hyb_lo)
     np.testing.assert_array_equal(ref[1], hyb_up)
