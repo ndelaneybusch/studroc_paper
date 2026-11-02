@@ -22,6 +22,8 @@ from scipy import interpolate
 from scipy.stats import beta as beta_dist
 from torch import Tensor
 
+from studroc_paper.sampling.bootstrap_grid import fpr_grid_fp_counts
+
 
 def numpy_to_torch(arr: NDArray | Tensor, device: torch.device | None = None) -> Tensor:
     """Convert numpy array or torch tensor to tensor on specified device.
@@ -91,34 +93,6 @@ def torch_to_numpy(tensor: Tensor | NDArray) -> NDArray:
     return tensor.detach().cpu().numpy()
 
 
-def torch_step_interp(x: Tensor, xp: Tensor, fp: Tensor) -> Tensor:
-    """Step-function interpolation (right-continuous).
-
-    Implements a right-continuous step function where for each query point x
-    between xp[j] and xp[j+1], the function returns fp[j]. This is the standard
-    convention for empirical cumulative distribution functions.
-
-    Args:
-        x: Query points at which to evaluate the step function.
-        xp: X-coordinates of step discontinuities (must be increasing).
-        fp: Y-values corresponding to each step level.
-
-    Returns:
-        Interpolated step function values at x positions.
-
-    Examples:
-        >>> xp = torch.tensor([0.0, 0.5, 1.0])
-        >>> fp = torch.tensor([0.0, 0.7, 1.0])
-        >>> x = torch.tensor([0.25, 0.75])
-        >>> torch_step_interp(x, xp, fp)
-        tensor([0.0000, 0.7000])
-    """
-    # Find insertion indices
-    indices = torch.searchsorted(xp, x, right=True) - 1
-    indices = torch.clamp(indices, 0, len(fp) - 1)
-    return fp[indices]
-
-
 def torch_interp(x: Tensor, xp: Tensor, fp: Tensor) -> Tensor:
     """Linear interpolation equivalent to np.interp.
 
@@ -160,12 +134,15 @@ def torch_interp(x: Tensor, xp: Tensor, fp: Tensor) -> Tensor:
 def compute_empirical_roc_from_scores(
     neg_scores: Tensor, pos_scores: Tensor, fpr_grid: Tensor
 ) -> Tensor:
-    """Compute empirical ROC curve and interpolate at fpr_grid points.
+    """Evaluate the right-continuous empirical ROC curve at fpr_grid points.
 
-    Calculates the empirical receiver operating characteristic (ROC) curve
-    by evaluating true positive rate (TPR) at all possible thresholds from
-    the negative class scores, then interpolates to the requested FPR grid
-    using step interpolation (right-continuous).
+    The empirical ROC is ``R(t) = 1 - G(F^{-1}(1 - t))``: at a grid point
+    admitting ``k`` false positives, the TPR is the fraction of positives
+    strictly above the ``(k + 1)``-th largest negative. Where the curve rises
+    vertically at FPR ``k / n_neg``, this reads the top of the rise, the same
+    convention :func:`studroc_paper.sampling.generate_bootstrap_grid` applies
+    to each bootstrap sample, so a resample that draws every point once
+    reproduces this curve exactly.
 
     Args:
         neg_scores: Tensor of negative class scores.
@@ -183,48 +160,22 @@ def compute_empirical_roc_from_scores(
         >>> tpr.shape
         torch.Size([4])
     """
-    device = neg_scores.device
-
-    # Use all negative scores as candidate thresholds (sorted descending)
-    thresholds = torch.sort(neg_scores, descending=True).values
-
     n_neg = len(neg_scores)
     n_pos = len(pos_scores)
 
-    # Vectorized computation using broadcasting
-    # Shape: (n_thresholds,) computed via (1, n_neg) >= (n_thresholds, 1)
-    # Memory is O(N^2), acceptable for typical sample sizes
-    dtype = neg_scores.dtype
-
-    # Calculate FPR: FP / N_neg = sum(neg_scores >= threshold) / N_neg
-    # sum() returns long for bool inputs, so cast to original dtype
-    fpr_emp = (neg_scores.unsqueeze(0) >= thresholds.unsqueeze(1)).sum(dim=1).to(
-        dtype=dtype
-    ) / n_neg
-
-    # Calculate TPR: TP / N_pos = sum(pos_scores >= threshold) / N_pos
-    tpr_emp = (pos_scores.unsqueeze(0) >= thresholds.unsqueeze(1)).sum(dim=1).to(
-        dtype=dtype
-    ) / n_pos
-
-    # Add boundary points (0,0) and (1,1)
-    fpr_emp = torch.cat(
-        [
-            torch.tensor([0.0], device=device, dtype=dtype),
-            fpr_emp,
-            torch.tensor([1.0], device=device, dtype=dtype),
-        ]
+    # Descending negatives with a -inf sentinel, so k = n_neg admits everything.
+    sentinel = torch.full(
+        (1,), float("-inf"), device=neg_scores.device, dtype=neg_scores.dtype
     )
-    tpr_emp = torch.cat(
-        [
-            torch.tensor([0.0], device=device, dtype=dtype),
-            tpr_emp,
-            torch.tensor([1.0], device=device, dtype=dtype),
-        ]
-    )
+    neg_desc = torch.cat([torch.sort(neg_scores, descending=True).values, sentinel])
 
-    # Interpolate at fpr_grid points using step interpolation
-    return torch_step_interp(fpr_grid, fpr_emp, tpr_emp)
+    # Grid points map to integer counts, so points on a jump resolve the same
+    # way on every device.
+    thresholds = neg_desc[fpr_grid_fp_counts(fpr_grid=fpr_grid, n_neg=n_neg)]
+    counts_le = torch.searchsorted(
+        torch.sort(pos_scores).values, thresholds, right=True
+    )
+    return (n_pos - counts_le).to(dtype=neg_scores.dtype) / n_pos
 
 
 def harrell_davis_quantile(x_sorted: NDArray, p: float) -> float:

@@ -133,6 +133,32 @@ def reconstruct_ranks(
     return pos_ranks, neg_ranks
 
 
+def fpr_grid_fp_counts(*, fpr_grid: Tensor, n_neg: int) -> Tensor:
+    """Return the false-positive count each FPR grid point admits.
+
+    Grid point ``t`` admits ``floor(t * n_neg)`` negatives. A point within a
+    few ulps of a jump ``k / n_neg`` counts as exactly ``k``, so the native grid
+    ``linspace(0, 1, n_neg + 1)`` maps to ``0, ..., n_neg`` even where the
+    floating-point ``k / n_neg`` lands just below the jump.
+
+    Args:
+        fpr_grid: FPR values in [0, 1].
+        n_neg: Number of negatives.
+
+    Returns:
+        Long tensor of counts in ``[0, n_neg]``, on the device of ``fpr_grid``.
+
+    Examples:
+        >>> grid = torch.linspace(0, 1, 5001)
+        >>> counts = fpr_grid_fp_counts(fpr_grid=grid, n_neg=5000)
+        >>> bool((counts == torch.arange(5001)).all())
+        True
+    """
+    tolerance = 4 * torch.finfo(fpr_grid.dtype).eps * n_neg
+    counts = torch.floor(fpr_grid.double() * n_neg + tolerance).long()
+    return counts.clamp(0, n_neg)
+
+
 def generate_bootstrap_grid(
     fpr: Tensor | None = None,
     tpr: Tensor | None = None,
@@ -241,8 +267,7 @@ def generate_bootstrap_grid(
     else:
         # Pre-calculate grid indices for efficiency (empirical path)
         # k is the index in the sorted negatives corresponding to the FPR grid point
-        k_indices = torch.floor(grid * n_negatives).long()
-        k_indices = torch.clamp(k_indices, 0, n_negatives)
+        k_indices = fpr_grid_fp_counts(fpr_grid=grid, n_neg=n_negatives)
 
     # 2. Process in Batches
     # This prevents allocating (B, N) tensors which causes OOM on large datasets
