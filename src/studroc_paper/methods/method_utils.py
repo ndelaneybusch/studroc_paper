@@ -27,12 +27,14 @@ def numpy_to_torch(arr: NDArray | Tensor, device: torch.device | None = None) ->
     """Convert numpy array or torch tensor to tensor on specified device.
 
     Handles both numpy arrays and existing tensors, moving them to the
-    target device. If no device is specified, automatically selects CUDA
-    if available, otherwise CPU.
+    target device. Without a device, a tensor stays on its own device and an
+    array goes to CUDA if available, otherwise the CPU; only the array case
+    queries CUDA, which initializes the GPU driver.
 
     Args:
         arr: Input numpy array or torch tensor.
-        device: Target device. Defaults to None (auto-select CUDA or CPU).
+        device: Target device. Defaults to None (the tensor's own device, or
+            auto-select CUDA or CPU for an array).
 
     Returns:
         PyTorch tensor on the specified device.
@@ -48,12 +50,11 @@ def numpy_to_torch(arr: NDArray | Tensor, device: torch.device | None = None) ->
         >>> result.device.type
         'cpu'
     """
+    if isinstance(arr, Tensor):
+        return arr if device is None else arr.to(device)
+
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    # If already a tensor, just move to the target device
-    if isinstance(arr, Tensor):
-        return arr.to(device)
 
     # If numpy array, convert to tensor
     return torch.from_numpy(np.asarray(arr)).to(device)

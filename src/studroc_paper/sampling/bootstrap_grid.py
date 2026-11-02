@@ -145,6 +145,7 @@ def generate_bootstrap_grid(
     device: torch.device | None = None,
     batch_size: int = 500,
     tpr_method: Literal["empirical", "harrell_davis"] = "empirical",
+    generator: torch.Generator | None = None,
 ) -> Tensor:
     """
     Generate a tensor of bootstrapped ROC samples evaluated across a grid.
@@ -170,6 +171,10 @@ def generate_bootstrap_grid(
         tpr_method: Method for computing TPR from bootstrap samples. Defaults to
             "empirical" (standard step-function interpolation). Use "harrell_davis"
             for bias-reduced quantile estimation using beta-weighted order statistics.
+        generator: Random generator on ``device`` for the resampling indices.
+            None (default) draws from torch's global generator; an explicit
+            generator keeps the draws independent of any other use of the
+            global state, such as concurrent threads.
 
     Returns:
         Tensor of shape (B, len(grid)) containing TPR values.
@@ -247,7 +252,9 @@ def generate_bootstrap_grid(
 
         # --- Bootstrap Negatives (Y_star) ---
         # Sample
-        idx_neg = torch.randint(0, n_negatives, (current_B, n_negatives), device=device)
+        idx_neg = torch.randint(
+            0, n_negatives, (current_B, n_negatives), device=device, generator=generator
+        )
         Y_star = neg_values[idx_neg]
 
         if use_hd:
@@ -279,7 +286,9 @@ def generate_bootstrap_grid(
 
         # --- Bootstrap Positives (X_star) ---
         # Sample
-        idx_pos = torch.randint(0, n_positives, (current_B, n_positives), device=device)
+        idx_pos = torch.randint(
+            0, n_positives, (current_B, n_positives), device=device, generator=generator
+        )
         X_star = pos_values[idx_pos]
 
         # Sort Ascending for searchsorted

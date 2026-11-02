@@ -93,7 +93,7 @@ def wilson_band(
         k = n_neg + 1
 
     fpr_grid = np.linspace(0, 1, k, dtype=dtype)
-    fpr_grid = numpy_to_torch(fpr_grid)
+    fpr_grid = numpy_to_torch(fpr_grid, y_score.device)
 
     # 1. Estimate the center line (Point Estimate)
     if harrell_davis:
@@ -217,7 +217,9 @@ def _interpolate_envelope_to_grid(
     unique_fpr, inverse_idx = torch.unique(fpr_sorted, return_inverse=True)
     reduce_op = "amin" if fill_lower else "amax"
     unique_tpr = torch.zeros_like(unique_fpr)
-    unique_tpr.scatter_reduce_(0, inverse_idx, tpr_sorted, reduce=reduce_op, include_self=False)
+    unique_tpr.scatter_reduce_(
+        0, inverse_idx, tpr_sorted, reduce=reduce_op, include_self=False
+    )
 
     # Linear interpolation to grid using numpy (torch lacks native 1D interp)
     fpr_np = unique_fpr.cpu().numpy()
@@ -236,6 +238,7 @@ def wilson_rectangle_band(
     alpha: float = 0.05,
     correction: CorrectionMethod = "none",
     tpr_method: TprMethod = "empirical",
+    device: torch.device | None = None,
 ) -> tuple[NDArray, NDArray, NDArray]:
     """Compute Wilson rectangle confidence bands for ROC curves.
 
@@ -276,6 +279,8 @@ def wilson_rectangle_band(
             Defaults to "empirical".
         monotonic: If True, enforce monotonically non-decreasing envelopes
             (required for valid ROC bands). Defaults to True.
+        device: Device for the computation. None (default) keeps tensor
+            inputs on their device and sends arrays to CUDA when available.
 
     Returns:
         Tuple of three numpy arrays:
@@ -303,8 +308,8 @@ def wilson_rectangle_band(
         (0.0, 1.0)
     """
     # Input validation and conversion
-    y_score_t = numpy_to_torch(y_score)
-    y_true_t = numpy_to_torch(y_true)
+    y_score_t = numpy_to_torch(y_score, device)
+    y_true_t = numpy_to_torch(y_true, device)
 
     if y_score_t.shape != y_true_t.shape:
         raise ValueError(

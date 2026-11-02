@@ -9,7 +9,7 @@ from .envelope_boot import (
     wilson_beta_band,
 )
 from .fiducial_band import fiducial_band, production_trim_rows
-from .fiducial_band_rs import fiducial_band_rs
+from .fiducial_band_rs import fiducial_band_rs, fiducial_band_suite_rs
 from .fiducial_ladder import (
     LadderProfile,
     khat_from_labels,
@@ -45,6 +45,7 @@ __all__ = [
     "exact_right_start",
     "fiducial_band",
     "fiducial_band_rs",
+    "fiducial_band_suite_rs",
     "fixed_width_ks_band",
     "floor_region",
     "khat_from_labels",

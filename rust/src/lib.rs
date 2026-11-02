@@ -39,6 +39,9 @@ use rayon::prelude::*;
 pub mod ell;
 pub mod incbeta;
 pub mod ladder;
+pub mod shared;
+
+use shared::SharedCloud;
 
 pub(crate) const CHUNK_COLS: usize = 128; // grid-column chunk for the rank passes
 
@@ -85,10 +88,16 @@ impl Xoshiro256pp {
         result
     }
 
+    /// Uniform 53-bit integer; [`u53_to_unit`] maps it to `next_f64`'s value.
+    #[inline(always)]
+    fn next_u53(&mut self) -> u64 {
+        self.next_u64() >> 11
+    }
+
     /// Uniform in `[0, 1)` with 53 random bits.
     #[inline(always)]
     fn next_f64(&mut self) -> f64 {
-        (self.next_u64() >> 11) as f64 * (1.0 / (1u64 << 53) as f64)
+        u53_to_unit(self.next_u53())
     }
 
     /// Standard exponential; `1 - u` is in `(0, 1]` so the log is finite.
@@ -96,6 +105,53 @@ impl Xoshiro256pp {
     fn next_exp(&mut self) -> f64 {
         -(1.0 - self.next_f64()).ln()
     }
+}
+
+/// The uniform in `[0, 1)` carried by a 53-bit integer. The map is
+/// strictly increasing, so sorting the integers sorts the uniforms.
+#[inline(always)]
+fn u53_to_unit(key: u64) -> f64 {
+    key as f64 * (1.0 / (1u64 << 53) as f64)
+}
+
+/// Runs shorter than this are sorted by comparison; longer ones by buckets.
+const BUCKET_SORT_MIN: usize = 64;
+
+/// Sort uniform 53-bit keys ascending.
+///
+/// Long runs scatter into about one bucket per key by their leading bits,
+/// then sort each (expected constant-size) bucket, which is linear in
+/// expectation for uniform keys. The result is the same sorted sequence any
+/// sort produces.
+fn sort_uniform_keys(keys: &mut Vec<u64>, scratch: &mut Vec<u64>, offsets: &mut Vec<usize>) {
+    let n = keys.len();
+    if n < BUCKET_SORT_MIN {
+        keys.sort_unstable();
+        return;
+    }
+    let bits = usize::BITS - (n - 1).leading_zeros();
+    let shift = 53 - bits;
+    let n_buckets = 1usize << bits;
+    offsets.clear();
+    offsets.resize(n_buckets + 1, 0);
+    for &key in keys.iter() {
+        offsets[(key >> shift) as usize + 1] += 1;
+    }
+    for b in 0..n_buckets {
+        offsets[b + 1] += offsets[b];
+    }
+    scratch.clear();
+    scratch.resize(n, 0);
+    let mut cursor = offsets[..n_buckets].to_vec();
+    for &key in keys.iter() {
+        let b = (key >> shift) as usize;
+        scratch[cursor[b]] = key;
+        cursor[b] += 1;
+    }
+    for b in 0..n_buckets {
+        scratch[offsets[b]..offsets[b + 1]].sort_unstable();
+    }
+    std::mem::swap(keys, scratch);
 }
 
 /// Derives a unique RNG seed per fiducial draw so results are reproducible
@@ -133,7 +189,7 @@ fn fill_axis(
     spacings_cum: &[f64],
     out: &mut [f64],
     rng: &mut Xoshiro256pp,
-    urun: &mut Vec<f64>,
+    runs: &mut RunBufs,
 ) {
     let n = labels.len();
     let mut own_count = 0usize;
@@ -154,11 +210,11 @@ fn fill_axis(
                 0.0
             };
             let mass = spacings_cum[own_count] - base;
-            urun.clear();
-            urun.extend((start..i).map(|_| rng.next_f64()));
-            urun.sort_unstable_by(f64::total_cmp);
-            for (offset, &u) in urun.iter().enumerate() {
-                out[1 + start + offset] = base + u * mass;
+            runs.keys.clear();
+            runs.keys.extend((start..i).map(|_| rng.next_u53()));
+            sort_uniform_keys(&mut runs.keys, &mut runs.scratch, &mut runs.offsets);
+            for (offset, &key) in runs.keys.iter().enumerate() {
+                out[1 + start + offset] = base + u53_to_unit(key) * mass;
             }
         }
     }
@@ -183,12 +239,19 @@ fn interpolate_row(xv: &[f64], yv: &[f64], n0: usize, out_row: &mut [f32]) {
     }
 }
 
+/// Scratch space for sorting one run's uniforms.
+struct RunBufs {
+    keys: Vec<u64>,
+    scratch: Vec<u64>,
+    offsets: Vec<usize>,
+}
+
 struct DrawBufs {
     pc: Vec<f64>,
     qc: Vec<f64>,
     xv: Vec<f64>,
     yv: Vec<f64>,
-    urun: Vec<f64>,
+    runs: RunBufs,
 }
 
 impl DrawBufs {
@@ -199,7 +262,11 @@ impl DrawBufs {
             qc: vec![0.0; n1 + 1],
             xv: vec![0.0; n + 2],
             yv: vec![0.0; n + 2],
-            urun: Vec::with_capacity(n),
+            runs: RunBufs {
+                keys: Vec::with_capacity(n),
+                scratch: Vec::with_capacity(n),
+                offsets: Vec::new(),
+            },
         }
     }
 }
@@ -218,8 +285,8 @@ fn generate_row(
     dirichlet_cumsum(rng, &mut buf.qc);
     buf.xv[0] = 0.0;
     buf.yv[0] = 0.0;
-    fill_axis(labels, 0, &buf.pc, &mut buf.xv, rng, &mut buf.urun);
-    fill_axis(labels, 1, &buf.qc, &mut buf.yv, rng, &mut buf.urun);
+    fill_axis(labels, 0, &buf.pc, &mut buf.xv, rng, &mut buf.runs);
+    fill_axis(labels, 1, &buf.qc, &mut buf.yv, rng, &mut buf.runs);
     buf.xv[n + 1] = 1.0;
     buf.yv[n + 1] = 1.0;
     interpolate_row(&buf.xv, &buf.yv, n0, out_row);
@@ -285,27 +352,7 @@ pub fn minp_depths_cols(cloud: &[f32], n_draws: usize, n_grid: usize, cols: &[us
             let mut pairs: Vec<(f32, u32)> = Vec::with_capacity(n_draws);
             for c in 0..width {
                 let col = &block[c * n_draws..(c + 1) * n_draws];
-                pairs.clear();
-                pairs.extend(col.iter().copied().zip(0..n_draws as u32));
-                pairs.sort_unstable_by(|a, b| a.0.total_cmp(&b.0));
-                // One pass over tie groups: every member of a group of equal
-                // values shares rank_le = group end and rank_ge = n - start.
-                let mut start = 0usize;
-                while start < n_draws {
-                    let v = pairs[start].0;
-                    let mut end = start + 1;
-                    while end < n_draws && pairs[end].0.total_cmp(&v).is_eq() {
-                        end += 1;
-                    }
-                    let d = (end as u32).min((n_draws - start) as u32);
-                    for &(_, m) in &pairs[start..end] {
-                        let slot = &mut depths[m as usize];
-                        if d < *slot {
-                            *slot = d;
-                        }
-                    }
-                    start = end;
-                }
+                column_depths_into(col, &mut pairs, &mut depths);
             }
             depths
         })
@@ -320,6 +367,33 @@ pub fn minp_depths_cols(cloud: &[f32], n_draws: usize, n_grid: usize, cols: &[us
                 a
             },
         )
+}
+
+/// Lower each draw's entry of `depths` to its tie-inclusive two-sided rank
+/// in one column, `min(#{<= v}, #{>= v})`. `pairs` is scratch space.
+pub(crate) fn column_depths_into(col: &[f32], pairs: &mut Vec<(f32, u32)>, depths: &mut [u32]) {
+    let n_draws = col.len();
+    pairs.clear();
+    pairs.extend(col.iter().copied().zip(0..n_draws as u32));
+    pairs.sort_unstable_by(|a, b| a.0.total_cmp(&b.0));
+    // One pass over tie groups: every member of a group of equal values
+    // shares rank_le = group end and rank_ge = n - start.
+    let mut start = 0usize;
+    while start < n_draws {
+        let v = pairs[start].0;
+        let mut end = start + 1;
+        while end < n_draws && pairs[end].0.total_cmp(&v).is_eq() {
+            end += 1;
+        }
+        let d = (end as u32).min((n_draws - start) as u32);
+        for &(_, m) in &pairs[start..end] {
+            let slot = &mut depths[m as usize];
+            if d < *slot {
+                *slot = d;
+            }
+        }
+        start = end;
+    }
 }
 
 /// Min-p depth of each draw over the full grid.
@@ -385,7 +459,7 @@ pub(crate) fn parse_labels(labels: &[u8]) -> Result<(usize, usize), String> {
 }
 
 /// Validate an optional strictly-increasing column subset against the grid.
-fn validate_trim_cols(trim_cols: Option<&[usize]>, n_grid: usize) -> Result<(), String> {
+pub(crate) fn validate_trim_cols(trim_cols: Option<&[usize]>, n_grid: usize) -> Result<(), String> {
     if let Some(cols) = trim_cols {
         if cols.is_empty() {
             return Err("trim_cols must be non-empty when given".to_string());
@@ -433,17 +507,34 @@ pub fn trimmed_tube_vec(
     validate_trim_cols(trim_cols, n_grid)?;
 
     let cloud = fiducial_cloud(labels, n0, n1, n_draws, seed);
+    let j = depth_quantile(&cloud, n_draws, n_grid, alpha_eff, trim_cols);
+    let (lower, upper) = pointwise_order_stats(&cloud, n_draws, n_grid, j);
+    Ok((lower, upper, j))
+}
 
+/// Trim depth `j`: the `alpha_eff`-quantile of the min-p depths over
+/// `trim_cols` (all columns when `None`), clamped to `[1, n_draws / 2]`.
+/// Arguments are assumed validated by the caller.
+pub(crate) fn depth_quantile(
+    cloud: &[f32],
+    n_draws: usize,
+    n_grid: usize,
+    alpha_eff: f64,
+    trim_cols: Option<&[usize]>,
+) -> usize {
     let depth_cols: Vec<usize> = trim_cols.map_or_else(|| (0..n_grid).collect(), <[usize]>::to_vec);
-    let mut depths = minp_depths_cols(&cloud, n_draws, n_grid, &depth_cols);
+    trim_depth_from(minp_depths_cols(cloud, n_draws, n_grid, &depth_cols), alpha_eff)
+}
+
+/// Trim depth from per-draw min-p depths: their `alpha_eff`-quantile,
+/// clamped to `[1, n_draws / 2]`.
+pub(crate) fn trim_depth_from(mut depths: Vec<u32>, alpha_eff: f64) -> usize {
+    let n_draws = depths.len();
     depths.sort_unstable();
     // alpha_eff is validated positive, so the floored index cannot be negative.
     #[allow(clippy::cast_sign_loss)]
     let quantile = depths[(alpha_eff * n_draws as f64).floor() as usize] as usize;
-    let j = quantile.clamp(1, (n_draws / 2).max(1));
-
-    let (lower, upper) = pointwise_order_stats(&cloud, n_draws, n_grid, j);
-    Ok((lower, upper, j))
+    quantile.clamp(1, (n_draws / 2).max(1))
 }
 
 /// Run `f` on a dedicated rayon pool when `n_threads > 0`, else the global
@@ -529,6 +620,83 @@ fn fiducial_trimmed_tube<'py>(
         .map_err(PyValueError::new_err)?;
     Ok((lower.into_pyarray(py), upper.into_pyarray(py), j))
 }
+
+/// A fiducial cloud held in Rust memory, generated once per replicate and
+/// trimmed at several levels and column subsets (see [`SharedCloud`]).
+///
+/// `n_threads > 0` runs every pass on a dedicated pool of that size; `0`
+/// uses the global rayon pool.
+#[pyclass(frozen, name = "FiducialCloud")]
+struct PyFiducialCloud {
+    inner: SharedCloud,
+    n_threads: usize,
+}
+
+#[pymethods]
+impl PyFiducialCloud {
+    #[new]
+    #[pyo3(signature = (labels, n_draws, seed, n_threads))]
+    #[allow(clippy::needless_pass_by_value)]
+    fn new(
+        py: Python<'_>,
+        labels: PyReadonlyArray1<'_, u8>,
+        n_draws: usize,
+        seed: u64,
+        n_threads: usize,
+    ) -> PyResult<Self> {
+        let labels = labels.as_slice()?.to_vec();
+        let inner = py
+            .detach(|| run_in_pool(n_threads, || SharedCloud::new(&labels, n_draws, seed)))
+            .map_err(PyValueError::new_err)?;
+        Ok(Self { inner, n_threads })
+    }
+
+    /// Number of generated draws (the largest usable prefix).
+    #[getter]
+    fn n_draws(&self) -> usize {
+        self.inner.n_draws()
+    }
+
+    /// Trim depth `j` over the leading `n_draws` rows and `trim_cols`.
+    #[pyo3(signature = (n_draws, alpha_eff, trim_cols=None))]
+    #[allow(clippy::needless_pass_by_value)]
+    fn trim_depth(
+        &self,
+        py: Python<'_>,
+        n_draws: usize,
+        alpha_eff: f64,
+        trim_cols: Option<PyReadonlyArray1<'_, u64>>,
+    ) -> PyResult<usize> {
+        let cols = trim_cols_vec(trim_cols)?;
+        py.detach(|| {
+            run_in_pool(self.n_threads, || {
+                self.inner.trim_depth(n_draws, alpha_eff, cols.as_deref())
+            })
+        })
+        .map_err(PyValueError::new_err)
+    }
+
+    /// Pointwise `(lower, upper)` order statistics over the leading
+    /// `n_draws` rows at each depth in `js`, from one pass over the cloud.
+    #[allow(clippy::needless_pass_by_value)]
+    fn tubes<'py>(
+        &self,
+        py: Python<'py>,
+        n_draws: usize,
+        js: Vec<usize>,
+    ) -> PyResult<Vec<PyEdges<'py>>> {
+        let tubes = py
+            .detach(|| run_in_pool(self.n_threads, || self.inner.tubes(n_draws, &js)))
+            .map_err(PyValueError::new_err)?;
+        Ok(tubes
+            .into_iter()
+            .map(|(lower, upper)| (lower.into_pyarray(py), upper.into_pyarray(py)))
+            .collect())
+    }
+}
+
+/// Lower and upper band edges returned to Python.
+type PyEdges<'py> = (Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<f64>>);
 
 /// Full ladder profile of one replicate (see `ladder::ladder_profile_vec`).
 ///
@@ -654,6 +822,7 @@ fn ell_crossing_probability(
 #[pymodule]
 fn fiducial_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(fiducial_trimmed_tube, m)?)?;
+    m.add_class::<PyFiducialCloud>()?;
     m.add_function(wrap_pyfunction!(fiducial_ladder_profile, m)?)?;
     m.add_function(wrap_pyfunction!(ell_crossing_probability, m)?)?;
     m.add_function(wrap_pyfunction!(inv_reg_incomplete_beta, m)?)?;
@@ -780,6 +949,26 @@ mod tests {
             let out =
                 trimmed_tube_threaded(&labels, 500, 0.0975, 42, threads, None).expect("valid");
             assert_eq!(out, reference, "thread count {threads} changed the output");
+        }
+    }
+
+    #[test]
+    fn bucket_sort_matches_comparison_sort() {
+        // Every length around the threshold and bucket-count boundaries,
+        // including duplicate keys and keys at both ends of the range.
+        let mut rng = Xoshiro256pp::new(5);
+        let (mut scratch, mut offsets) = (Vec::new(), Vec::new());
+        for n in [0usize, 1, 2, 63, 64, 65, 127, 128, 129, 1000, 4097] {
+            let mut keys: Vec<u64> = (0..n).map(|_| rng.next_u53()).collect();
+            if n > 3 {
+                keys[0] = 0;
+                keys[1] = (1 << 53) - 1;
+                keys[2] = keys[3];
+            }
+            let mut expect = keys.clone();
+            expect.sort_unstable();
+            sort_uniform_keys(&mut keys, &mut scratch, &mut offsets);
+            assert_eq!(keys, expect, "n={n}");
         }
     }
 

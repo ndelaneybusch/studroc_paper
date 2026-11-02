@@ -1,14 +1,15 @@
 # Simulation Specification: Confidence Band Evaluation (Final Run)
 
-This document specifies the final paper run comparing the studentized bootstrap
-envelope band (`envelope_boot.py`) against baselines and its own ablations
-across diverse Data Generating Processes (DGPs).
+This document specifies the final paper run comparing the rank-space fiducial
+band and its M3-floored hybrid against the exact M3 band, the studentized
+bootstrap envelope, and classical baselines across diverse Data Generating
+Processes (DGPs).
 
 ## 1. Objectives
 
 -   Evaluate coverage and tightness of confidence bands under diverse data conditions.
--   Attribute the envelope method's behavior to its components via ablations
-    (Beta order-statistic floor, Wilson floor, bootstrap) and symmetric-tail variants.
+-   Measure what the localized M3 floor buys the C = 1 fiducial band, paired on
+    one fiducial cloud per replicate.
 -   Assess the robustness of the parametric baseline (Working-Hotelling) when
     binormal assumptions are violated.
 
@@ -60,43 +61,42 @@ For each DGP:
 
 ## 4. Simulation Parameters
 
--   **Sample Sizes ($n$)**: $\{10, 30, 100, 300, 1000, 10000\}$
+-   **Sample Sizes ($n$)**: $\{10, 30, 100, 300, 1000, 3000, 10000\}$
 -   **Prevalence**: balanced for all $n \neq 1000$; for $n = 1000$ both 10%
     ($n_{pos}=100$) and 50% ($n_{pos}=500$).
--   **Confidence Levels**: $\alpha \in \{0.5, 0.05\}$.
+-   **Confidence Levels**: $\alpha \in \{0.5, 0.2, 0.05\}$.
 -   **Simulation repeats**: $N_{sim} = 1$ per LHS combination.
--   **Bootstrap Replicates**: $B = 4000$ (shared by all bootstrap-based methods).
+-   **Bootstrap Replicates**: $B = 4000$ (envelope only).
 -   **Eval grid**: $K = n_0 + 1$ uniform FPR points (exact for step-function bands).
--   **Reproducibility**: a single seed drives a hierarchy of numpy generators;
-    torch's RNG is re-seeded from the numpy stream per simulation. A run-level
-    metadata JSON records the CLI args, git hash, package versions, and device.
+    The rank-space methods return this native grid directly, without resampling.
+-   **Reproducibility**: a single seed drives a hierarchy of numpy generators.
+    Each (DGP, sample size) cell has a root seed, and each LHS combination draws
+    from its own `SeedSequence.spawn` child, so any process can regenerate any
+    combination; within it, each repeat draws its data, a rank-space method seed,
+    and the seed of the bootstrap's own torch generator. Results are therefore
+    independent of worker count and scheduling. A run-level metadata JSON records
+    the CLI args, git hash, package versions, hybrid floor settings, and GPU.
 
 ## 5. Method Roster
 
-### Baselines
 | Name | Description |
 |---|---|
 | `ks` | Fixed-width simultaneous KS band (Campbell 1994) |
 | `working_hotelling` | Parametric binormal simultaneous band |
-| `pointwise` | Pointwise bootstrap percentile band (uncorrected) |
-| `pointwise_sidak` | Pointwise bootstrap band, Šidák-corrected across interior grid points |
-| `wilson_rectangle_sidak` | 2D Wilson rectangles, Šidák across each rectangle's two margins |
-| `wilson_rectangle_bonferroni` | 2D Wilson rectangles, Bonferroni across margins |
+| `envelope` | Studentized bootstrap envelope: Wilson variance floor during studentization + variance-ratio gated Wilson Rectangle floor + exact Beta order-statistic floor (lower band, low FPR). Probability space, KS retention, empirical TPR. |
+| `m3` | Exact composition band (finite-sample coverage theorem), sample-size class split |
+| `fiducial` | Rank-space fiducial band at C = 1, no floor |
+| `fiducial_hybrid` | C = 1 fiducial band with the localized exact M3 floor (`M3Floor()` defaults: exact region rule, tails-recalibrated trim, tightened closure, sample-size split; see `stats/experiments/closure_split_report.md`) |
 
-### Envelope family (computed jointly by `envelope_band_suite`)
-| Name | Configuration |
-|---|---|
-| `envelope` | **Final method**: Wilson variance floor during studentization + variance-ratio gated Wilson Rectangle floor + exact Beta order-statistic floor (lower band, low FPR). Probability space, KS retention, empirical TPR. |
-| `envelope_no_beta_floor` | Ablation: final method without the Beta floor |
-| `envelope_no_wilson_floor` | Ablation: raw bootstrap variance, no rectangle; Beta floor only |
-| `envelope_no_bootstrap` | Ablation: no bootstrap. Wilson rectangles Šidák-corrected across all interior grid points, plus the Beta floor extended to all $n_0$ order statistics (per-event level $\alpha/(2n_0)$). Implemented as `wilson_beta_band`. |
-| `envelope_beta_both_tails` | Symmetric-tail variant: no Wilson machinery; Beta floor at low FPR plus its mirror at high FPR (positive-class order statistics: true TPR at the $j$-th smallest positive $\sim$ exceeds $1-\rho_j$ with $\rho_j$ the Beta$(j, n_1{+}1{-}j)$ upper quantile, anchored at a one-sided Wilson upper bound on its FPR) |
-| `envelope_wilson_both_tails` | Symmetric-tail variant: Wilson machinery only, with the rectangle floor forced onto both FPR-tail jurisdictions (matching the Beta floor's reach $q_J$) in addition to the variance-ratio gate; no Beta floor |
-| `envelope_no_floors` | Bare studentized envelope (completes the component build-up) |
+`fiducial` and `fiducial_hybrid` are computed together by
+`fiducial_band_suite_rs` from one fiducial cloud per replicate, sized for the
+largest per-level draw budget; each band is bit-identical to a separate
+`fiducial_band_rs` call with the same seed.
 
-Dropped from earlier runs: all `harrell_davis`, `logit`, and `symmetric`-retention
-variants; Hsieh–Turnbull and ellipse-envelope methods; uncorrected Wilson rectangle;
-Wilson pointwise band; logit max-modulus bands.
+Dropped from earlier runs: the pointwise bootstrap and Wilson rectangle
+baselines; the envelope ablations and symmetric-tail variants; all
+`harrell_davis`, `logit`, and `symmetric`-retention variants; Hsieh–Turnbull and
+ellipse-envelope methods; Wilson pointwise band; logit max-modulus bands.
 
 ## 6. Evaluation Metrics
 
@@ -112,8 +112,10 @@ Per band (`src/studroc_paper/eval/eval.py`), saved long-format per CI to feather
 -   Tightness: band area, mean width, width at landmark FPRs
     (0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9), mean width per FPR region.
 -   Cost: per-method runtime (`runtime_seconds`, with `runtime_is_shared=True`
-    for envelope-suite variants whose computation is amortized) and bootstrap
-    generation time.
+    for the two fiducial arms, whose single suite call is amortized), the
+    `device` it ran on, and bootstrap generation time. Runtimes are measured
+    under the run's full concurrent load (see §7), so they rank methods within
+    a run but are not single-method benchmarks.
 
 Aggregates per (method, alpha) are saved as JSON: coverage rate with Wilson CI,
 directional violation rates and symmetry test, width/area summaries by region,
@@ -121,16 +123,23 @@ mean violation areas, and run metadata.
 
 ## 7. Order of Operations
 
-1.  Loop over DGPs → sample-size configs → LHS combinations → repeats.
-2.  Per repeat: generate data once; generate one $B \times K$ bootstrap matrix;
-    all bootstrap-based methods consume it. Envelope-family variants share
-    studentization work across variants and alpha levels via
-    `envelope_band_suite`. The true ROC is computed once per
-    (LHS combination, sample size), not per repeat.
-3.  After each (DGP, n0/n1) config: save the long-format feather and the
-    aggregated JSON (filenames include DGP, n, prevalence, and date).
-
-Progress bars over LHS combinations; intermediates in RAM.
+1.  Draw every DGP's LHS design, then calibrate M3 once for every
+    (class sizes, alpha) in the run, in parallel; the calibration is handed to
+    every worker.
+2.  Submit one task per LHS combination to a pool of single-threaded CPU
+    worker processes (GPU hidden), in a fixed order that runs across cell
+    boundaries so the pool never drains between cells. A worker regenerates
+    the combination's data from its seed, computes the true ROC (once per
+    combination) and every rank-space band, and evaluates them.
+3.  The envelope runs where it is cheapest: for cells with at least
+    `--gpu-min-neg` negatives, the main process regenerates the same data and
+    computes the bootstrap matrix and envelope on the GPU while the workers
+    run; below that, GPU launch overhead dominates and the workers compute it
+    on the CPU. The two lanes' copies of each dataset are checked against each
+    other (empirical AUCs) before their results are merged.
+4.  When a (DGP, n0/n1) cell's last result arrives: save the long-format
+    feather and the aggregated JSON (filenames include DGP, n, prevalence,
+    and date).
 
 ### Directory Structure
 -   `scripts/run_simulation.py`: Main driver script.

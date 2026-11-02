@@ -310,6 +310,7 @@ def _apply_wilson_variance_ratio_floor(
         alpha=alpha_wilson,
         correction="sidak",
         tpr_method="empirical",
+        device=fpr_grid.device,
     )
 
     device = fpr_grid.device
@@ -860,6 +861,7 @@ def envelope_bootstrap_band(
     tpr_method: TprMethod = "empirical",
     plot: bool = False,
     plot_title: str | None = None,
+    device: torch.device | None = None,
 ) -> tuple[NDArray, NDArray, NDArray]:
     """Compute Studentized Bootstrap Envelope Simultaneous Confidence Bands.
 
@@ -912,6 +914,8 @@ def envelope_bootstrap_band(
         plot: If True, generate diagnostic plots using the viz module. Defaults to False.
         plot_title: Optional custom title for the diagnostic plots. If None, uses
             method description. Defaults to None.
+        device: Device for the computation. None (default) uses CUDA when
+            available, else the CPU.
 
     Returns:
         Tuple of (fpr_grid, lower_envelope, upper_envelope) as numpy arrays.
@@ -947,7 +951,8 @@ def envelope_bootstrap_band(
         >>> upper.shape
         (101,)
     """
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Determine dtype from y_score (convert to numpy if needed to get dtype)
     if isinstance(y_score, np.ndarray):

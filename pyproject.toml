@@ -14,7 +14,8 @@ dependencies = [
     "colorspacious",
     "pyarrow",
     "seaborn",
-    "torch",
+    "torch==2.9.1",
+    "threadpoolctl",
     "tqdm",
     "KDEpy",
     "cvxpy",
@@ -53,6 +54,14 @@ members = [
 
 [tool.uv.sources]
 fiducial-core = { workspace = true }
+torch = [
+    { index = "pytorch-cu126", marker = "sys_platform == 'win32' or sys_platform == 'linux'" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
 
 [tool.ruff]
 line-length = 88

@@ -115,6 +115,46 @@ def _ell_gamma(core, n: int, alpha_class: float) -> float:
     return lo
 
 
+def m3_calibration_cache() -> dict[tuple[int, float], float]:
+    """Return a copy of the calibrated ELL local levels computed so far.
+
+    Calibration is the only expensive step of M3 (seconds per class size and
+    level at ``n`` in the thousands) and is a pure function of its key, so a
+    parent process can calibrate once and hand the result to workers through
+    :func:`load_m3_calibration_cache`.
+
+    Returns:
+        Mapping ``(n, alpha_class) -> gamma``.
+    """
+    return dict(_GAMMA_CACHE)
+
+
+def load_m3_calibration_cache(cache: dict[tuple[int, float], float]) -> None:
+    """Add calibrated ELL local levels from :func:`m3_calibration_cache`.
+
+    Args:
+        cache: Mapping ``(n, alpha_class) -> gamma`` produced by the same code.
+    """
+    _GAMMA_CACHE.update(cache)
+
+
+def warm_m3_calibration(
+    *, n0: int, n1: int, alpha: float, split_ratio: SplitRatio = "sample_size"
+) -> None:
+    """Calibrate both class levels M3 uses at one design point.
+
+    Args:
+        n0: Negative-class sample size.
+        n1: Positive-class sample size.
+        alpha: Significance level of the band.
+        split_ratio: Class split, as in :func:`m3_band_rs`.
+    """
+    core = _require_fiducial_core()
+    rho = resolve_split_ratio(split_ratio=split_ratio, n0=n0, n1=n1)
+    _ell_gamma(core, n0, 1.0 - (1.0 - alpha) ** rho)
+    _ell_gamma(core, n1, 1.0 - (1.0 - alpha) ** (1.0 - rho))
+
+
 @lru_cache(maxsize=64)
 def _ell_bounds(
     core: object, n: int, alpha_class: float

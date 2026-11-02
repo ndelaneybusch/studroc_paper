@@ -15,10 +15,15 @@ Build the extension once per environment from the project root::
 
 Reproducibility contract for the Rust core: the fiducial draws are a pure
 function of ``(seed, draw_index)``, so output is bit-identical for the same
-seed regardless of thread count.
+seed regardless of thread count. A consequence is that a cloud of ``M``
+draws is the leading ``M`` rows of any larger cloud with the same seed.
+:func:`fiducial_band_suite_rs` uses this to generate one cloud per sample
+and trim it at every requested level and floor setting; each of its bands
+is bit-identical to the corresponding :func:`fiducial_band_rs` call.
 """
 
 import warnings
+from collections.abc import Mapping, Sequence
 
 import numpy as np
 from numpy.typing import NDArray
@@ -141,12 +146,76 @@ def fiducial_band_rs(
         >>> bool(np.all(lo <= hi)) and lo[0] == 0.0 and hi[-1] == 1.0
         True
     """
+    grid, bands = fiducial_band_suite_rs(
+        y_true=y_true,
+        y_score=y_score,
+        alphas=[alpha],
+        m3_floors={"band": m3_floor},
+        n_draws=n_draws,
+        trim_exponent=trim_exponent,
+        k=k,
+        tie_break=tie_break,
+        n_threads=n_threads,
+        random_state=random_state,
+    )
+    lower, upper = bands[alpha]["band"]
+    return grid, lower, upper
+
+
+def fiducial_band_suite_rs(
+    *,
+    y_true: NDArray | Tensor,
+    y_score: NDArray | Tensor,
+    alphas: Sequence[float],
+    m3_floors: Mapping[str, bool | M3Floor],
+    n_draws: int | None = None,
+    trim_exponent: float = 1.0,
+    k: int | None = None,
+    tie_break: TieBreak = "random",
+    n_threads: int = 0,
+    random_state: int | np.random.Generator | None = None,
+) -> tuple[NDArray, dict[float, dict[str, tuple[NDArray, NDArray]]]]:
+    """Compute fiducial bands at several levels and floor settings at once.
+
+    Breaks ties once and generates one fiducial cloud, sized for the largest
+    draw budget among ``alphas``; every level trims the leading rows its own
+    budget calls for. The band for ``(alpha, name)`` is bit-identical to
+    ``fiducial_band_rs(..., alpha=alpha, m3_floor=m3_floors[name])`` with the
+    same ``random_state`` and remaining arguments, so the variants are paired
+    on one cloud while costing a single generation.
+
+    Args:
+        y_true: Binary class labels (0 = negative, 1 = positive).
+        y_score: Prediction scores, higher indicating the positive class.
+        alphas: Significance levels.
+        m3_floors: Output name to floor setting, as ``m3_floor`` in
+            :func:`fiducial_band_rs` (``False`` for the raw band).
+        n_draws: Draw count for every level; ``None`` applies the automatic
+            budget per level.
+        trim_exponent: Level remap exponent ``C``, as in
+            :func:`fiducial_band_rs`.
+        k: Optional output grid size, as in :func:`fiducial_band_rs`.
+        tie_break: ``"random"`` or ``"even"``.
+        n_threads: Rayon thread count; ``0`` uses the global pool.
+        random_state: Seed or generator for tie-breaking and the kernel seed.
+
+    Returns:
+        The FPR grid and a mapping ``alpha -> name -> (lower, upper)``.
+
+    Raises:
+        ImportError: If the ``fiducial_core`` extension is not built.
+        ValueError: If either class is empty or arguments are out of range.
+    """
     core = _require_fiducial_core()
 
-    if not 0.0 < alpha < 1.0:
-        raise ValueError(f"alpha must be in (0, 1), got {alpha}")
+    for alpha in alphas:
+        if not 0.0 < alpha < 1.0:
+            raise ValueError(f"alpha must be in (0, 1), got {alpha}")
     if trim_exponent <= 0.0:
         raise ValueError(f"trim_exponent must be positive, got {trim_exponent}")
+    if k is not None and k < 2:
+        raise ValueError(f"k must be at least 2, got {k}")
+    floors = {name: resolve_floor(m3_floor) for name, m3_floor in m3_floors.items()}
 
     y_true_np = (
         torch_to_numpy(y_true) if isinstance(y_true, Tensor) else np.asarray(y_true)
@@ -166,12 +235,14 @@ def fiducial_band_rs(
         else np.random.default_rng(random_state)
     )
 
-    alpha_eff = 1.0 - (1.0 - alpha) ** trim_exponent
     grid = np.arange(n0 + 1) / n0
-    if n_draws is None:
-        n_draws = _auto_n_draws(len(grid), alpha_eff)
-    if n_draws < 100:
-        raise ValueError(f"n_draws must be at least 100, got {n_draws}")
+    alpha_effs = {alpha: 1.0 - (1.0 - alpha) ** trim_exponent for alpha in alphas}
+    draws = {
+        alpha: _auto_n_draws(len(grid), alpha_eff) if n_draws is None else n_draws
+        for alpha, alpha_eff in alpha_effs.items()
+    }
+    if min(draws.values()) < 100:
+        raise ValueError(f"n_draws must be at least 100, got {min(draws.values())}")
 
     # Descending-score label sequence (= ascending rank space), ties broken.
     lab_s = _merged_labels(y_true_np, y_score_np, tie_break, rng)
@@ -184,73 +255,95 @@ def fiducial_band_rs(
 
     seed = int(rng.integers(0, 2**64, dtype=np.uint64))
     trim_rows = production_trim_rows(len(grid))
-    lower, upper, j = core.fiducial_trimmed_tube(
-        lab_s.astype(np.uint8),
-        n_draws,
-        alpha_eff,
-        seed,
-        n_threads,
-        None if trim_rows is None else trim_rows.astype(np.uint64),
-    )
-    if j < 3:
-        warnings.warn(
-            f"Realized trim depth j={j} < 3: n_draws={n_draws} is too small "
-            f"for alpha={alpha} on a {len(grid)}-point grid; the band falls "
-            "back toward the conservative full envelope of the cloud and "
-            "nearby alpha levels become indistinguishable. Increase n_draws.",
-            stacklevel=2,
-        )
-
-    lower, upper = _apply_corner_allowances(
-        lower=lower, upper=upper, khat=khat, n1=n1, trim_depth=j, n_draws=n_draws
+    cloud = core.FiducialCloud(
+        lab_s.astype(np.uint8), max(draws.values()), seed, n_threads
     )
 
-    floor = resolve_floor(m3_floor)
-    if floor is not None:
-        region = floor_region(khat=khat, n_draws=n_draws, trim_depth=j, floor=floor)
-        if floor.recalibrate_trim:
-            rows = complement_trim_rows(
-                n_grid=len(grid), region=region, trim_rows=trim_rows
+    def as_u64(rows: NDArray | None) -> NDArray | None:
+        return None if rows is None else rows.astype(np.uint64)
+
+    # Phase 1: every trim depth. The hybrid's region depends only on the
+    # full-grid depth, and its recalibrated depth only on the region, so all
+    # depths are known before any tube is built.
+    depths: dict[float, int] = {}
+    regions: dict[tuple[float, str], NDArray] = {}
+    tube_depths: dict[tuple[float, str], int] = {}
+    for alpha in alphas:
+        m, alpha_eff = draws[alpha], alpha_effs[alpha]
+        j = cloud.trim_depth(m, alpha_eff, as_u64(trim_rows))
+        if j < 3:
+            warnings.warn(
+                f"Realized trim depth j={j} < 3: n_draws={m} is too small "
+                f"for alpha={alpha} on a {len(grid)}-point grid; the band falls "
+                "back toward the conservative full envelope of the cloud and "
+                "nearby alpha levels become indistinguishable. Increase n_draws.",
+                stacklevel=3,
             )
-            if len(rows):
-                # Same seed and draw count: the kernel regenerates the
-                # identical cloud, so the depth can only rise (Prop. 10b).
-                rec_lower, rec_upper, j_rec = core.fiducial_trimmed_tube(
-                    lab_s.astype(np.uint8),
-                    n_draws,
-                    alpha_eff,
-                    seed,
-                    n_threads,
-                    rows.astype(np.uint64),
+        depths[alpha] = j
+        for name, floor in floors.items():
+            tube_depths[alpha, name] = j
+            if floor is None:
+                continue
+            region = floor_region(khat=khat, n_draws=m, trim_depth=j, floor=floor)
+            regions[alpha, name] = region
+            if floor.recalibrate_trim:
+                rows = complement_trim_rows(
+                    n_grid=len(grid), region=region, trim_rows=trim_rows
                 )
-                if j_rec < j:
-                    raise RuntimeError(
-                        f"Recalibrated depth {j_rec} fell below the full-grid "
-                        f"depth {j}; the kernel did not regenerate the same cloud."
+                if len(rows):
+                    # A subset of the trim rows can only raise the depth
+                    # (Prop. 10b), so the recalibrated band nests inside.
+                    tube_depths[alpha, name] = cloud.trim_depth(
+                        m, alpha_eff, as_u64(rows)
                     )
-                lower, upper = _apply_corner_allowances(
-                    lower=rec_lower,
-                    upper=rec_upper,
-                    khat=khat,
-                    n1=n1,
-                    trim_depth=j_rec,
-                    n_draws=n_draws,
+
+    # Phase 2: one streaming pass per draw count yields every needed depth.
+    tubes: dict[tuple[int, int], tuple[NDArray, NDArray]] = {}
+    for m in sorted(set(draws.values())):
+        js = sorted({j for (alpha, _), j in tube_depths.items() if draws[alpha] == m})
+        for j, (lower, upper) in zip(js, cloud.tubes(m, js), strict=True):
+            tubes[m, j] = _apply_corner_allowances(
+                lower=lower, upper=upper, khat=khat, n1=n1, trim_depth=j, n_draws=m
+            )
+
+    bands: dict[float, dict[str, tuple[NDArray, NDArray]]] = {}
+    for alpha in alphas:
+        bands[alpha] = {}
+        for name, floor in floors.items():
+            lower, upper = tubes[draws[alpha], tube_depths[alpha, name]]
+            if floor is not None:
+                lower, upper = apply_m3_floor(
+                    lab_s=lab_s,
+                    lower=lower,
+                    upper=upper,
+                    region=regions[alpha, name],
+                    alpha=alpha,
+                    floor=floor,
                 )
-        lower, upper = apply_m3_floor(
-            lab_s=lab_s,
-            lower=lower,
-            upper=upper,
-            region=region,
-            alpha=alpha,
-            floor=floor,
-        )
+            bands[alpha][name] = _resample(lower=lower, upper=upper, n0=n0, k=k)
 
-    if k is not None:
-        if k < 2:
-            raise ValueError(f"k must be at least 2, got {k}")
-        out_grid = np.linspace(0.0, 1.0, k)
-        upper = upper[np.minimum(np.ceil(out_grid * n0).astype(int), n0)]
-        lower = lower[np.floor(out_grid * n0).astype(int)]
-        grid = out_grid
+    out_grid = grid if k is None else np.linspace(0.0, 1.0, k)
+    return out_grid, bands
 
-    return grid, lower, upper
+
+def _resample(
+    *, lower: NDArray, upper: NDArray, n0: int, k: int | None
+) -> tuple[NDArray, NDArray]:
+    """Step-resample native-grid edges conservatively onto ``linspace(0, 1, k)``.
+
+    Args:
+        lower: Lower edge on the native grid of ``n0 + 1`` points.
+        upper: Upper edge on the native grid.
+        n0: Negative-class sample size.
+        k: Output grid size, or ``None`` to keep the native grid.
+
+    Returns:
+        Lower and upper edges on the output grid.
+    """
+    if k is None:
+        return lower, upper
+    out_grid = np.linspace(0.0, 1.0, k)
+    return (
+        lower[np.floor(out_grid * n0).astype(int)],
+        upper[np.minimum(np.ceil(out_grid * n0).astype(int), n0)],
+    )

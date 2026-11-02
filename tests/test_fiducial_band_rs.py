@@ -12,10 +12,13 @@ import pytest
 pytest.importorskip("fiducial_core")
 
 from studroc_paper.methods import (  # noqa: E402
+    M3Floor,
     fiducial_band,
     fiducial_band_rs,
+    fiducial_band_suite_rs,
     production_trim_rows,
 )
+from studroc_paper.methods.fiducial_band import _auto_n_draws  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -222,3 +225,66 @@ def test_invalid_inputs():
         fiducial_band_rs(y, s, n_draws=50)
     with pytest.raises(ValueError):
         fiducial_band_rs(y, s, k=1)
+
+
+SUITE_FLOORS = {
+    "raw": False,
+    "default": True,
+    "widen_sidak": M3Floor(split_ratio=0.5, closure="widen", recalibrate_trim=False),
+}
+
+
+def _suite_case(name: str) -> tuple[np.ndarray, np.ndarray]:
+    rng = np.random.default_rng(17)
+    if name == "thinned_heavy_tail":
+        # Grid above the thinning threshold, so the automatic draw budget
+        # differs across levels and the suite must trim a cloud prefix.
+        n0, n1 = 2300, 250
+        y_score = np.r_[rng.standard_t(2, n0), rng.standard_t(2, n1) + 3.5]
+    elif name == "small_floor_covers_grid":
+        n0, n1 = 12, 12
+        y_score = np.r_[rng.normal(0, 1, n0), rng.normal(2.5, 1, n1)]
+    else:
+        n0, n1 = 120, 90
+        y_score = np.r_[rng.integers(0, 6, n0), rng.integers(2, 8, n1)].astype(float)
+    return np.r_[np.zeros(n0), np.ones(n1)], y_score
+
+
+@pytest.mark.parametrize(
+    "case", ["thinned_heavy_tail", "small_floor_covers_grid", "coarse_ties"]
+)
+@pytest.mark.parametrize("k", [None, 64], ids=["native", "k64"])
+def test_suite_bands_equal_separate_calls_bit_for_bit(case, k):
+    """One shared cloud must reproduce every separately computed band exactly.
+
+    The suite draws one cloud sized for the largest budget and trims its
+    leading rows per level; any drift in the tie-break stream, the kernel
+    seed, the prefix rows, or the recalibrated depth shows up as a mismatch.
+    """
+    y_true, y_score = _suite_case(case)
+    alphas = [0.5, 0.2, 0.05]
+    grid, suite = fiducial_band_suite_rs(
+        y_true=y_true,
+        y_score=y_score,
+        alphas=alphas,
+        m3_floors=SUITE_FLOORS,
+        k=k,
+        random_state=8,
+    )
+    for alpha in alphas:
+        for name, floor in SUITE_FLOORS.items():
+            fpr, lo, hi = fiducial_band_rs(
+                y_true, y_score, alpha=alpha, k=k, random_state=8, m3_floor=floor
+            )
+            assert np.array_equal(grid, fpr)
+            assert np.array_equal(suite[alpha][name][0], lo), (alpha, name)
+            assert np.array_equal(suite[alpha][name][1], hi), (alpha, name)
+    # The floor must actually act, or the equality above is vacuous for it.
+    assert not np.array_equal(suite[0.05]["default"][0], suite[0.05]["raw"][0])
+
+
+def test_suite_shares_one_draw_budget_per_level():
+    """The heavy-tail case must exercise distinct budgets across levels."""
+    n_grid = 2301
+    budgets = {a: _auto_n_draws(n_grid, a) for a in (0.5, 0.2, 0.05)}
+    assert budgets[0.05] > budgets[0.5]

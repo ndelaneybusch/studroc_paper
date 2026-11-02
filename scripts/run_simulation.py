@@ -6,19 +6,32 @@ This script runs the complete simulation experiment comparing confidence band me
 across various DGPs, sample sizes, and prevalence scenarios.
 
 Method roster:
-    Baselines: fixed-width KS (Campbell), Working-Hotelling (parametric binormal),
-    pointwise bootstrap (uncorrected and Sidak-corrected), Wilson rectangles
-    (Sidak and Bonferroni margin corrections).
+    Baselines: fixed-width KS (Campbell) and Working-Hotelling (parametric
+    binormal).
 
-    Envelope family: the final studentized bootstrap envelope (Wilson variance
-    floor + gated Wilson Rectangle floor + Beta order-statistic floor), three
-    ablations (no Beta floor, no Wilson floor, no bootstrap), two symmetric-tail
-    variants (Beta floors on both tails, Wilson rectangle on both tails), and the
-    bare envelope with no floors.
+    Studentized bootstrap envelope: Wilson variance floor, gated Wilson
+    Rectangle floor, and Beta order-statistic floor.
+
+    Exact and fiducial bands: M3 (exact composition band, sample-size class
+    split), the raw rank-space fiducial band at C = 1, and the fiducial hybrid
+    (C = 1 band with the localized exact M3 floor: tails-recalibrated trim,
+    tightened closure, sample-size split). Both fiducial arms are trimmed from
+    one shared cloud per replicate, so the comparison between them is paired.
 
 AUC is sampled on the probit scale (uniform in z = Phi^-1(AUC), i.e. uniform in
 binormal d'), which concentrates sampling in the high-AUC regime where tail
 behavior matters most.
+
+Execution:
+    The main process draws every dataset and seed in a fixed order, so
+    results do not depend on scheduling or worker count. Each replicate's
+    CPU work (rank-space methods and evaluation) runs in a pool of
+    single-threaded worker processes. The bootstrap envelope runs on the GPU
+    in the main process for configurations with at least --gpu-min-neg
+    negatives, overlapping with the pool; below that, GPU launch overhead
+    outweighs the work and the envelope runs on the CPU workers too.
+    Runtimes are recorded under this concurrent load and are not
+    single-method benchmarks.
 
 Usage:
     python run_simulation.py                          # Run with defaults
@@ -28,9 +41,21 @@ Usage:
 """
 
 import argparse
+import dataclasses
 import json
+import os
 import subprocess
 import time
+from collections import defaultdict
+from collections.abc import Iterator
+from concurrent.futures import (
+    FIRST_COMPLETED,
+    Executor,
+    Future,
+    ProcessPoolExecutor,
+    wait,
+)
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
@@ -42,6 +67,7 @@ import torch
 from numpy.typing import NDArray
 from scipy.stats import norm
 from sklearn.metrics import roc_auc_score
+from threadpoolctl import threadpool_limits
 from tqdm import tqdm
 
 from studroc_paper.datagen.roc_to_dgp import map_lhs_to_dgp
@@ -53,11 +79,21 @@ from studroc_paper.datagen.true_rocs import (
     make_student_t_dgp,
     make_weibull_dgp,
 )
-from studroc_paper.eval.eval import aggregate_band_results, evaluate_single_band
-from studroc_paper.methods.envelope_boot import envelope_band_suite, wilson_beta_band
+from studroc_paper.eval.eval import (
+    BandResult,
+    aggregate_band_results,
+    evaluate_single_band,
+)
+from studroc_paper.methods.envelope_boot import envelope_bootstrap_band
+from studroc_paper.methods.fiducial_band_rs import fiducial_band_suite_rs
+from studroc_paper.methods.hybrid_floor import M3Floor
 from studroc_paper.methods.ks_band import fixed_width_ks_band
-from studroc_paper.methods.pointwise_boot import pointwise_bootstrap_band
-from studroc_paper.methods.wilson_band import wilson_rectangle_band
+from studroc_paper.methods.m3_band_rs import (
+    load_m3_calibration_cache,
+    m3_band_rs,
+    m3_calibration_cache,
+    warm_m3_calibration,
+)
 from studroc_paper.methods.working_hotelling import working_hotelling_band
 from studroc_paper.sampling.bootstrap_grid import generate_bootstrap_grid
 from studroc_paper.sampling.lhs import iman_conover_transform, maximin_lhs
@@ -66,28 +102,17 @@ from studroc_paper.sampling.lhs import iman_conover_transform, maximin_lhs
 # Configuration
 # =============================================================================
 
-# Envelope-family variants computed jointly by envelope_band_suite
-ENVELOPE_SUITE_METHODS = [
-    "envelope",
-    "envelope_no_beta_floor",
-    "envelope_no_wilson_floor",
-    "envelope_no_floors",
-    "envelope_beta_both_tails",
-    "envelope_wilson_both_tails",
-]
+# Floor settings of the fiducial hybrid; recorded in the run metadata
+HYBRID_FLOOR = M3Floor()
 
-METHOD_NAMES = [
-    # Baselines
+METHOD_NAMES = (
     "ks",
     "working_hotelling",
-    "pointwise",
-    "pointwise_sidak",
-    "wilson_rectangle_sidak",
-    "wilson_rectangle_bonferroni",
-    # Envelope family (final method, ablations, symmetric-tail variants)
-    *ENVELOPE_SUITE_METHODS,
-    "envelope_no_bootstrap",
-]
+    "envelope",
+    "m3",
+    "fiducial",
+    "fiducial_hybrid",
+)
 
 # Band width is recorded at these FPR landmarks (must match eval.py landmarks)
 WIDTH_LANDMARKS = ("0.01", "0.05", "0.1", "0.25", "0.5", "0.75", "0.9")
@@ -106,12 +131,23 @@ TRUE_AUC_GRID = np.unique(
     )
 )
 
+DEFAULT_SAMPLE_SIZES = (10, 30, 100, 300, 1000, 3000, 10000)
+
+# Labels, scores, and grid are generated in this precision
+DTYPE = np.float32
+
+BOOTSTRAP_BATCH_SIZE = 500
+
 
 def get_dgp_specs() -> dict:
     """Define DGP specifications for LHS sampling.
 
     The "auc" dimension is sampled uniformly on the probit scale (see
     scale_lhs_samples); bounds are stated in AUC units.
+
+    Returns:
+        Mapping of DGP name to its constructor, LHS parameter names, and
+        LHS parameter bounds.
     """
     return {
         "binormal": {
@@ -181,400 +217,338 @@ def scale_lhs_samples(lhs_unit: NDArray, dgp_spec: dict) -> dict[str, NDArray]:
     return columns
 
 
-def get_sample_size_configs() -> list[dict]:
-    """Define sample size configurations (n0, n1 pairs)."""
+def sample_configs_for(n_total: int) -> list[dict]:
+    """Return the (n_pos, n_neg) configurations run at one total sample size.
+
+    Every size runs balanced; n = 1000 additionally runs 10% prevalence.
+
+    Args:
+        n_total: Total sample size.
+
+    Returns:
+        Sample configurations with "n_total", "n_pos", "n_neg", and
+        "prevalence".
+    """
     configs = []
-
-    # Balanced samples for most sizes
-    for n_total in [10, 30, 100, 300, 1000, 3000, 10000]:
-        if n_total != 1000:
-            configs.append(
-                {
-                    "n_total": n_total,
-                    "n_pos": n_total // 2,
-                    "n_neg": n_total // 2,
-                    "prevalence": 0.5,
-                }
-            )
-
-    # Special prevalence scenarios for n=1000
-    configs.extend(
-        [
-            {"n_total": 1000, "n_pos": 100, "n_neg": 900, "prevalence": 0.10},
-            {"n_total": 1000, "n_pos": 500, "n_neg": 500, "prevalence": 0.50},
-        ]
+    if n_total == 1000:
+        configs.append(
+            {"n_total": 1000, "n_pos": 100, "n_neg": 900, "prevalence": 0.10}
+        )
+    configs.append(
+        {
+            "n_total": n_total,
+            "n_pos": n_total // 2,
+            "n_neg": n_total // 2,
+            "prevalence": 0.5,
+        }
     )
-
     return configs
 
 
 # =============================================================================
-# CI Method Wrappers
+# Band Methods
 # =============================================================================
 
 
-def compute_bands_without_bootstrap(
-    y_true: NDArray,
-    y_score: NDArray,
-    fpr_grid: NDArray,
-    true_tpr: NDArray,
-    alpha: float,
-) -> dict[str, dict]:
-    """Compute and evaluate confidence bands that do not require bootstrap samples."""
-    method_calls = {
-        "ks": (
-            fixed_width_ks_band,
-            {"y_true": y_true, "y_score": y_score, "k": len(fpr_grid), "alpha": alpha},
-        ),
-        "working_hotelling": (
-            working_hotelling_band,
-            {"y_true": y_true, "y_score": y_score, "k": len(fpr_grid), "alpha": alpha},
-        ),
-        "wilson_rectangle_sidak": (
-            wilson_rectangle_band,
-            {
-                "y_true": y_true,
-                "y_score": y_score,
-                "k": len(fpr_grid),
-                "alpha": alpha,
-                "correction": "sidak",
-                "tpr_method": "empirical",
-            },
-        ),
-        "wilson_rectangle_bonferroni": (
-            wilson_rectangle_band,
-            {
-                "y_true": y_true,
-                "y_score": y_score,
-                "k": len(fpr_grid),
-                "alpha": alpha,
-                "correction": "bonferroni",
-                "tpr_method": "empirical",
-            },
-        ),
-        "envelope_no_bootstrap": (
-            wilson_beta_band,
-            {"y_true": y_true, "y_score": y_score, "k": len(fpr_grid), "alpha": alpha},
-        ),
-    }
+@dataclass(frozen=True)
+class Replicate:
+    """One simulated dataset and everything its bands consume.
 
-    results = {}
-    for name, (band_fn, kwargs) in method_calls.items():
-        t_start = time.perf_counter()
-        _, lower, upper = band_fn(**kwargs)
-        runtime = time.perf_counter() - t_start
-        results[name] = {
-            "band": evaluate_single_band(
-                lower_band=lower, upper_band=upper, true_tpr=true_tpr, fpr_grid=fpr_grid
-            ),
-            "runtime_seconds": runtime,
-            "runtime_is_shared": False,
-        }
-    return results
-
-
-def compute_bands_with_bootstrap(
-    y_true: NDArray,
-    y_score: NDArray,
-    boot_tpr_matrix,
-    fpr_grid: NDArray,
-    true_tpr: NDArray,
-    confidence_levels: list[float],
-) -> dict[float, dict[str, dict]]:
-    """Compute and evaluate bands that consume the shared bootstrap matrix.
-
-    The envelope-family variants are computed jointly by envelope_band_suite,
-    sharing the expensive studentization work across variants and alphas;
-    their recorded runtime is the suite total (flagged runtime_is_shared).
+    Attributes:
+        y_true: Binary labels (1 = positive).
+        y_score: Scores, higher indicating the positive class.
+        fpr_grid: Evaluation grid, the native grid ``linspace(0, 1, n_neg + 1)``.
+        true_tpr: True ROC on ``fpr_grid``.
+        method_seed: Seed for the rank-space methods' tie-breaking and the
+            fiducial cloud.
+        boot_seed: Seed of the bootstrap's own torch generator.
     """
-    results: dict[float, dict[str, dict]] = {alpha: {} for alpha in confidence_levels}
 
-    for alpha in confidence_levels:
-        for name, correction in [("pointwise", "none"), ("pointwise_sidak", "sidak")]:
-            t_start = time.perf_counter()
-            _, lower, upper = pointwise_bootstrap_band(
-                boot_tpr_matrix=boot_tpr_matrix,
-                fpr_grid=fpr_grid,
-                alpha=alpha,
-                correction=correction,
-            )
-            runtime = time.perf_counter() - t_start
-            results[alpha][name] = {
-                "band": evaluate_single_band(
-                    lower_band=lower,
-                    upper_band=upper,
-                    true_tpr=true_tpr,
-                    fpr_grid=fpr_grid,
-                ),
-                "runtime_seconds": runtime,
-                "runtime_is_shared": False,
-            }
+    y_true: NDArray
+    y_score: NDArray
+    fpr_grid: NDArray
+    true_tpr: NDArray
+    method_seed: int
+    boot_seed: int
 
-    t_start = time.perf_counter()
-    suite = envelope_band_suite(
-        boot_tpr_matrix=boot_tpr_matrix,
-        fpr_grid=fpr_grid,
-        y_true=y_true,
-        y_score=y_score,
-        alphas=confidence_levels,
+
+@dataclass(frozen=True)
+class MethodResult:
+    """One band's evaluation and cost.
+
+    Attributes:
+        band: Evaluation of the band against the true ROC.
+        runtime_seconds: Wall time of the call that produced the band.
+        runtime_is_shared: Whether that call produced several methods' bands
+            (the fiducial suite), so the runtime covers all of them.
+        device: Device the band was computed on.
+    """
+
+    band: BandResult
+    runtime_seconds: float
+    runtime_is_shared: bool
+    device: str
+
+
+# alpha -> method name -> result
+BandSet = dict[float, dict[str, MethodResult]]
+
+
+@dataclass(frozen=True)
+class EnvelopeResult:
+    """Bootstrap envelope bands and the cost of their bootstrap matrix.
+
+    Attributes:
+        bands: Envelope results by alpha.
+        bootstrap_gen_seconds: Wall time to generate the bootstrap matrix.
+    """
+
+    bands: BandSet
+    bootstrap_gen_seconds: float
+
+
+def _evaluate(rep: Replicate, lower: NDArray, upper: NDArray) -> BandResult:
+    return evaluate_single_band(
+        lower_band=lower, upper_band=upper, true_tpr=rep.true_tpr, fpr_grid=rep.fpr_grid
     )
-    suite_runtime = time.perf_counter() - t_start
-
-    for alpha, variants in suite.items():
-        for name, (lower, upper) in variants.items():
-            results[alpha][name] = {
-                "band": evaluate_single_band(
-                    lower_band=lower,
-                    upper_band=upper,
-                    true_tpr=true_tpr,
-                    fpr_grid=fpr_grid,
-                ),
-                "runtime_seconds": suite_runtime,
-                "runtime_is_shared": True,
-            }
-
-    return results
 
 
-# =============================================================================
-# Loop Level Functions
-# =============================================================================
+def envelope_bands(
+    *, rep: Replicate, alphas: list[float], B: int, device: torch.device
+) -> EnvelopeResult:
+    """Generate the bootstrap matrix and compute the envelope at every alpha.
 
-
-def run_single_simulation(
-    dgp,
-    n_pos: int,
-    n_neg: int,
-    confidence_levels: list[float],
-    fpr_grid: NDArray,
-    true_tpr: NDArray,
-    rng: np.random.Generator,
-    dtype,
-    B: int,
-) -> dict:
-    """
-    Run a single simulation: generate data, compute CIs, evaluate.
+    Args:
+        rep: Replicate to compute bands for.
+        alphas: Significance levels.
+        B: Number of bootstrap replicates.
+        device: Device for the bootstrap and envelope.
 
     Returns:
-        dict: Results keyed by confidence level, plus "auc" and
-        "bootstrap_gen_seconds".
+        Envelope evaluations by alpha and the bootstrap generation time.
     """
-    # Seed torch from the numpy stream so bootstrap resampling is reproducible
-    torch.manual_seed(int(rng.integers(0, 2**63 - 1)))
-
-    # Generate data
-    scores_pos, scores_neg = dgp.sample(n_pos, n_neg, rng)
-
-    # Create labels and scores for sklearn-style interface
-    y_true = np.concatenate([np.ones(n_pos), np.zeros(n_neg)]).astype(dtype)
-    y_score = np.concatenate([scores_pos, scores_neg]).astype(dtype)
-    fpr_grid = fpr_grid.astype(dtype)
-
-    results = {"auc": roc_auc_score(y_true, y_score)}
-
-    # Generate shared bootstrap matrix (stays on the compute device; all
-    # consumers move/keep it there without copies)
+    generator = torch.Generator(device=device).manual_seed(rep.boot_seed)
     t_start = time.perf_counter()
     boot_tpr_matrix = generate_bootstrap_grid(
-        y_true=torch.from_numpy(y_true),
-        y_score=torch.from_numpy(y_score),
+        y_true=torch.from_numpy(rep.y_true),
+        y_score=torch.from_numpy(rep.y_score),
         B=B,
-        grid=torch.from_numpy(fpr_grid),
-        device=None,
-        batch_size=500,
+        grid=torch.from_numpy(rep.fpr_grid),
+        device=device,
+        batch_size=BOOTSTRAP_BATCH_SIZE,
         tpr_method="empirical",
+        generator=generator,
     )
-    results["bootstrap_gen_seconds"] = time.perf_counter() - t_start
+    if device.type == "cuda":
+        torch.cuda.synchronize(device)
+    boot_seconds = time.perf_counter() - t_start
 
-    boot_results = compute_bands_with_bootstrap(
-        y_true=y_true,
-        y_score=y_score,
-        boot_tpr_matrix=boot_tpr_matrix,
-        fpr_grid=fpr_grid,
-        true_tpr=true_tpr,
-        confidence_levels=confidence_levels,
-    )
-    del boot_tpr_matrix
-
-    for alpha in confidence_levels:
-        results[alpha] = compute_bands_without_bootstrap(
-            y_true=y_true,
-            y_score=y_score,
-            fpr_grid=fpr_grid,
-            true_tpr=true_tpr,
+    bands: BandSet = {}
+    for alpha in alphas:
+        t_start = time.perf_counter()
+        _, lower, upper = envelope_bootstrap_band(
+            boot_tpr_matrix=boot_tpr_matrix,
+            fpr_grid=rep.fpr_grid,
+            y_true=rep.y_true,
+            y_score=rep.y_score,
             alpha=alpha,
+            boundary_method="wilson",
+            device=device,
         )
-        results[alpha].update(boot_results[alpha])
+        bands[alpha] = {
+            "envelope": MethodResult(
+                band=_evaluate(rep, lower, upper),
+                runtime_seconds=time.perf_counter() - t_start,
+                runtime_is_shared=False,
+                device=device.type,
+            )
+        }
+    return EnvelopeResult(bands=bands, bootstrap_gen_seconds=boot_seconds)
 
-    return results
 
+def rank_space_bands(*, rep: Replicate, alphas: list[float]) -> BandSet:
+    """Compute KS, Working-Hotelling, M3, and both fiducial arms.
 
-def run_lhs_combination(
-    lhs_idx: int,
-    dgp_params: dict,
-    dgp_type: str,
-    dgp_spec: dict,
-    sample_config: dict,
-    n_sim: int,
-    confidence_levels: list[float],
-    fpr_grid: NDArray,
-    lhs_params_dict: dict,
-    rng: np.random.Generator,
-    dtype,
-    B: int,
-) -> list[dict]:
-    """
-    Run all simulations for a single LHS parameter combination.
+    The rank-space methods return their native grid, which is the evaluation
+    grid; resampling onto an identical linspace could round a grid point up
+    one step.
+
+    Args:
+        rep: Replicate to compute bands for.
+        alphas: Significance levels.
 
     Returns:
-        list: List of result dictionaries, one per simulation repeat
+        Evaluations by alpha and method.
     """
-    # Create DGP instance with these parameters
-    # Extract scalar parameters for this LHS index
-    params_for_dgp = {}
-    for key, value in dgp_params.items():
-        if isinstance(value, np.ndarray):
-            params_for_dgp[key] = (
-                float(value[lhs_idx]) if value.ndim > 0 else float(value)
+    bands: BandSet = {alpha: {} for alpha in alphas}
+    k = len(rep.fpr_grid)
+
+    def record(alpha, name, lower, upper, runtime, shared=False):
+        bands[alpha][name] = MethodResult(
+            band=_evaluate(rep, lower, upper),
+            runtime_seconds=runtime,
+            runtime_is_shared=shared,
+            device="cpu",
+        )
+
+    for alpha in alphas:
+        for name, band_fn, kwargs in (
+            ("ks", fixed_width_ks_band, {"k": k}),
+            ("working_hotelling", working_hotelling_band, {"k": k}),
+            ("m3", m3_band_rs, {"random_state": rep.method_seed}),
+        ):
+            t_start = time.perf_counter()
+            _, lower, upper = band_fn(
+                y_true=rep.y_true, y_score=rep.y_score, alpha=alpha, **kwargs
             )
-        elif isinstance(value, list):
-            # Handle lists (for bimodal_negative)
-            params_for_dgp[key] = value[lhs_idx] if len(value) > lhs_idx else value[0]
-        else:
-            params_for_dgp[key] = value
+            record(alpha, name, lower, upper, time.perf_counter() - t_start)
 
-    dgp = dgp_spec["make_dgp"](**params_for_dgp)
-
-    # The true ROC is a property of the DGP instance, not of any sample;
-    # compute it once per (LHS combination, sample size) rather than per repeat
-    true_tpr = dgp.get_true_roc(fpr_grid)
-    true_auc = float(np.trapezoid(dgp.get_true_roc(TRUE_AUC_GRID), TRUE_AUC_GRID))
-
-    # Run n_sim simulations
-    simulation_results = []
-
-    for sim_idx in range(n_sim):
-        sim_results = run_single_simulation(
-            dgp=dgp,
-            n_pos=sample_config["n_pos"],
-            n_neg=sample_config["n_neg"],
-            confidence_levels=confidence_levels,
-            fpr_grid=fpr_grid,
-            true_tpr=true_tpr,
-            rng=rng,
-            B=B,
-            dtype=dtype,
-        )
-        # Collect metadata for this simulation
-        metadata = {
-            "lhs_idx": lhs_idx,
-            "sim_idx": sim_idx,
-            "dgp_type": dgp_type,
-            "n_pos": sample_config["n_pos"],
-            "n_neg": sample_config["n_neg"],
-            "n_total": sample_config["n_total"],
-            "prevalence": sample_config["prevalence"],
-            "true_auc": true_auc,
-        }
-
-        # Add LHS parameters
-        for param_name in dgp_spec["lhs_params"]:
-            metadata[f"lhs_{param_name}"] = lhs_params_dict[param_name][lhs_idx]
-
-        # Add DGP parameters
-        for key, value in params_for_dgp.items():
-            metadata[f"dgp_{key}"] = value
-
-        simulation_results.append({"metadata": metadata, "ci_results": sim_results})
-
-    return simulation_results
+    t_start = time.perf_counter()
+    _, suite = fiducial_band_suite_rs(
+        y_true=rep.y_true,
+        y_score=rep.y_score,
+        alphas=alphas,
+        m3_floors={"fiducial": False, "fiducial_hybrid": HYBRID_FLOOR},
+        random_state=rep.method_seed,
+    )
+    runtime = time.perf_counter() - t_start
+    for alpha, variants in suite.items():
+        for name, (lower, upper) in variants.items():
+            record(alpha, name, lower, upper, runtime, shared=True)
+    return bands
 
 
-def run_sample_size_config(
-    sample_config: dict,
-    dgp_type: str,
-    dgp_spec: dict,
-    lhs_params_dict: dict,
-    dgp_params: dict,
-    n_lhs: int,
-    n_sim: int,
-    confidence_levels: list[float],
-    output_dir: Path,
-    seed: int,
-    dtype,
-    B: int,
-) -> None:
+def init_worker(m3_cache: dict[tuple[int, float], float]) -> None:
+    """Pin a worker process to one CPU thread and load M3 levels.
+
+    Runs before the worker touches the Rust thread pool, which reads its
+    configuration on first use. Workers never initialize CUDA: every CPU-lane
+    call passes its device, so the GPU stays the main process's alone. The
+    GPU is not hidden through ``CUDA_VISIBLE_DEVICES``, because initializing
+    the driver with no visible device destabilizes the process.
+
+    Args:
+        m3_cache: Calibrated M3 local levels from the parent process.
     """
-    Run all LHS combinations for a single sample size configuration.
+    os.environ["RAYON_NUM_THREADS"] = "1"
+    torch.set_num_threads(1)
+    threadpool_limits(limits=1)
+    load_m3_calibration_cache(m3_cache)
 
-    Saves results to disk after completion.
+
+# Native thread pools size themselves when their library loads, which in a
+# spawned worker happens while the task module is imported, before any
+# initializer runs. Unpinned, OpenBLAS reserves buffers for every core: about
+# 4 GiB of committed memory per worker on a 24-thread machine, enough for
+# Windows to refuse allocations once two dozen workers are running.
+WORKER_THREAD_ENV = {
+    "OPENBLAS_NUM_THREADS": "1",
+    "OMP_NUM_THREADS": "1",
+    "MKL_NUM_THREADS": "1",
+}
+
+
+def worker_pool(
+    *, workers: int, m3_cache: dict[tuple[int, float], float]
+) -> ProcessPoolExecutor:
+    """Create a pool of single-threaded CPU workers.
+
+    Sets :data:`WORKER_THREAD_ENV` in this process's environment, which the
+    workers inherit; libraries this process has already loaded keep their
+    thread pools.
+
+    Args:
+        workers: Number of worker processes.
+        m3_cache: Calibrated M3 local levels for :func:`init_worker`.
+
+    Returns:
+        The pool.
     """
-    rng = np.random.default_rng(seed)
-
-    # Determine K (eval grid size)
-    K = sample_config["n_neg"] + 1
-    fpr_grid = np.linspace(0, 1, K)
-
-    # Storage for results
-    all_simulation_results = []
-
-    # Progress bar over LHS combinations
-    desc = f"{dgp_type} n={sample_config['n_total']} prev={sample_config['prevalence']:.2f}"
-
-    for lhs_idx in tqdm(range(n_lhs), desc=desc, leave=False):
-        lhs_results = run_lhs_combination(
-            lhs_idx=lhs_idx,
-            dgp_params=dgp_params,
-            dgp_type=dgp_type,
-            dgp_spec=dgp_spec,
-            sample_config=sample_config,
-            n_sim=n_sim,
-            confidence_levels=confidence_levels,
-            fpr_grid=fpr_grid,
-            lhs_params_dict=lhs_params_dict,
-            rng=rng,
-            dtype=dtype,
-            B=B,
-        )
-
-        all_simulation_results.extend(lhs_results)
-
-    # Save results
-    save_results(
-        simulation_results=all_simulation_results,
-        dgp_type=dgp_type,
-        sample_config=sample_config,
-        confidence_levels=confidence_levels,
-        output_dir=output_dir,
-        B=B,
+    os.environ.update(WORKER_THREAD_ENV)
+    return ProcessPoolExecutor(
+        max_workers=workers, initializer=init_worker, initargs=(m3_cache,)
     )
 
 
-def run_dgp(
-    dgp_type: str,
-    dgp_spec: dict,
-    sample_configs: list[dict],
-    n_lhs: int,
-    n_sim: int,
-    confidence_levels: list[float],
-    output_dir: Path,
-    seed: int,
-    dtype,
-    B: int,
-) -> None:
-    """
-    Run all sample size configurations for a single DGP.
-    """
-    print(f"\n{'=' * 60}")
-    print(f"DGP: {dgp_type}")
-    print(f"{'=' * 60}")
+def _calibrate_m3_point(n0: int, n1: int, alpha: float) -> dict:
+    warm_m3_calibration(n0=n0, n1=n1, alpha=alpha)
+    return m3_calibration_cache()
 
-    rng = np.random.default_rng(seed)
 
-    # Generate LHS samples
-    print(f"Generating {n_lhs} LHS samples...")
+def calibrate_m3(
+    *, sample_configs: list[dict], alphas: list[float], workers: int
+) -> dict[tuple[int, float], float]:
+    """Calibrate M3 for every design point in parallel, once per run.
+
+    Args:
+        sample_configs: Sample configurations of the run.
+        alphas: Significance levels.
+        workers: Number of processes.
+
+    Returns:
+        Calibrated local levels for :func:`init_worker`.
+    """
+    points = {(c["n_neg"], c["n_pos"], a) for c in sample_configs for a in alphas}
+    # Largest first, so the slowest calibrations start immediately
+    ordered = sorted(points, key=lambda p: -max(p[0], p[1]))
+    cache: dict[tuple[int, float], float] = {}
+    with worker_pool(workers=min(workers, len(ordered)), m3_cache={}) as pool:
+        for part in pool.map(_calibrate_m3_point, *zip(*ordered, strict=True)):
+            cache.update(part)
+    return cache
+
+
+# =============================================================================
+# Study Design
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class DgpDesign:
+    """The LHS design of one DGP after filtering unachievable points.
+
+    Attributes:
+        dgp_type: DGP name.
+        dgp_spec: DGP specification from ``get_dgp_specs``.
+        lhs_params: Scaled LHS parameter columns.
+        dgp_params: DGP constructor parameter columns.
+        n_lhs: Number of retained LHS combinations.
+    """
+
+    dgp_type: str
+    dgp_spec: dict
+    lhs_params: dict[str, NDArray]
+    dgp_params: dict
+    n_lhs: int
+
+    def constructor_params(self, lhs_idx: int) -> dict:
+        """Return the DGP constructor arguments of one LHS combination."""
+        params = {}
+        for key, value in self.dgp_params.items():
+            if isinstance(value, np.ndarray):
+                params[key] = float(value[lhs_idx]) if value.ndim > 0 else float(value)
+            elif isinstance(value, list):
+                params[key] = value[lhs_idx] if len(value) > lhs_idx else value[0]
+            else:
+                params[key] = value
+        return params
+
+
+def design_dgp(
+    *, dgp_type: str, dgp_spec: dict, n_lhs: int, rng: np.random.Generator
+) -> DgpDesign:
+    """Draw the LHS design for one DGP and drop unachievable points.
+
+    Args:
+        dgp_type: DGP name.
+        dgp_spec: DGP specification from ``get_dgp_specs``.
+        n_lhs: Number of LHS combinations to draw.
+        rng: The DGP's random stream.
+
+    Returns:
+        The filtered design.
+    """
     n_dims = len(dgp_spec["lhs_params"])
-
     lhs_unit = maximin_lhs(
         n=n_lhs, k=n_dims, method="build", dup=5, seed=rng.integers(0, 2**31)
     )
@@ -588,59 +562,391 @@ def run_dgp(
             )
         except np.linalg.LinAlgError:
             print(
-                "  WARNING: Iman-Conover decorrelation skipped "
+                f"  WARNING ({dgp_type}): Iman-Conover decorrelation skipped "
                 f"(singular correlation with n_lhs={n_lhs}, n_dims={n_dims})"
             )
 
     # Scale to parameter bounds (AUC dimension via the probit transform)
-    lhs_params_dict = scale_lhs_samples(lhs_unit, dgp_spec)
+    lhs_params = scale_lhs_samples(lhs_unit, dgp_spec)
+    dgp_params = map_lhs_to_dgp(dgp_type, lhs_params)
 
-    # Map to DGP parameters
-    dgp_params = map_lhs_to_dgp(dgp_type, lhs_params_dict)
-
-    # Filter out LHS samples where DGP parameters contain NaN (unachievable AUC)
+    # Drop LHS samples whose DGP parameters are NaN (unachievable AUC)
     valid_mask = np.ones(n_lhs, dtype=bool)
-    for key, value in dgp_params.items():
+    for value in dgp_params.values():
         if isinstance(value, np.ndarray) and value.ndim > 0:
             valid_mask &= ~np.isnan(value)
 
-    n_valid = int(np.sum(valid_mask))
+    n_valid = int(valid_mask.sum())
     if n_valid < n_lhs:
-        n_invalid = n_lhs - n_valid
-        print(f"  Filtered {n_invalid} samples with unachievable AUC ({n_valid} remaining)")
-
-        # Filter lhs_params_dict
-        lhs_params_dict = {
-            name: arr[valid_mask] for name, arr in lhs_params_dict.items()
-        }
-        # Filter dgp_params
+        print(
+            f"  {dgp_type}: filtered {n_lhs - n_valid} samples with unachievable "
+            f"AUC ({n_valid} remaining)"
+        )
+        lhs_params = {name: arr[valid_mask] for name, arr in lhs_params.items()}
         for key, value in dgp_params.items():
             if isinstance(value, np.ndarray) and value.ndim > 0:
                 dgp_params[key] = value[valid_mask]
             elif isinstance(value, list) and len(value) == n_lhs:
-                dgp_params[key] = [v for v, m in zip(value, valid_mask) if m]
-        n_lhs = n_valid
+                dgp_params[key] = [
+                    v for v, m in zip(value, valid_mask, strict=True) if m
+                ]
 
-    if n_lhs == 0:
-        print(f"  WARNING: No valid LHS samples for {dgp_type}, skipping...")
-        return
+    return DgpDesign(
+        dgp_type=dgp_type,
+        dgp_spec=dgp_spec,
+        lhs_params=lhs_params,
+        dgp_params=dgp_params,
+        n_lhs=n_valid,
+    )
 
-    # Run each sample size configuration
-    for sample_config in tqdm(sample_configs, desc="Sample sizes"):
-        run_sample_size_config(
-            sample_config=sample_config,
-            dgp_type=dgp_type,
-            dgp_spec=dgp_spec,
-            lhs_params_dict=lhs_params_dict,
-            dgp_params=dgp_params,
-            n_lhs=n_lhs,
-            n_sim=n_sim,
-            confidence_levels=confidence_levels,
-            output_dir=output_dir,
-            seed=rng.integers(0, 2**31),
-            dtype=dtype,
-            B=B,
+
+@dataclass(frozen=True)
+class ConfigUnit:
+    """One (DGP, sample configuration) cell of the study, saved as one file.
+
+    Attributes:
+        design: The DGP's LHS design.
+        sample_config: Sample configuration from ``sample_configs_for``.
+        seed: Root seed of the cell; each LHS combination draws from its own
+            spawned child stream, so any process can regenerate any
+            combination independently.
+    """
+
+    design: DgpDesign
+    sample_config: dict
+    seed: int
+
+    def tasks(self, n_sim: int) -> list["LhsTask"]:
+        """Return one task per LHS combination, in LHS order."""
+        children = np.random.SeedSequence(self.seed).spawn(self.design.n_lhs)
+        return [
+            LhsTask(
+                dgp_type=self.design.dgp_type,
+                params=self.design.constructor_params(lhs_idx),
+                lhs_values={
+                    name: float(self.design.lhs_params[name][lhs_idx])
+                    for name in self.design.dgp_spec["lhs_params"]
+                },
+                sample_config=self.sample_config,
+                lhs_idx=lhs_idx,
+                seed=child,
+                n_sim=n_sim,
+            )
+            for lhs_idx, child in enumerate(children)
+        ]
+
+
+def plan_units(
+    *, dgp_types: list[str], sample_configs: list[dict], n_lhs: int, seed: int
+) -> list[ConfigUnit]:
+    """Draw every DGP design and assign each study cell its seed.
+
+    Args:
+        dgp_types: DGPs to run.
+        sample_configs: Sample configurations to run.
+        n_lhs: LHS combinations per DGP before filtering.
+        seed: Global seed.
+
+    Returns:
+        Study cells in run order.
+    """
+    dgp_specs = get_dgp_specs()
+    rng = np.random.default_rng(seed)
+    units = []
+    for dgp_type in dgp_types:
+        dgp_rng = np.random.default_rng(rng.integers(0, 2**31))
+        design = design_dgp(
+            dgp_type=dgp_type, dgp_spec=dgp_specs[dgp_type], n_lhs=n_lhs, rng=dgp_rng
         )
+        if design.n_lhs == 0:
+            print(f"  WARNING: No valid LHS samples for {dgp_type}, skipping...")
+            continue
+        units.extend(
+            ConfigUnit(
+                design=design,
+                sample_config=sample_config,
+                seed=int(dgp_rng.integers(0, 2**31)),
+            )
+            for sample_config in sample_configs
+        )
+    return units
+
+
+@dataclass(frozen=True)
+class LhsTask:
+    """One LHS combination of a study cell, self-contained for any process.
+
+    Attributes:
+        dgp_type: DGP name.
+        params: DGP constructor arguments.
+        lhs_values: LHS parameter values.
+        sample_config: Sample configuration.
+        lhs_idx: Index of the combination within its DGP design.
+        seed: The combination's seed stream.
+        n_sim: Repeats of the combination.
+    """
+
+    dgp_type: str
+    params: dict
+    lhs_values: dict[str, float]
+    sample_config: dict
+    lhs_idx: int
+    seed: np.random.SeedSequence
+    n_sim: int
+
+
+@dataclass(frozen=True)
+class SimulatedLhs:
+    """The datasets of one LHS combination.
+
+    Attributes:
+        dgp: The DGP instance.
+        replicates: One replicate per repeat, in order.
+        empirical_aucs: Empirical AUC of each replicate.
+    """
+
+    dgp: object
+    replicates: list[Replicate]
+    empirical_aucs: list[float]
+
+
+def simulate_lhs(task: LhsTask) -> SimulatedLhs:
+    """Generate every replicate of one LHS combination from its seed alone.
+
+    Args:
+        task: The combination.
+
+    Returns:
+        Its DGP and replicates; identical in every process.
+    """
+    config = task.sample_config
+    rng = np.random.default_rng(task.seed)
+    dgp = get_dgp_specs()[task.dgp_type]["make_dgp"](**task.params)
+    fpr_grid = np.linspace(0, 1, config["n_neg"] + 1)
+    # The true ROC is a property of the DGP instance, not of any sample
+    true_tpr = dgp.get_true_roc(fpr_grid)
+    y_true = np.concatenate(
+        [np.ones(config["n_pos"]), np.zeros(config["n_neg"])]
+    ).astype(DTYPE)
+
+    replicates, aucs = [], []
+    for _ in range(task.n_sim):
+        boot_seed = int(rng.integers(0, 2**63 - 1))
+        scores_pos, scores_neg = dgp.sample(config["n_pos"], config["n_neg"], rng)
+        y_score = np.concatenate([scores_pos, scores_neg]).astype(DTYPE)
+        replicates.append(
+            Replicate(
+                y_true=y_true,
+                y_score=y_score,
+                fpr_grid=fpr_grid.astype(DTYPE),
+                true_tpr=true_tpr,
+                method_seed=int(rng.integers(0, 2**63 - 1)),
+                boot_seed=boot_seed,
+            )
+        )
+        aucs.append(float(roc_auc_score(y_true, y_score)))
+    return SimulatedLhs(dgp=dgp, replicates=replicates, empirical_aucs=aucs)
+
+
+@dataclass(frozen=True)
+class LhsOutcome:
+    """Everything a worker computes for one LHS combination.
+
+    Attributes:
+        metadata: Per-repeat metadata records.
+        empirical_aucs: Per-repeat empirical AUC.
+        bands: Per-repeat evaluations by alpha and method.
+        envelopes: Per-repeat envelope results when the worker computed
+            them, else None.
+    """
+
+    metadata: list[dict]
+    empirical_aucs: list[float]
+    bands: list[BandSet]
+    envelopes: list[EnvelopeResult] | None
+
+
+def run_lhs_task(*, task: LhsTask, alphas: list[float], B: int | None) -> LhsOutcome:
+    """Worker entry point: simulate one LHS combination and compute its bands.
+
+    Args:
+        task: The combination.
+        alphas: Significance levels.
+        B: Bootstrap replicates for a CPU envelope, or None when the envelope
+            runs on the GPU lane.
+
+    Returns:
+        The combination's metadata and evaluations.
+    """
+    sim = simulate_lhs(task)
+    config = task.sample_config
+    base_metadata = {
+        "lhs_idx": task.lhs_idx,
+        "dgp_type": task.dgp_type,
+        "n_pos": config["n_pos"],
+        "n_neg": config["n_neg"],
+        "n_total": config["n_total"],
+        "prevalence": config["prevalence"],
+        "true_auc": float(
+            np.trapezoid(sim.dgp.get_true_roc(TRUE_AUC_GRID), TRUE_AUC_GRID)
+        ),
+        **{f"lhs_{name}": value for name, value in task.lhs_values.items()},
+        **{f"dgp_{key}": value for key, value in task.params.items()},
+    }
+    cpu = torch.device("cpu")
+    return LhsOutcome(
+        metadata=[{**base_metadata, "sim_idx": i} for i in range(task.n_sim)],
+        empirical_aucs=sim.empirical_aucs,
+        bands=[rank_space_bands(rep=rep, alphas=alphas) for rep in sim.replicates],
+        envelopes=None
+        if B is None
+        else [
+            envelope_bands(rep=rep, alphas=alphas, B=B, device=cpu)
+            for rep in sim.replicates
+        ],
+    )
+
+
+# =============================================================================
+# Orchestration
+# =============================================================================
+
+
+@dataclass
+class UnitResults:
+    """Results of one study cell as they arrive from both lanes.
+
+    Attributes:
+        unit: Study cell.
+        n_sim: Repeats per LHS combination.
+        outcomes: Worker outcome per LHS combination.
+        gpu_envelopes: GPU-lane envelope results per LHS combination.
+        gpu_aucs: Empirical AUCs of the data the GPU lane regenerated, per
+            LHS combination; they must match the worker's.
+    """
+
+    unit: ConfigUnit
+    n_sim: int
+    outcomes: dict[int, LhsOutcome] = field(default_factory=dict)
+    gpu_envelopes: dict[int, list[EnvelopeResult]] = field(default_factory=dict)
+    gpu_aucs: dict[int, list[float]] = field(default_factory=dict)
+
+    def add_gpu(
+        self, lhs_idx: int, sim: SimulatedLhs, envelopes: list[EnvelopeResult]
+    ) -> None:
+        """Store the GPU lane's envelopes for one LHS combination."""
+        self.gpu_envelopes[lhs_idx] = envelopes
+        self.gpu_aucs[lhs_idx] = sim.empirical_aucs
+
+    def add_outcome(self, lhs_idx: int, outcome: LhsOutcome) -> None:
+        """Store a worker outcome, checking it saw the GPU lane's data.
+
+        Raises:
+            RuntimeError: If the worker and the GPU lane regenerated
+                different data for the combination.
+        """
+        if (
+            lhs_idx in self.gpu_aucs
+            and self.gpu_aucs[lhs_idx] != outcome.empirical_aucs
+        ):
+            raise RuntimeError(
+                f"{self.unit.design.dgp_type} LHS {lhs_idx}: the worker and the "
+                "GPU lane generated different data from the same seed"
+            )
+        self.outcomes[lhs_idx] = outcome
+
+    @property
+    def complete(self) -> bool:
+        """Whether every LHS combination's worker outcome has arrived."""
+        return len(self.outcomes) == self.unit.design.n_lhs
+
+    def slots(self) -> Iterator[dict]:
+        """Yield each replicate's merged results, in LHS and repeat order."""
+        for lhs_idx in range(self.unit.design.n_lhs):
+            outcome = self.outcomes[lhs_idx]
+            envelopes = outcome.envelopes or self.gpu_envelopes[lhs_idx]
+            for i in range(self.n_sim):
+                bands = {
+                    alpha: {**by_method, **envelopes[i].bands[alpha]}
+                    for alpha, by_method in outcome.bands[i].items()
+                }
+                yield {
+                    "metadata": outcome.metadata[i],
+                    "empirical_auc": outcome.empirical_aucs[i],
+                    "bands": bands,
+                    "bootstrap_gen_seconds": envelopes[i].bootstrap_gen_seconds,
+                }
+
+
+def run_study(
+    *,
+    units: list[ConfigUnit],
+    n_sim: int,
+    alphas: list[float],
+    B: int,
+    pool: Executor,
+    gpu: torch.device | None,
+    gpu_min_neg: int,
+    max_in_flight: int,
+    output_dir: Path,
+) -> None:
+    """Run every study cell across the worker pool and the GPU lane.
+
+    LHS combinations are submitted in a fixed order across cell boundaries,
+    so the pool never drains between cells; a cell is saved as soon as its
+    last worker outcome arrives. For GPU-lane cells the main process
+    regenerates each combination's data from its seed and computes the
+    envelopes while the workers handle the rest.
+
+    Args:
+        units: Study cells in run order.
+        n_sim: Repeats per LHS combination.
+        alphas: Significance levels.
+        B: Bootstrap replicates.
+        pool: Executor whose workers ran :func:`init_worker`.
+        gpu: CUDA device for the envelope lane, or None to run every
+            envelope on the workers.
+        gpu_min_neg: Smallest negative count routed to the GPU lane.
+        max_in_flight: Cap on submitted but unfinished LHS combinations.
+        output_dir: Directory for result files.
+    """
+    pending: dict[Future, tuple[UnitResults, int]] = {}
+    progress = tqdm(
+        total=sum(u.design.n_lhs for u in units) * n_sim,
+        desc="Replicates",
+        smoothing=0.05,
+    )
+
+    def collect(limit: int) -> None:
+        while len(pending) > limit:
+            done, _ = wait(pending, return_when=FIRST_COMPLETED)
+            for future in done:
+                results, lhs_idx = pending.pop(future)
+                results.add_outcome(lhs_idx, future.result())
+                progress.update(n_sim)
+                if results.complete:
+                    save_results(
+                        results=results, alphas=alphas, output_dir=output_dir, B=B
+                    )
+
+    for unit in units:
+        results = UnitResults(unit=unit, n_sim=n_sim)
+        on_gpu = gpu is not None and unit.sample_config["n_neg"] >= gpu_min_neg
+        for task in unit.tasks(n_sim):
+            future = pool.submit(
+                run_lhs_task, task=task, alphas=alphas, B=None if on_gpu else B
+            )
+            pending[future] = (results, task.lhs_idx)
+            if on_gpu:
+                sim = simulate_lhs(task)
+                envelopes = [
+                    envelope_bands(rep=rep, alphas=alphas, B=B, device=gpu)
+                    for rep in sim.replicates
+                ]
+                results.add_gpu(task.lhs_idx, sim, envelopes)
+            collect(max_in_flight)
+    collect(0)
+    progress.close()
 
 
 # =============================================================================
@@ -648,189 +954,134 @@ def run_dgp(
 # =============================================================================
 
 
+def _band_record(band: BandResult) -> dict:
+    """Flatten one band evaluation into feather columns.
+
+    Args:
+        band: Evaluation of one band against the true ROC.
+
+    Returns:
+        Column name to scalar value; absent violation extents become NaN.
+    """
+    record = {
+        "covers_entirely": band.covers_entirely,
+        "violation_above": band.violation_above,
+        "violation_below": band.violation_below,
+        "max_violation_above": float(band.max_violation_above),
+        "max_violation_below": float(band.max_violation_below),
+        "violation_area_above": float(band.violation_area_above),
+        "violation_area_below": float(band.violation_area_below),
+        "band_area": float(band.band_area),
+        "mean_band_width": float(band.band_widths.mean()),
+        "proportion_grid_points_violated": float(band.proportion_grid_points_violated),
+    }
+    for field_name in (
+        "violation_fpr_above_min",
+        "violation_fpr_above_max",
+        "violation_fpr_below_min",
+        "violation_fpr_below_max",
+    ):
+        value = getattr(band, field_name)
+        record[field_name] = np.nan if value is None else float(value)
+    for landmark in WIDTH_LANDMARKS:
+        record[f"width_at_fpr_{landmark}"] = band.width_at_landmarks.get(
+            landmark, np.nan
+        )
+    for region in FPR_REGIONS:
+        record[f"width_region_{region}"] = band.width_by_region.get(region, np.nan)
+    for region, violated in band.violation_by_region.items():
+        record[f"violation_{region}"] = violated
+    return record
+
+
+def _aggregate_record(band_results: list[BandResult], alpha: float) -> dict:
+    """Summarize one method's evaluations at one alpha as a JSON-ready dict.
+
+    Args:
+        band_results: Evaluations across all replicates.
+        alpha: Nominal alpha.
+
+    Returns:
+        Coverage, violation, and width summaries.
+    """
+    agg = aggregate_band_results(band_results, nominal_alpha=alpha)
+    return {
+        "n_simulations": agg.n_simulations,
+        "nominal_alpha": agg.nominal_alpha,
+        "confidence_level": 1 - alpha,
+        "coverage_rate": float(agg.coverage_rate),
+        "coverage_se": float(agg.coverage_se),
+        "coverage_ci_lower": float(agg.coverage_ci_lower),
+        "coverage_ci_upper": float(agg.coverage_ci_upper),
+        "violation_rate_above": float(agg.violation_rate_above),
+        "violation_rate_below": float(agg.violation_rate_below),
+        "direction_test_pvalue": float(agg.direction_test_pvalue),
+        "mean_band_area": float(agg.mean_band_area),
+        "std_band_area": float(agg.std_band_area),
+        "mean_band_width": float(agg.mean_band_width),
+        "width_percentiles": {k: float(v) for k, v in agg.width_percentiles.items()},
+        "width_by_fpr_region": {
+            k: float(v) for k, v in agg.width_by_fpr_region.items()
+        },
+        "violation_rate_by_region": {
+            k: float(v) for k, v in agg.violation_rate_by_region.items()
+        },
+        "mean_max_violation": float(agg.mean_max_violation),
+        "percentile_95_max_violation": float(agg.percentile_95_max_violation),
+        "mean_violation_area_above": float(agg.mean_violation_area_above),
+        "mean_violation_area_below": float(agg.mean_violation_area_below),
+    }
+
+
 def save_results(
-    simulation_results: list[dict],
-    dgp_type: str,
-    sample_config: dict,
-    confidence_levels: list[float],
-    output_dir: Path,
-    B: int,
+    *, results: UnitResults, alphas: list[float], output_dir: Path, B: int
 ) -> None:
-    """
-    Save simulation results to disk.
+    """Save one study cell's results to disk.
 
-    Creates:
-    - Individual CI evaluations as feather (long format)
-    - Aggregated metrics as JSON (per method, per confidence level)
+    Writes per-replicate band evaluations as feather (long format, one row
+    per replicate x method x alpha) and per-method aggregates as JSON.
+
+    Args:
+        results: The cell's completed results.
+        alphas: Significance levels evaluated.
+        output_dir: Directory for result files.
+        B: Number of bootstrap replicates.
     """
+    dgp_type = results.unit.design.dgp_type
+    sample_config = results.unit.sample_config
     timestamp = datetime.now().strftime("%Y%m%d")
-    n_total = sample_config["n_total"]
     prev = int(sample_config["prevalence"] * 100)
+    base_filename = f"{dgp_type}_n{sample_config['n_total']}_prev{prev}_{timestamp}"
 
-    base_filename = f"{dgp_type}_n{n_total}_prev{prev}_{timestamp}"
-
-    # Prepare individual results (long format)
-    individual_records = []
-
-    # Organize results by (method, confidence_level)
-    results_by_method_alpha = {}
-
-    for sim_result in simulation_results:
-        metadata = sim_result["metadata"]
-        ci_results = sim_result["ci_results"]
-
-        # Iterate over confidence levels
-        for alpha in confidence_levels:
-            if alpha not in ci_results:
-                continue
-
-            alpha_results = ci_results[alpha]
-
-            # Iterate over methods
+    records = []
+    bands_by_method_alpha: dict[tuple[str, float], list[BandResult]] = defaultdict(list)
+    for slot in results.slots():
+        for alpha in alphas:
             for method_name in METHOD_NAMES:
-                if method_name not in alpha_results:
-                    continue
-
-                method_result = alpha_results[method_name]
-                band_result = method_result["band"]
-
-                # Add to aggregation dict
-                key = (method_name, alpha)
-                if key not in results_by_method_alpha:
-                    results_by_method_alpha[key] = []
-                results_by_method_alpha[key].append(band_result)
-
-                # Create individual record
-                record = {}
-
-                # Core identifiers
-                record["dgp_type"] = metadata["dgp_type"]
-                record["method"] = method_name
-                record["alpha"] = alpha
-                record["confidence_level"] = 1 - alpha
-
-                # Sample configuration
-                record["n_pos"] = metadata["n_pos"]
-                record["n_neg"] = metadata["n_neg"]
-                record["n_total"] = metadata["n_total"]
-                record["prevalence"] = metadata["prevalence"]
-
-                # Extract LHS parameters (columns starting with "lhs_")
-                for key_, value in metadata.items():
-                    if key_.startswith("lhs_"):
-                        record[key_] = value
-
-                # Extract DGP parameters (columns starting with "dgp_")
-                for key_, value in metadata.items():
-                    if key_.startswith("dgp_"):
-                        record[key_] = value
-
-                record["lhs_idx"] = metadata["lhs_idx"]
-                record["sim_idx"] = metadata["sim_idx"]
-
-                # AUC: design target / analytic (true) and realized (empirical)
-                record["true_auc"] = metadata["true_auc"]
-                record["empirical_auc"] = ci_results.get("auc", np.nan)
-
-                # Timing
-                record["runtime_seconds"] = method_result["runtime_seconds"]
-                record["runtime_is_shared"] = method_result["runtime_is_shared"]
-                record["bootstrap_gen_seconds"] = ci_results.get(
-                    "bootstrap_gen_seconds", np.nan
+                result = slot["bands"][alpha][method_name]
+                bands_by_method_alpha[(method_name, alpha)].append(result.band)
+                records.append(
+                    {
+                        "method": method_name,
+                        "alpha": alpha,
+                        "confidence_level": 1 - alpha,
+                        **slot["metadata"],
+                        "empirical_auc": slot["empirical_auc"],
+                        "runtime_seconds": result.runtime_seconds,
+                        "runtime_is_shared": result.runtime_is_shared,
+                        "device": result.device,
+                        "bootstrap_gen_seconds": slot["bootstrap_gen_seconds"],
+                        **_band_record(result.band),
+                    }
                 )
 
-                # Band evaluation results
-                record["covers_entirely"] = band_result.covers_entirely
-                record["violation_above"] = band_result.violation_above
-                record["violation_below"] = band_result.violation_below
-                record["max_violation_above"] = float(band_result.max_violation_above)
-                record["max_violation_below"] = float(band_result.max_violation_below)
-                record["violation_area_above"] = float(band_result.violation_area_above)
-                record["violation_area_below"] = float(band_result.violation_area_below)
-                record["band_area"] = float(band_result.band_area)
-                record["mean_band_width"] = float(band_result.band_widths.mean())
-                record["proportion_grid_points_violated"] = float(
-                    band_result.proportion_grid_points_violated
-                )
-
-                # Direction-specific violation FPR extents (None -> NaN)
-                for field_name in (
-                    "violation_fpr_above_min",
-                    "violation_fpr_above_max",
-                    "violation_fpr_below_min",
-                    "violation_fpr_below_max",
-                ):
-                    value = getattr(band_result, field_name)
-                    record[field_name] = np.nan if value is None else float(value)
-
-                # Band width at landmark FPRs
-                for landmark in WIDTH_LANDMARKS:
-                    record[f"width_at_fpr_{landmark}"] = band_result.width_at_landmarks.get(
-                        landmark, np.nan
-                    )
-
-                # Mean band width by FPR region
-                for region in FPR_REGIONS:
-                    record[f"width_region_{region}"] = band_result.width_by_region.get(
-                        region, np.nan
-                    )
-
-                # Add regional violations
-                for region, violated in band_result.violation_by_region.items():
-                    record[f"violation_{region}"] = violated
-
-                individual_records.append(record)
-
-    # Save individual results as feather
-    df_individual = pd.DataFrame(individual_records)
     feather_path = output_dir / f"{base_filename}_individual.feather"
-    df_individual.to_feather(feather_path)
+    pd.DataFrame(records).to_feather(feather_path)
 
-    # Aggregate and save summary statistics
-    aggregated_results = {}
-
-    for (method_name, alpha), band_results in results_by_method_alpha.items():
-        conf_level = 1 - alpha
-        aggregated = aggregate_band_results(band_results, nominal_alpha=alpha)
-
-        # Convert to serializable dict
-        agg_dict = {
-            "n_simulations": aggregated.n_simulations,
-            "nominal_alpha": aggregated.nominal_alpha,
-            "confidence_level": conf_level,
-            "coverage_rate": float(aggregated.coverage_rate),
-            "coverage_se": float(aggregated.coverage_se),
-            "coverage_ci_lower": float(aggregated.coverage_ci_lower),
-            "coverage_ci_upper": float(aggregated.coverage_ci_upper),
-            "violation_rate_above": float(aggregated.violation_rate_above),
-            "violation_rate_below": float(aggregated.violation_rate_below),
-            "direction_test_pvalue": float(aggregated.direction_test_pvalue),
-            "mean_band_area": float(aggregated.mean_band_area),
-            "std_band_area": float(aggregated.std_band_area),
-            "mean_band_width": float(aggregated.mean_band_width),
-            "width_percentiles": {
-                k: float(v) for k, v in aggregated.width_percentiles.items()
-            },
-            "width_by_fpr_region": {
-                k: float(v) for k, v in aggregated.width_by_fpr_region.items()
-            },
-            "violation_rate_by_region": {
-                k: float(v) for k, v in aggregated.violation_rate_by_region.items()
-            },
-            "mean_max_violation": float(aggregated.mean_max_violation),
-            "percentile_95_max_violation": float(
-                aggregated.percentile_95_max_violation
-            ),
-            "mean_violation_area_above": float(aggregated.mean_violation_area_above),
-            "mean_violation_area_below": float(aggregated.mean_violation_area_below),
-        }
-
-        if method_name not in aggregated_results:
-            aggregated_results[method_name] = {}
-        aggregated_results[method_name][f"alpha_{alpha}"] = agg_dict
-
-    # Add metadata
-    aggregated_results["metadata"] = {
+    aggregated: dict[str, dict] = defaultdict(dict)
+    for (method_name, alpha), bands in bands_by_method_alpha.items():
+        aggregated[method_name][f"alpha_{alpha}"] = _aggregate_record(bands, alpha)
+    aggregated["metadata"] = {
         "dgp_type": dgp_type,
         "n_total": sample_config["n_total"],
         "n_pos": sample_config["n_pos"],
@@ -838,31 +1089,28 @@ def save_results(
         "prevalence": sample_config["prevalence"],
         "bootstrap_replicates": B,
         "timestamp": timestamp,
-        "n_lhs_combinations": len(
-            set(r["metadata"]["lhs_idx"] for r in simulation_results)
-        ),
-        "n_simulations_per_lhs": len(
-            set(r["metadata"]["sim_idx"] for r in simulation_results)
-        ),
+        "n_lhs_combinations": results.unit.design.n_lhs,
+        "n_simulations_per_lhs": results.n_sim,
     }
 
-    # Save aggregated results as JSON
     json_path = output_dir / f"{base_filename}_aggregated.json"
-    with open(json_path, "w") as f:
-        json.dump(aggregated_results, f, indent=2)
-
-    print(f"  Saved: {feather_path.name}")
-    print(f"  Saved: {json_path.name}")
+    json_path.write_text(json.dumps(aggregated, indent=2))
+    tqdm.write(f"  Saved: {feather_path.name}, {json_path.name}")
 
 
-def write_run_metadata(args: argparse.Namespace, output_dir: Path) -> None:
-    """Write run-level reproducibility metadata alongside the results."""
+def write_run_metadata(
+    *, args: argparse.Namespace, output_dir: Path, gpu: torch.device | None
+) -> None:
+    """Write run-level reproducibility metadata alongside the results.
+
+    Args:
+        args: Parsed command-line arguments.
+        output_dir: Directory for result files.
+        gpu: CUDA device of the envelope lane, or None.
+    """
     try:
         git_hash = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            capture_output=True,
-            text=True,
-            check=True,
+            ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True
         ).stdout.strip()
     except (subprocess.CalledProcessError, FileNotFoundError):
         git_hash = None
@@ -871,7 +1119,8 @@ def write_run_metadata(args: argparse.Namespace, output_dir: Path) -> None:
         "timestamp": datetime.now().isoformat(),
         "args": {k: str(v) for k, v in vars(args).items()},
         "git_hash": git_hash,
-        "methods": METHOD_NAMES,
+        "methods": list(METHOD_NAMES),
+        "hybrid_floor": dataclasses.asdict(HYBRID_FLOOR),
         "versions": {
             "numpy": np.__version__,
             "scipy": scipy.__version__,
@@ -879,15 +1128,11 @@ def write_run_metadata(args: argparse.Namespace, output_dir: Path) -> None:
             "torch": torch.__version__,
             "pandas": pd.__version__,
         },
-        "cuda_available": torch.cuda.is_available(),
-        "device_name": (
-            torch.cuda.get_device_name(0) if torch.cuda.is_available() else "cpu"
-        ),
+        "gpu_lane_device": None if gpu is None else torch.cuda.get_device_name(gpu),
     }
 
     path = output_dir / f"run_metadata_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-    with open(path, "w") as f:
-        json.dump(metadata, f, indent=2)
+    path.write_text(json.dumps(metadata, indent=2))
     print(f"Run metadata saved to: {path}")
 
 
@@ -897,12 +1142,13 @@ def write_run_metadata(args: argparse.Namespace, output_dir: Path) -> None:
 
 
 def main() -> None:
+    """Parse arguments and run the simulation study."""
+    dgp_names = list(get_dgp_specs())
+
     parser = argparse.ArgumentParser(
         description="Run ROC confidence band simulation study",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-
-    # Global parameters
     parser.add_argument(
         "--n-lhs", type=int, default=1000, help="Number of LHS parameter combinations"
     )
@@ -917,7 +1163,7 @@ def main() -> None:
         "-B",
         type=int,
         default=4000,
-        help="Number of bootstrap replicates for envelope method",
+        help="Number of bootstrap replicates for the envelope method",
     )
     parser.add_argument(
         "--confidence-levels",
@@ -926,83 +1172,59 @@ def main() -> None:
         default=[0.5, 0.2, 0.05],
         help="Confidence levels (as alpha values, e.g., 0.05 for 95%% CI)",
     )
-
-    # DGP selection
     parser.add_argument(
         "--dgps",
         nargs="+",
-        choices=list(get_dgp_specs().keys()) + ["all"],
+        choices=[*dgp_names, "all"],
         default=["all"],
         help="Which DGPs to run",
     )
-
-    # Sample size selection
     parser.add_argument(
         "--sample-sizes",
         type=int,
         nargs="+",
-        help="Specific total sample sizes to run (overrides default configs)",
+        default=list(DEFAULT_SAMPLE_SIZES),
+        help="Total sample sizes to run (n=1000 also runs 10%% prevalence)",
     )
-
-    # Output
     parser.add_argument(
         "--output-dir",
         type=Path,
         default=Path("data/results/final_run/"),
         help="Output directory for results",
     )
-
-    # Misc
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
-
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=os.cpu_count(),
+        help="Single-threaded CPU worker processes",
+    )
+    parser.add_argument(
+        "--gpu-min-neg",
+        type=int,
+        default=500,
+        help="Smallest negative count whose envelope runs on the GPU",
+    )
+    parser.add_argument(
+        "--no-gpu", action="store_true", help="Run every envelope on the CPU workers"
+    )
     args = parser.parse_args()
 
-    # Setup
-    output_dir = Path(args.output_dir)
+    output_dir = args.output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
+    gpu = (
+        torch.device("cuda", 0)
+        if torch.cuda.is_available() and not args.no_gpu
+        else None
+    )
 
-    # Get DGP specs
-    dgp_specs = get_dgp_specs()
-    if "all" in args.dgps:
-        dgp_types = list(dgp_specs.keys())
-    else:
-        dgp_types = args.dgps
+    dgp_types = dgp_names if "all" in args.dgps else args.dgps
+    sample_configs = [
+        config
+        for n_total in args.sample_sizes
+        for config in sample_configs_for(n_total)
+    ]
 
-    # Get sample size configs
-    if args.sample_sizes:
-        sample_configs = []
-        for n_total in args.sample_sizes:
-            if n_total == 1000:
-                # Add all prevalence scenarios
-                sample_configs.extend(
-                    [
-                        {
-                            "n_total": 1000,
-                            "n_pos": 100,
-                            "n_neg": 900,
-                            "prevalence": 0.10,
-                        },
-                        {
-                            "n_total": 1000,
-                            "n_pos": 500,
-                            "n_neg": 500,
-                            "prevalence": 0.50,
-                        },
-                    ]
-                )
-            else:
-                sample_configs.append(
-                    {
-                        "n_total": n_total,
-                        "n_pos": n_total // 2,
-                        "n_neg": n_total // 2,
-                        "prevalence": 0.5,
-                    }
-                )
-    else:
-        sample_configs = get_sample_size_configs()
-
-    # Print configuration
     print("\n" + "=" * 60)
     print("SIMULATION CONFIGURATION")
     print("=" * 60)
@@ -1012,35 +1234,46 @@ def main() -> None:
     print(f"Simulation repeats per combination: {args.n_sim}")
     print(f"Bootstrap replicates (envelope): {args.bootstrap_size}")
     print(f"Confidence levels (alpha): {args.confidence_levels}")
-    print(f"Methods ({len(METHOD_NAMES)}): {METHOD_NAMES}")
+    print(f"Methods ({len(METHOD_NAMES)}): {list(METHOD_NAMES)}")
+    print(f"Hybrid floor: {HYBRID_FLOOR}")
+    print(f"CPU workers: {args.workers}")
+    if gpu is None:
+        print("GPU lane: off (every envelope on the CPU workers)")
+    else:
+        lane = f"n_neg >= {args.gpu_min_neg}"
+        print(f"GPU lane: {torch.cuda.get_device_name(gpu)}, envelopes with {lane}")
     print(f"Output directory: {output_dir}")
     print(f"Random seed: {args.seed}")
     print("=" * 60)
 
-    # Check for GPU
-    if torch.cuda.is_available():
-        print(f"GPU available: {torch.cuda.get_device_name(0)}")
-    else:
-        print("Running on CPU (consider using GPU for faster bootstrap)")
+    write_run_metadata(args=args, output_dir=output_dir, gpu=gpu)
 
-    write_run_metadata(args, output_dir)
+    units = plan_units(
+        dgp_types=dgp_types,
+        sample_configs=sample_configs,
+        n_lhs=args.n_lhs,
+        seed=args.seed,
+    )
 
-    # Run simulations
-    rng = np.random.default_rng(args.seed)
+    t_start = time.perf_counter()
+    m3_cache = calibrate_m3(
+        sample_configs=sample_configs,
+        alphas=args.confidence_levels,
+        workers=args.workers,
+    )
+    print(f"M3 calibration: {time.perf_counter() - t_start:.1f}s")
 
-    for dgp_type in dgp_types:
-        dgp_spec = dgp_specs[dgp_type]
-        run_dgp(
-            dgp_type=dgp_type,
-            dgp_spec=dgp_spec,
-            sample_configs=sample_configs,
-            n_lhs=args.n_lhs,
+    with worker_pool(workers=args.workers, m3_cache=m3_cache) as pool:
+        run_study(
+            units=units,
             n_sim=args.n_sim,
-            confidence_levels=args.confidence_levels,
-            output_dir=output_dir,
-            seed=rng.integers(0, 2**31),
-            dtype=np.float32,
+            alphas=args.confidence_levels,
             B=args.bootstrap_size,
+            pool=pool,
+            gpu=gpu,
+            gpu_min_neg=args.gpu_min_neg,
+            max_in_flight=4 * args.workers,
+            output_dir=output_dir,
         )
 
     print("\n" + "=" * 60)
