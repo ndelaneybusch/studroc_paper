@@ -205,3 +205,116 @@ def test_cpu_envelope_never_queries_cuda(units, monkeypatch):
     rep = rs.simulate_lhs(units[0].tasks(n_sim=1)[0]).replicates[0]
     result = rs.envelope_bands(rep=rep, alphas=ALPHAS, B=B, device=torch.device("cpu"))
     assert {r["envelope"].device for r in result.bands.values()} == {"cpu"}
+
+
+def test_numerically_failed_band_aborts_with_method_and_replicate(units, monkeypatch):
+    """A NaN band must stop the run, naming what produced it, not score as covering."""
+    task = units[0].tasks(n_sim=2)[1]
+    rep = rs.simulate_lhs(task).replicates[1]
+
+    def nan_m3(*, y_true, y_score, alpha, random_state):
+        grid = rep.fpr_grid
+        return grid, np.full_like(grid, np.nan), np.full_like(grid, np.nan)
+
+    monkeypatch.setattr(rs, "m3_band_rs", nan_m3)
+    with pytest.raises(rs.InvalidBandError) as excinfo:
+        rs.rank_space_bands(rep=rep, alphas=ALPHAS)
+
+    message = str(excinfo.value)
+    for expected in (
+        "method=m3",
+        f"alpha={ALPHAS[0]}",
+        f"dgp={task.dgp_type}",
+        f"lhs_idx={task.lhs_idx}",
+        "sim_idx=1",
+        f"seed_spawn_key={task.seed.spawn_key}",
+        f"method_seed={rep.method_seed}",
+        "lower_band has",
+    ):
+        assert expected in message, (expected, message)
+
+
+GRID11 = np.linspace(0.0, 1.0, 11)
+REGION11 = np.isin(np.arange(11), [0, 1, 2, 8, 9, 10])  # prefix 0..2, suffix 8..10
+
+
+@pytest.mark.parametrize(
+    "below_at,above_at,expected",
+    [
+        ([1], [5], {"in": (True, False, True), "outside": (True, True, False)}),
+        ([4, 9], [], {"in": (True, False, True), "outside": (True, False, True)}),
+        ([], [8], {"in": (True, True, False), "outside": (False, False, False)}),
+        ([], [], {"in": (False, False, False), "outside": (False, False, False)}),
+    ],
+    ids=["below-in_above-out", "below-both", "above-in-only", "covering"],
+)
+def test_floor_split_attributes_each_miss_to_its_side_and_direction(
+    below_at, above_at, expected
+):
+    truth = np.sqrt(GRID11)
+    lower, upper = np.clip(truth - 0.1, 0, 1), np.clip(truth + 0.1, 0, 1)
+    lower[below_at] = truth[below_at] + 0.05
+    upper[above_at] = truth[above_at] - 0.05
+    band = rs.evaluate_single_band(lower, upper, truth, GRID11)
+
+    split = rs._floor_split_record(band, REGION11)
+
+    for side, (any_miss, above, below) in expected.items():
+        assert split[f"miss_{side}_floor_region"] is any_miss
+        assert split[f"miss_above_{side}_floor_region"] is above
+        assert split[f"miss_below_{side}_floor_region"] is below
+    # Together the two sides account for exactly the band's misses.
+    assert (
+        split["miss_in_floor_region"] or split["miss_outside_floor_region"]
+    ) is not band.covers_entirely
+    assert set(split) == set(rs.FLOOR_SPLIT_COLUMNS)
+
+
+def test_floor_split_rejects_region_on_another_grid():
+    truth = np.sqrt(GRID11)
+    band = rs.evaluate_single_band(truth - 0.01, truth + 0.01, truth, GRID11)
+    with pytest.raises(ValueError, match="floor region has 12 points"):
+        rs._floor_split_record(band, np.ones(12, dtype=bool))
+
+
+@pytest.mark.parametrize(
+    "region,expected",
+    [
+        (REGION11, (0.2, 0.8, 4 / 9)),
+        (np.ones(11, dtype=bool), (1.0, 0.0, 1.0)),
+        (np.isin(np.arange(11), [0, 10]), (0.0, 1.0, 0.0)),
+    ],
+    ids=["prefix-suffix", "whole-grid", "endpoints-only"],
+)
+def test_floor_region_record_reports_extent(region, expected):
+    record = rs._floor_region_record(region)
+    assert (
+        record["floor_region_left_end_fpr"],
+        record["floor_region_right_start_fpr"],
+        record["floor_region_interior_fraction"],
+    ) == pytest.approx(expected, abs=1e-12)
+
+
+def test_saved_floor_split_partitions_misses_on_a_shared_region(run_outputs):
+    """Every saved row's in/out flags add up to its miss, on one region per replicate."""
+    df = pd.concat(run_outputs[0].values(), ignore_index=True)
+    missed = ~df.covers_entirely
+    assert ((df.miss_in_floor_region | df.miss_outside_floor_region) == missed).all()
+    for side in ("in", "outside"):
+        assert (
+            df[f"miss_{side}_floor_region"]
+            == (
+                df[f"miss_above_{side}_floor_region"]
+                | df[f"miss_below_{side}_floor_region"]
+            )
+        ).all()
+    # All methods at one replicate and alpha are split on the hybrid's region.
+    region_cols = [
+        "floor_region_left_end_fpr",
+        "floor_region_right_start_fpr",
+        "floor_region_interior_fraction",
+    ]
+    keys = ["dgp_type", "n_neg", "lhs_idx", "sim_idx", "alpha"]
+    assert (df.groupby(keys)[region_cols].nunique() == 1).all().all()
+    # The fixture's small samples must exercise both sides, or this is vacuous.
+    assert df.miss_in_floor_region.any() and df.miss_outside_floor_region.any()

@@ -13,6 +13,7 @@ import numpy as np
 import pytest
 from scipy import stats
 
+from studroc_paper.datagen.roc_to_dgp import weibull_params
 from studroc_paper.datagen.true_rocs import (
     DGP,
     estimate_true_roc,
@@ -462,6 +463,24 @@ class TestWeibullDGP:
         assert (
             max_diff < 0.04
         )  # Much looser tolerance - may indicate implementation issue
+
+    @pytest.mark.parametrize("shape", [0.5, 1.5, 5.0], ids=lambda k: f"shape={k}")
+    @pytest.mark.parametrize("auc", [0.6, 0.9, 0.99], ids=lambda a: f"auc={a}")
+    def test_equal_shape_roc_is_exact_power_curve_with_true_endpoints(self, shape, auc):
+        # With equal shapes the ROC is FPR ** ((1 - AUC) / AUC). At high AUC it
+        # rises steeply near FPR = 0, so a truth that clips or loses precision
+        # there reports R(0) far above 0 (0.79 at AUC = .99 with a 1e-10 clip).
+        pos_scale = float(weibull_params(np.array(auc), np.array(shape)))
+        dgp = make_weibull_dgp(
+            neg_shape=shape, pos_shape=shape, neg_scale=1.0, pos_scale=pos_scale
+        )
+        fpr = np.array([0.0, 1e-300, 1e-100, 1e-10, 1e-3, 0.3, 0.9, 1 - 1e-12, 1.0])
+
+        tpr = dgp.get_true_roc(fpr)
+
+        assert tpr[0] == 0.0
+        assert tpr[-1] == 1.0
+        np.testing.assert_allclose(tpr, fpr ** ((1 - auc) / auc), rtol=1e-9, atol=0)
 
     def test_reduces_to_exponential_when_shape_is_one(self, fpr_grid, rng):
         """Verify Weibull with shape=1 matches exponential."""

@@ -24,6 +24,7 @@ is bit-identical to the corresponding :func:`fiducial_band_rs` call.
 
 import warnings
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 
 import numpy as np
 from numpy.typing import NDArray
@@ -44,6 +45,23 @@ from .hybrid_floor import (
     resolve_floor,
 )
 from .method_utils import torch_to_numpy
+
+
+@dataclass(frozen=True)
+class FiducialSuite:
+    """Bands from one fiducial cloud at several levels and floor settings.
+
+    Attributes:
+        grid: Output FPR grid.
+        bands: ``alpha -> name -> (lower, upper)`` on ``grid``.
+        floor_regions: ``alpha -> name -> mask`` of the grid points on which
+            the M3 hull was taken, for every floored ``name``. Masks are on
+            the native grid ``arange(n0 + 1) / n0`` whatever the output grid.
+    """
+
+    grid: NDArray
+    bands: dict[float, dict[str, tuple[NDArray, NDArray]]]
+    floor_regions: dict[float, dict[str, NDArray[np.bool_]]]
 
 
 def _require_fiducial_core():
@@ -146,7 +164,7 @@ def fiducial_band_rs(
         >>> bool(np.all(lo <= hi)) and lo[0] == 0.0 and hi[-1] == 1.0
         True
     """
-    grid, bands = fiducial_band_suite_rs(
+    suite = fiducial_band_suite_rs(
         y_true=y_true,
         y_score=y_score,
         alphas=[alpha],
@@ -158,8 +176,8 @@ def fiducial_band_rs(
         n_threads=n_threads,
         random_state=random_state,
     )
-    lower, upper = bands[alpha]["band"]
-    return grid, lower, upper
+    lower, upper = suite.bands[alpha]["band"]
+    return suite.grid, lower, upper
 
 
 def fiducial_band_suite_rs(
@@ -174,7 +192,7 @@ def fiducial_band_suite_rs(
     tie_break: TieBreak = "random",
     n_threads: int = 0,
     random_state: int | np.random.Generator | None = None,
-) -> tuple[NDArray, dict[float, dict[str, tuple[NDArray, NDArray]]]]:
+) -> FiducialSuite:
     """Compute fiducial bands at several levels and floor settings at once.
 
     Breaks ties once and generates one fiducial cloud, sized for the largest
@@ -200,7 +218,7 @@ def fiducial_band_suite_rs(
         random_state: Seed or generator for tie-breaking and the kernel seed.
 
     Returns:
-        The FPR grid and a mapping ``alpha -> name -> (lower, upper)``.
+        The FPR grid, the bands, and each floored band's region.
 
     Raises:
         ImportError: If the ``fiducial_core`` extension is not built.
@@ -323,7 +341,13 @@ def fiducial_band_suite_rs(
             bands[alpha][name] = _resample(lower=lower, upper=upper, n0=n0, k=k)
 
     out_grid = grid if k is None else np.linspace(0.0, 1.0, k)
-    return out_grid, bands
+    floor_regions = {
+        alpha: {
+            name: regions[alpha, name] for name in floors if (alpha, name) in regions
+        }
+        for alpha in alphas
+    }
+    return FiducialSuite(grid=out_grid, bands=bands, floor_regions=floor_regions)
 
 
 def _resample(

@@ -85,6 +85,8 @@ class BandResult:
         max_violation_above: Maximum distance the true ROC exceeds the upper band.
         max_violation_below: Maximum distance the true ROC falls below the lower band.
         band_area: Total area between upper and lower bands.
+        mean_band_width: Mean width over the interior grid points (FPR=0 and
+            FPR=1 excluded); the mean over the full grid if it has no interior.
         band_widths: Width between upper and lower bands at each FPR grid point.
         fpr_grid: FPR values where the band and true ROC are evaluated.
         pointwise_covered: Boolean array indicating coverage at each FPR point.
@@ -121,6 +123,7 @@ class BandResult:
 
     # Band properties
     band_area: float
+    mean_band_width: float  # Mean width over interior grid points
     band_widths: np.ndarray  # Width at each FPR grid point
     fpr_grid: np.ndarray
 
@@ -171,10 +174,13 @@ class BandEvaluation:
         coverage_ci_upper: Upper bound of 95% CI for coverage rate.
         violation_rate_above: Proportion of bands with violations above.
         violation_rate_below: Proportion of bands with violations below.
-        direction_test_pvalue: P-value for test of symmetry in violation direction.
+        direction_test_pvalue: Exact McNemar p-value for directional symmetry:
+            a two-sided binomial test of above-only against below-only bands.
+            1.0 when no band violates on exactly one side.
         mean_band_area: Average area between upper and lower bands.
         std_band_area: Standard deviation of band area.
-        mean_band_width: Average width across FPR domain.
+        mean_band_width: Average over bands of ``BandResult.mean_band_width``
+            (interior grid points only).
         width_percentiles: Dict with 10th, 50th, 90th percentiles of mean width.
         width_by_fpr_region: Dict mapping FPR regions to mean widths.
         pointwise_coverage_rates: Coverage rate at each FPR grid point.
@@ -203,7 +209,7 @@ class BandEvaluation:
     # Directional violations
     violation_rate_above: float
     violation_rate_below: float
-    direction_test_pvalue: float  # H0: P(above) = P(below) | violation
+    direction_test_pvalue: float  # Exact McNemar: above-only vs below-only
 
     # Tightness metrics
     mean_band_area: float
@@ -240,6 +246,71 @@ class BandEvaluation:
 # =============================================================================
 
 
+class InvalidBandError(ValueError):
+    """A band or true ROC that cannot be evaluated.
+
+    Raised for non-finite bounds or truth, mismatched lengths, or a lower
+    bound above the upper bound. These are numerical failures of a method or
+    DGP, and scoring them would count a broken band as covering.
+    """
+
+
+# Crossings below this many TPR units are representation noise, not
+# violations: bands and true curves may pass through float32, whose spacing
+# near TPR=1 is ~6e-8, and parametric bands on the TPR plateau can be tighter
+# than one float32 ulp. The same tolerance bounds how far a lower bound may
+# sit above its upper bound before the band counts as misordered.
+COVERAGE_TOLERANCE = 1e-6
+
+
+def validate_band_inputs(
+    *,
+    lower_band: np.ndarray,
+    upper_band: np.ndarray,
+    true_tpr: np.ndarray,
+    fpr_grid: np.ndarray,
+) -> None:
+    """Check that a band and true ROC can be evaluated against each other.
+
+    Args:
+        lower_band: Lower bound at each FPR grid point.
+        upper_band: Upper bound at each FPR grid point.
+        true_tpr: True TPR at each FPR grid point.
+        fpr_grid: FPR grid.
+
+    Raises:
+        InvalidBandError: If the arrays differ in length, any value is
+            non-finite, or the lower bound exceeds the upper bound by more
+            than ``COVERAGE_TOLERANCE`` anywhere.
+    """
+    arrays = {
+        "lower_band": lower_band,
+        "upper_band": upper_band,
+        "true_tpr": true_tpr,
+        "fpr_grid": fpr_grid,
+    }
+    lengths = {name: len(arr) for name, arr in arrays.items()}
+    if len(set(lengths.values())) != 1:
+        raise InvalidBandError(f"Mismatched lengths: {lengths}")
+
+    for name, arr in arrays.items():
+        bad = np.flatnonzero(~np.isfinite(arr))
+        if bad.size:
+            raise InvalidBandError(
+                f"{name} has {bad.size} non-finite value(s) of {arr.size}; "
+                f"first at index {bad[0]} (FPR={fpr_grid[bad[0]]}): {arr[bad[0]]}"
+            )
+
+    misordered = np.flatnonzero(lower_band - upper_band > COVERAGE_TOLERANCE)
+    if misordered.size:
+        i = misordered[0]
+        raise InvalidBandError(
+            f"lower_band exceeds upper_band at {misordered.size} point(s); "
+            f"first at index {i} (FPR={fpr_grid[i]}): "
+            f"lower={lower_band[i]}, upper={upper_band[i]}"
+        )
+
+
 def evaluate_single_band(
     lower_band: np.ndarray,
     upper_band: np.ndarray,
@@ -261,17 +332,19 @@ def evaluate_single_band(
     Returns:
         Comprehensive evaluation metrics for this single band.
 
+    Raises:
+        InvalidBandError: If the inputs fail ``validate_band_inputs``.
+
     Notes:
-        ROC curves are pinned at (0,0) and (1,1), so bands at these points
-        should have zero width and always cover the true ROC. Overall coverage
-        statistics (covers_entirely, violation_above, violation_below) are
-        computed only over the actual data range, excluding FPR=0 and FPR=1.
+        ROC curves are pinned at (0,0) and (1,1), so grid points at FPR=0 and
+        FPR=1 are excluded from every violation diagnostic: coverage flags,
+        pointwise coverage (always True there), violation locations,
+        magnitudes, areas, regional indicators, and the proportion of points
+        violated. Band widths and areas use the full grid.
 
-        Band crossings smaller than 1e-6 TPR units do not count as violations:
-        they are below float32 representation resolution near TPR=1 and far
-        below any statistically meaningful band-width scale.
-
-        All calculations are NaN-aware and will handle missing values appropriately.
+        Band crossings smaller than ``COVERAGE_TOLERANCE`` TPR units do not
+        count as violations: they are below float32 representation resolution
+        near TPR=1 and far below any statistically meaningful band-width scale.
 
     Examples:
         >>> fpr_grid = np.linspace(0, 1, 101)
@@ -284,76 +357,47 @@ def evaluate_single_band(
         >>> result.band_area > 0
         True
     """
-    # Validate inputs and preserve dtype from true_tpr
+    # Preserve dtype from true_tpr
     true_tpr = np.asarray(true_tpr)
     dtype = true_tpr.dtype
     lower_band = np.asarray(lower_band, dtype=dtype)
     upper_band = np.asarray(upper_band, dtype=dtype)
     fpr_grid = np.asarray(fpr_grid, dtype=dtype)
-
-    n = len(fpr_grid)
-    assert len(lower_band) == n and len(upper_band) == n and len(true_tpr) == n
-
-    # Pointwise coverage. Crossings below this tolerance (in TPR units) are
-    # treated as covered: bands and true curves may pass through float32,
-    # whose spacing near TPR=1 is ~6e-8, so hairline crossings at that scale
-    # are representation noise rather than statistical violations. Parametric
-    # bands on the TPR plateau can be tighter than one float32 ulp, where a
-    # stricter tolerance manufactures phantom zero-magnitude violations.
-    tolerance = 1e-6
-    above = (true_tpr - upper_band) > tolerance
-    below = (lower_band - true_tpr) > tolerance
-    pointwise_covered = ~(above | below)
-
-    # Mask for actual data range (exclude pinned boundaries FPR=0 and FPR=1)
-    data_range_mask = np.ones(n, dtype=bool)
-    if fpr_grid[0] == 0.0:
-        data_range_mask[0] = False
-    if fpr_grid[-1] == 1.0:
-        data_range_mask[-1] = False
-
-    # Overall coverage (restricted to actual data range)
-    covers_entirely = (
-        pointwise_covered[data_range_mask].all() if data_range_mask.any() else True
-    )
-    violation_above = above[data_range_mask].any() if data_range_mask.any() else False
-    violation_below = below[data_range_mask].any() if data_range_mask.any() else False
-
-    # Violation locations
-    violation_fpr_above = (
-        fpr_grid[above] if violation_above else np.array([], dtype=dtype)
-    )
-    violation_fpr_below = (
-        fpr_grid[below] if violation_below else np.array([], dtype=dtype)
+    validate_band_inputs(
+        lower_band=lower_band,
+        upper_band=upper_band,
+        true_tpr=true_tpr,
+        fpr_grid=fpr_grid,
     )
 
-    # Violation magnitudes (NaN-aware)
-    violations_above_mag = np.maximum(true_tpr - upper_band, 0)
-    violations_below_mag = np.maximum(lower_band - true_tpr, 0)
-    max_violation_above = (
-        np.nanmax(violations_above_mag)
-        if not np.all(np.isnan(violations_above_mag))
-        else 0.0
-    )
-    max_violation_below = (
-        np.nanmax(violations_below_mag)
-        if not np.all(np.isnan(violations_below_mag))
-        else 0.0
-    )
+    # Interior of the data range: the pinned endpoints FPR=0 and FPR=1 are
+    # excluded from every violation diagnostic.
+    interior = (fpr_grid != 0.0) & (fpr_grid != 1.0)
 
-    # Band properties (NaN-aware)
+    above = ((true_tpr - upper_band) > COVERAGE_TOLERANCE) & interior
+    below = ((lower_band - true_tpr) > COVERAGE_TOLERANCE) & interior
+    violated = above | below
+    pointwise_covered = ~violated
+
+    covers_entirely = not violated.any()
+    violation_above = bool(above.any())
+    violation_below = bool(below.any())
+
+    violation_fpr_above = fpr_grid[above]
+    violation_fpr_below = fpr_grid[below]
+
+    violations_above_mag = np.where(interior, np.maximum(true_tpr - upper_band, 0), 0)
+    violations_below_mag = np.where(interior, np.maximum(lower_band - true_tpr, 0), 0)
+    max_violation_above = float(violations_above_mag.max())
+    max_violation_below = float(violations_below_mag.max())
+
     band_widths = upper_band - lower_band
-    # Use nanmean for trapezoid integration if NaNs present
-    if np.any(np.isnan(band_widths)):
-        # Filter out NaN values for integration
-        valid_mask = ~np.isnan(band_widths)
-        band_area = (
-            np.trapezoid(band_widths[valid_mask], fpr_grid[valid_mask])
-            if valid_mask.sum() > 1
-            else 0.0
-        )
-    else:
-        band_area = np.trapezoid(band_widths, fpr_grid)
+    band_area = float(np.trapezoid(band_widths, fpr_grid))
+    mean_band_width = (
+        float(band_widths[interior].mean())
+        if interior.any()
+        else float(band_widths.mean())
+    )
 
     # Violations by region
     regions = {
@@ -370,30 +414,23 @@ def evaluate_single_band(
     for region_name, (lo, hi) in regions.items():
         mask = (fpr_grid >= lo) & (fpr_grid < hi if hi < 1.0 else fpr_grid <= hi)
         if mask.any():
-            # Any violation in this region?
-            violation_by_region[region_name] = (above[mask] | below[mask]).any()
-            width_by_region[region_name] = float(np.nanmean(band_widths[mask]))
+            violation_by_region[region_name] = bool(violated[mask].any())
+            width_by_region[region_name] = float(np.mean(band_widths[mask]))
         else:
             violation_by_region[region_name] = False
             width_by_region[region_name] = np.nan
 
     # Band width at fixed landmark FPR values (linear interpolation between
-    # grid points; NaN widths propagate through interpolation)
+    # grid points)
     landmark_fprs = (0.01, 0.05, 0.10, 0.25, 0.50, 0.75, 0.90)
     landmark_widths = np.interp(landmark_fprs, fpr_grid, band_widths)
     width_at_landmarks = {
         f"{lm:g}": float(w) for lm, w in zip(landmark_fprs, landmark_widths)
     }
 
-    # Integrated violation areas (NaN-aware, mirroring band_area handling)
-    def _violation_area(magnitudes: np.ndarray) -> float:
-        valid = ~np.isnan(magnitudes)
-        if valid.sum() < 2:
-            return 0.0
-        return float(np.trapezoid(magnitudes[valid], fpr_grid[valid]))
-
-    violation_area_above = _violation_area(violations_above_mag)
-    violation_area_below = _violation_area(violations_below_mag)
+    # Integrated violation areas
+    violation_area_above = float(np.trapezoid(violations_above_mag, fpr_grid))
+    violation_area_below = float(np.trapezoid(violations_below_mag, fpr_grid))
 
     # Direction-specific violation FPR extents
     violation_fpr_above_min = (
@@ -409,14 +446,10 @@ def evaluate_single_band(
         float(np.max(violation_fpr_below)) if violation_below else None
     )
 
-    # Proportion of grid points violated (excluding boundaries)
-    if data_range_mask.any():
-        violations_at_points = above[data_range_mask] | below[data_range_mask]
-        proportion_grid_points_violated = float(
-            violations_at_points.sum() / data_range_mask.sum()
-        )
-    else:
-        proportion_grid_points_violated = 0.0
+    # Proportion of interior grid points violated
+    proportion_grid_points_violated = (
+        float(violated.sum() / interior.sum()) if interior.any() else 0.0
+    )
 
     # Band-level violation FPR statistics (pool above and below)
     all_violation_fprs_this_band = np.concatenate(
@@ -440,6 +473,7 @@ def evaluate_single_band(
         max_violation_above=max_violation_above,
         max_violation_below=max_violation_below,
         band_area=band_area,
+        mean_band_width=mean_band_width,
         band_widths=band_widths,
         fpr_grid=fpr_grid,
         pointwise_covered=pointwise_covered,
@@ -590,20 +624,17 @@ def aggregate_band_results(
     violation_rate_above = np.nanmean(violations_above)
     violation_rate_below = np.nanmean(violations_below)
 
-    # Test for directional symmetry
-    # Among simulations with violations, are above/below equally likely?
-    n_above = violations_above.sum()
-    n_below = violations_below.sum()
-    n_with_any_violation = ((violations_above) | (violations_below)).sum()
-
-    if n_with_any_violation > 0:
-        # Use exact binomial test
-        # H0: P(violation is above | violation occurred) = 0.5
-        # Count: number of "above" events among all violation events
-        # Note: a single sim can have both above and below violations
-        direction_test_pvalue = _binomial_test_twosided(n_above, n_above + n_below, 0.5)
-    else:
-        direction_test_pvalue = 1.0
+    # Directional symmetry: the above and below indicators are paired within
+    # each band, so the exact McNemar test compares the discordant bands only.
+    # A band that misses on both sides carries no information about direction.
+    n_above_only = int((violations_above & ~violations_below).sum())
+    n_below_only = int((violations_below & ~violations_above).sum())
+    n_discordant = n_above_only + n_below_only
+    direction_test_pvalue = (
+        _binomial_test_twosided(n_above_only, n_discordant, 0.5)
+        if n_discordant > 0
+        else 1.0
+    )
 
     # -------------------------------------------------------------------------
     # Tightness metrics (NaN-aware)
@@ -616,21 +647,9 @@ def aggregate_band_results(
     band_widths_matrix = np.vstack([r.band_widths for r in results_list])
     mean_widths_by_fpr = np.nanmean(band_widths_matrix, axis=0)
 
-    # Exclude pinned boundaries (FPR=0 and FPR=1) from width calculations
-    # since these have zero variance by construction
-    width_mask = np.ones(len(fpr_grid), dtype=bool)
-    if fpr_grid[0] == 0.0:
-        width_mask[0] = False
-    if fpr_grid[-1] == 1.0:
-        width_mask[-1] = False
-
-    # Mean width excluding boundaries (NaN-aware)
-    if width_mask.any():
-        mean_band_width = np.nanmean(mean_widths_by_fpr[width_mask])
-        sim_mean_widths = np.nanmean(band_widths_matrix[:, width_mask], axis=1)
-    else:
-        mean_band_width = np.nanmean(mean_widths_by_fpr)
-        sim_mean_widths = np.nanmean(band_widths_matrix, axis=1)
+    # Per-band mean width over the interior grid, as defined in BandResult
+    sim_mean_widths = np.array([r.mean_band_width for r in results_list])
+    mean_band_width = float(np.mean(sim_mean_widths))
 
     # Percentiles of mean width across simulations (NaN-aware)
     width_percentiles = {
@@ -898,7 +917,7 @@ def run_band_simulation(
             except ImportError:
                 pass
 
-        for _ in iterator:
+        for sim_idx in iterator:
             # Generate data
             scores_pos, scores_neg = dgp.sample(n_pos, n_neg, rng)
 
@@ -914,7 +933,16 @@ def run_band_simulation(
                     fpr_grid, fpr_out, upper, left=upper[0], right=upper[-1]
                 ).astype(dtype)
 
-            yield evaluate_single_band(lower, upper, true_tpr, fpr_grid)
+            try:
+                result = evaluate_single_band(lower, upper, true_tpr, fpr_grid)
+            except InvalidBandError as err:
+                method = getattr(band_method, "__name__", repr(band_method))
+                raise InvalidBandError(
+                    f"method={method}, dgp={dgp.name}, n_pos={n_pos}, "
+                    f"n_neg={n_neg}, alpha={alpha}, seed={seed}, "
+                    f"sim_idx={sim_idx}: {err}"
+                ) from err
+            yield result
 
     return aggregate_band_results(
         result_generator(), nominal_alpha=alpha, fpr_grid=fpr_grid

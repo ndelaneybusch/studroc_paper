@@ -109,8 +109,22 @@ Per band (`src/studroc_paper/eval/eval.py`), saved long-format per CI to feather
 -   Coverage: `covers_entirely`, directional violations, violations by FPR region.
 -   Violation magnitude: max and **integrated area** above/below; proportion of
     grid points violated; direction-specific min/max violation FPR.
--   Tightness: band area, mean width, width at landmark FPRs
-    (0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9), mean width per FPR region.
+-   Floor-region split: the hybrid fiducial band's floor region at each
+    (replicate, alpha) — `floor_region_left_end_fpr`,
+    `floor_region_right_start_fpr`, `floor_region_interior_fraction` — and,
+    for every method on that same region, whether it misses inside and
+    outside it, overall and by direction (`miss_{,above_,below_}{in,outside}_floor_region`).
+    The two sides partition each band's miss. The floor theory bounds the
+    in-region miss probability of the hybrid by the M3 level; the outside
+    term is the unproved one.
+-   Tightness: band area, mean width over interior grid points, width at
+    landmark FPRs (0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9), mean width per FPR
+    region.
+
+Every violation metric excludes the pinned endpoints FPR = 0 and FPR = 1. A
+band or true ROC with a non-finite value, or with its lower bound above its
+upper bound by more than 1e-6, stops the run with an error naming the method,
+alpha, DGP, LHS point, repeat, and seeds.
 -   Cost: per-method runtime (`runtime_seconds`, with `runtime_is_shared=True`
     for the two fiducial arms, whose single suite call is amortized), the
     `device` it ran on, and bootstrap generation time. Runtimes are measured
@@ -118,8 +132,9 @@ Per band (`src/studroc_paper/eval/eval.py`), saved long-format per CI to feather
     a run but are not single-method benchmarks.
 
 Aggregates per (method, alpha) are saved as JSON: coverage rate with Wilson CI,
-directional violation rates and symmetry test, width/area summaries by region,
-mean violation areas, and run metadata.
+directional violation rates and symmetry test (exact McNemar on above-only
+versus below-only bands), width/area summaries by region, mean violation areas,
+in/outside floor-region miss rates (`*_floor_region_rate`), and run metadata.
 
 ## 7. Order of Operations
 

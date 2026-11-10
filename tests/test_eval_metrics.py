@@ -19,7 +19,11 @@ import numpy as np
 import pytest
 from scipy import stats
 
-from studroc_paper.eval.eval import aggregate_band_results, evaluate_single_band
+from studroc_paper.eval.eval import (
+    InvalidBandError,
+    aggregate_band_results,
+    evaluate_single_band,
+)
 
 # An 11-point grid keeps interior indices (1..9) easy to reason about; sqrt is a
 # valid concave ROC pinned at (0,0) and (1,1) with strictly interior middle.
@@ -170,26 +174,123 @@ def test_band_area_triangular_width_equals_analytic_integral():
 
 
 # ---------------------------------------------------------------------------
-# NaN handling: missing band values must not crash or manufacture violations
+# Input validation: numerical failures must raise, never score as coverage
 # ---------------------------------------------------------------------------
 
 
-def test_nan_in_band_is_ignored_in_area_and_coverage():
+def _with(arr: np.ndarray, i: int | slice, value: float) -> np.ndarray:
+    out = arr.astype(float).copy()
+    out[i] = value
+    return out
+
+
+_LOWER_OK, _UPPER_OK = _covered_band()
+
+
+@pytest.mark.parametrize(
+    "lower,upper,truth,match",
+    [
+        (_LOWER_OK, _with(_UPPER_OK, 5, np.nan), TRUTH, "upper_band has 1 non-finite"),
+        (_with(_LOWER_OK, 3, np.nan), _UPPER_OK, TRUTH, "lower_band has 1 non-finite"),
+        (
+            np.full_like(GRID, np.nan),
+            np.full_like(GRID, np.nan),
+            TRUTH,
+            "lower_band has 11 non-finite",
+        ),
+        (_LOWER_OK, _with(_UPPER_OK, 7, np.inf), TRUTH, "upper_band has 1 non-finite"),
+        (_LOWER_OK, _UPPER_OK, _with(TRUTH, 0, np.nan), "true_tpr has 1 non-finite"),
+        (
+            _with(_LOWER_OK, 4, _UPPER_OK[4] + 1e-3),
+            _UPPER_OK,
+            TRUTH,
+            r"lower_band exceeds upper_band at 1 point\(s\); first at index 4",
+        ),
+        (_LOWER_OK[:-1], _UPPER_OK[:-1], TRUTH, "Mismatched lengths"),
+    ],
+    ids=[
+        "nan-upper",
+        "nan-lower",
+        "all-nan-band",
+        "inf-upper",
+        "nan-truth",
+        "crossed-bounds",
+        "length-mismatch",
+    ],
+)
+def test_invalid_inputs_raise_instead_of_scoring(lower, upper, truth, match):
+    with pytest.raises(InvalidBandError, match=match):
+        evaluate_single_band(lower, upper, truth, GRID)
+
+
+def test_bounds_crossed_within_tolerance_are_accepted():
+    # Float32 rounding can put a collapsed band's lower bound one ulp above
+    # its upper bound; that is not a misordered band.
     lower, upper = _covered_band()
-    i = 5
-    upper[i] = np.nan  # a missing band value at an interior point
-
+    lower[4] = upper[4] + 5e-7
     result = evaluate_single_band(lower, upper, TRUTH, GRID)
+    assert result.band_widths[4] == pytest.approx(-5e-7, abs=1e-12)
 
-    # Area integrates over the finite points only and stays finite.
-    valid = ~np.isnan(upper - lower)
-    expected_area = np.trapezoid((upper - lower)[valid], GRID[valid])
-    assert np.isfinite(result.band_area)
-    assert result.band_area == pytest.approx(expected_area, abs=1e-12)
-    # A NaN comparison is neither above nor below: the point is treated as covered.
-    assert result.pointwise_covered[i]
+
+# ---------------------------------------------------------------------------
+# Endpoint handling: FPR=0 and FPR=1 are excluded from every violation metric
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("endpoint", [0, -1], ids=["fpr0", "fpr1"])
+def test_endpoint_misses_enter_no_violation_metric(endpoint):
+    # A truth that misses the band only at a pinned endpoint (as a truth with
+    # a wrong endpoint value would) must leave every violation metric clean.
+    lower, upper = _covered_band()
+    truth = TRUTH.copy()
+    truth[endpoint] = 0.79 if endpoint == 0 else 0.2
+
+    result = evaluate_single_band(lower, upper, truth, GRID)
+
+    assert result.covers_entirely
+    assert result.pointwise_covered.all()
     assert result.max_violation_above == 0.0
     assert result.max_violation_below == 0.0
+    assert result.violation_area_above == 0.0
+    assert result.violation_area_below == 0.0
+    assert result.violation_fpr_above.size == 0
+    assert result.violation_fpr_below.size == 0
+    assert not any(result.violation_by_region.values())
+    assert result.proportion_grid_points_violated == 0.0
+
+
+def test_interior_miss_is_reported_without_endpoint_contamination():
+    # An interior miss alongside an endpoint miss: the metrics report the
+    # interior miss exactly and nothing from the endpoint.
+    lower, upper = _covered_band()
+    truth = TRUTH.copy()
+    truth[0] = 0.79  # endpoint miss, 0.69 above upper[0] = 0.1
+    upper[3] = truth[3] - 0.03  # interior miss above
+
+    result = evaluate_single_band(lower, upper, truth, GRID)
+
+    assert not result.covers_entirely
+    assert result.max_violation_above == pytest.approx(0.03, abs=1e-12)
+    np.testing.assert_array_equal(result.violation_fpr_above, GRID[[3]])
+    # Trapezoid of a single interior spike of height 0.03 on spacing 0.1
+    assert result.violation_area_above == pytest.approx(0.03 * 0.1, abs=1e-12)
+    assert result.violation_by_region == {
+        "0-10": False,
+        "10-30": False,
+        "30-50": True,
+        "50-70": False,
+        "70-90": False,
+        "90-100": False,
+    }
+
+
+def test_mean_band_width_excludes_endpoints():
+    lower, upper = _covered_band()
+    upper[0] = 0.9  # a wide endpoint must not move the interior mean
+    result = evaluate_single_band(lower, upper, TRUTH, GRID)
+    assert result.mean_band_width == pytest.approx(
+        float(np.mean((upper - lower)[1:-1])), abs=1e-12
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -279,6 +380,49 @@ def test_direction_test_pvalue_unity_for_balanced_violations():
     expected = stats.binomtest(4, 8, 0.5, alternative="two-sided").pvalue
     assert evaluation.direction_test_pvalue == pytest.approx(expected, abs=1e-12)
     assert evaluation.direction_test_pvalue == pytest.approx(1.0, abs=1e-12)
+
+
+def _both_sided_result():
+    lower, upper = _covered_band()
+    upper[3] = TRUTH[3] - 0.05
+    lower[7] = TRUTH[7] + 0.05
+    return evaluate_single_band(lower, upper, TRUTH, GRID)
+
+
+@pytest.mark.parametrize("n_both", [0, 5, 40], ids=["no-both", "few-both", "many-both"])
+def test_direction_test_ignores_bands_missing_on_both_sides(n_both):
+    # Ten above-only and no below-only bands is strong evidence of asymmetry
+    # (exact McNemar p = 2 * 0.5**10) however many bands miss on both sides;
+    # counting those twice would dilute it toward p = 1.
+    results = _directional_results(n_above=10, n_below=0) + [
+        _both_sided_result() for _ in range(n_both)
+    ]
+    evaluation = aggregate_band_results(results, fpr_grid=GRID)
+    assert evaluation.violation_rate_above == pytest.approx(1.0, abs=1e-12)
+    assert evaluation.direction_test_pvalue == pytest.approx(2 * 0.5**10, abs=1e-12)
+
+
+def test_direction_test_is_unity_when_every_violation_is_two_sided():
+    evaluation = aggregate_band_results(
+        [_both_sided_result() for _ in range(6)], fpr_grid=GRID
+    )
+    assert evaluation.direction_test_pvalue == 1.0
+
+
+def test_aggregate_mean_band_width_is_mean_of_band_definitions():
+    # The saved per-band and aggregate widths must share one definition.
+    results = []
+    for endpoint_width, half in [(0.9, 0.1), (0.3, 0.2), (0.6, 0.05)]:
+        lower, upper = _covered_band(half_width=half)
+        upper[0] = endpoint_width
+        results.append(evaluate_single_band(lower, upper, TRUTH, GRID))
+    evaluation = aggregate_band_results(results, fpr_grid=GRID)
+    assert evaluation.mean_band_width == pytest.approx(
+        np.mean([r.mean_band_width for r in results]), abs=1e-12
+    )
+    assert evaluation.width_percentiles["p50"] == pytest.approx(
+        results[0].mean_band_width, abs=1e-12
+    )
 
 
 def test_empty_results_raises():

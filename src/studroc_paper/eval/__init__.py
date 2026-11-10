@@ -50,6 +50,7 @@ from .build_data_from_jsons import (
 from .eval import (
     BandEvaluation,
     BandResult,
+    InvalidBandError,
     aggregate_band_results,
     compute_empirical_roc,
     compute_pointwise_coverage_diagnostics,
@@ -62,6 +63,7 @@ from .eval import (
 __all__ = [
     "BandEvaluation",
     "BandResult",
+    "InvalidBandError",
     "aggregate_band_results",
     "compute_empirical_roc",
     "compute_pointwise_coverage_diagnostics",

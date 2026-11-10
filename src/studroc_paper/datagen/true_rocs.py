@@ -687,13 +687,8 @@ def make_student_t_dgp(
         return scores_pos, scores_neg
 
     def true_roc(fpr):
-        fpr = np.asarray(fpr)
-        thresholds = neg_dist.ppf(1 - fpr)
-
-        # TPR at each threshold
-        tpr = 1 - pos_dist.cdf(thresholds)
-
-        return tpr
+        fpr = np.clip(np.asarray(fpr, dtype=float), 0.0, 1.0)
+        return pos_dist.sf(neg_dist.isf(fpr))
 
     return DGP(
         generator=generator,
@@ -959,10 +954,10 @@ def make_weibull_dgp(
         return scores_pos, scores_neg
 
     def true_roc(fpr):
-        fpr = np.asarray(fpr)
-        fpr_clipped = np.clip(fpr, 1e-10, 1 - 1e-10)
-        thresholds = neg_dist.ppf(1 - fpr_clipped)
-        return pos_dist.sf(thresholds)
+        # isf keeps full precision as FPR -> 0, where the ROC rises steeply,
+        # and maps the endpoints exactly: isf(0) = inf, isf(1) = 0.
+        fpr = np.clip(np.asarray(fpr, dtype=float), 0.0, 1.0)
+        return pos_dist.sf(neg_dist.isf(fpr))
 
     return DGP(
         generator=generator,

@@ -263,7 +263,7 @@ def test_suite_bands_equal_separate_calls_bit_for_bit(case, k):
     """
     y_true, y_score = _suite_case(case)
     alphas = [0.5, 0.2, 0.05]
-    grid, suite = fiducial_band_suite_rs(
+    suite = fiducial_band_suite_rs(
         y_true=y_true,
         y_score=y_score,
         alphas=alphas,
@@ -276,11 +276,47 @@ def test_suite_bands_equal_separate_calls_bit_for_bit(case, k):
             fpr, lo, hi = fiducial_band_rs(
                 y_true, y_score, alpha=alpha, k=k, random_state=8, m3_floor=floor
             )
-            assert np.array_equal(grid, fpr)
-            assert np.array_equal(suite[alpha][name][0], lo), (alpha, name)
-            assert np.array_equal(suite[alpha][name][1], hi), (alpha, name)
+            assert np.array_equal(suite.grid, fpr)
+            assert np.array_equal(suite.bands[alpha][name][0], lo), (alpha, name)
+            assert np.array_equal(suite.bands[alpha][name][1], hi), (alpha, name)
     # The floor must actually act, or the equality above is vacuous for it.
-    assert not np.array_equal(suite[0.05]["default"][0], suite[0.05]["raw"][0])
+    assert not np.array_equal(
+        suite.bands[0.05]["default"][0], suite.bands[0.05]["raw"][0]
+    )
+
+
+@pytest.mark.parametrize(
+    "case", ["thinned_heavy_tail", "small_floor_covers_grid", "coarse_ties"]
+)
+@pytest.mark.parametrize("k", [None, 64], ids=["native", "k64"])
+def test_suite_floor_regions_are_native_prefix_plus_suffix(case, k):
+    """Each floored band reports its region as a native-grid prefix and suffix.
+
+    Downstream miss attribution indexes the region against native-grid
+    evaluations, so it must stay on the native grid even when the bands are
+    resampled, and it must have the two-ended shape the floor rule defines.
+    """
+    y_true, y_score = _suite_case(case)
+    n0 = int((y_true == 0).sum())
+    alphas = [0.5, 0.05]
+    suite = fiducial_band_suite_rs(
+        y_true=y_true,
+        y_score=y_score,
+        alphas=alphas,
+        m3_floors=SUITE_FLOORS,
+        k=k,
+        random_state=8,
+    )
+    floored = {name for name, floor in SUITE_FLOORS.items() if floor is not False}
+    for alpha in alphas:
+        assert set(suite.floor_regions[alpha]) == floored
+        for region in suite.floor_regions[alpha].values():
+            assert region.dtype == np.bool_ and region.shape == (n0 + 1,)
+            assert region[0] and region[-1]
+            # Prefix-plus-suffix: at most one False run, never True inside it.
+            outside = np.flatnonzero(~region)
+            if outside.size:
+                assert np.array_equal(outside, np.arange(outside[0], outside[-1] + 1))
 
 
 def test_suite_shares_one_draw_budget_per_level():

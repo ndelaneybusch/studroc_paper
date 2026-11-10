@@ -43,6 +43,7 @@ Usage:
 import argparse
 import dataclasses
 import json
+import multiprocessing
 import os
 import subprocess
 import time
@@ -81,6 +82,7 @@ from studroc_paper.datagen.true_rocs import (
 )
 from studroc_paper.eval.eval import (
     BandResult,
+    InvalidBandError,
     aggregate_band_results,
     evaluate_single_band,
 )
@@ -262,6 +264,8 @@ class Replicate:
         method_seed: Seed for the rank-space methods' tie-breaking and the
             fiducial cloud.
         boot_seed: Seed of the bootstrap's own torch generator.
+        provenance: DGP, LHS combination, sample configuration, repeat
+            index, and seeds, enough to regenerate the replicate.
     """
 
     y_true: NDArray
@@ -270,6 +274,7 @@ class Replicate:
     true_tpr: NDArray
     method_seed: int
     boot_seed: int
+    provenance: str
 
 
 @dataclass(frozen=True)
@@ -307,10 +312,35 @@ class EnvelopeResult:
     bootstrap_gen_seconds: float
 
 
-def _evaluate(rep: Replicate, lower: NDArray, upper: NDArray) -> BandResult:
-    return evaluate_single_band(
-        lower_band=lower, upper_band=upper, true_tpr=rep.true_tpr, fpr_grid=rep.fpr_grid
-    )
+def _evaluate(
+    *, rep: Replicate, method: str, alpha: float, lower: NDArray, upper: NDArray
+) -> BandResult:
+    """Evaluate one band, naming its method and replicate if it is invalid.
+
+    Args:
+        rep: Replicate the band was computed on.
+        method: Method name.
+        alpha: Nominal alpha.
+        lower: Lower bound on ``rep.fpr_grid``.
+        upper: Upper bound on ``rep.fpr_grid``.
+
+    Returns:
+        The band's evaluation.
+
+    Raises:
+        InvalidBandError: If the band or true ROC is non-finite or misordered.
+    """
+    try:
+        return evaluate_single_band(
+            lower_band=lower,
+            upper_band=upper,
+            true_tpr=rep.true_tpr,
+            fpr_grid=rep.fpr_grid,
+        )
+    except InvalidBandError as err:
+        raise InvalidBandError(
+            f"method={method}, alpha={alpha}, {rep.provenance}: {err}"
+        ) from err
 
 
 def envelope_bands(
@@ -357,7 +387,9 @@ def envelope_bands(
         )
         bands[alpha] = {
             "envelope": MethodResult(
-                band=_evaluate(rep, lower, upper),
+                band=_evaluate(
+                    rep=rep, method="envelope", alpha=alpha, lower=lower, upper=upper
+                ),
                 runtime_seconds=time.perf_counter() - t_start,
                 runtime_is_shared=False,
                 device=device.type,
@@ -366,7 +398,23 @@ def envelope_bands(
     return EnvelopeResult(bands=bands, bootstrap_gen_seconds=boot_seconds)
 
 
-def rank_space_bands(*, rep: Replicate, alphas: list[float]) -> BandSet:
+@dataclass(frozen=True)
+class RankSpaceResult:
+    """Rank-space band evaluations of one replicate and its floor regions.
+
+    Attributes:
+        bands: Evaluations by alpha and method.
+        floor_regions: Per alpha, the native-grid mask on which the hybrid
+            fiducial band took the M3 hull. The raw and hybrid fiducial arms
+            share one cloud, so this is the region the floor repaired for
+            the raw arm as well.
+    """
+
+    bands: BandSet
+    floor_regions: dict[float, NDArray[np.bool_]]
+
+
+def rank_space_bands(*, rep: Replicate, alphas: list[float]) -> RankSpaceResult:
     """Compute KS, Working-Hotelling, M3, and both fiducial arms.
 
     The rank-space methods return their native grid, which is the evaluation
@@ -378,14 +426,14 @@ def rank_space_bands(*, rep: Replicate, alphas: list[float]) -> BandSet:
         alphas: Significance levels.
 
     Returns:
-        Evaluations by alpha and method.
+        Evaluations by alpha and method, and the hybrid's floor regions.
     """
     bands: BandSet = {alpha: {} for alpha in alphas}
     k = len(rep.fpr_grid)
 
     def record(alpha, name, lower, upper, runtime, shared=False):
         bands[alpha][name] = MethodResult(
-            band=_evaluate(rep, lower, upper),
+            band=_evaluate(rep=rep, method=name, alpha=alpha, lower=lower, upper=upper),
             runtime_seconds=runtime,
             runtime_is_shared=shared,
             device="cpu",
@@ -404,7 +452,7 @@ def rank_space_bands(*, rep: Replicate, alphas: list[float]) -> BandSet:
             record(alpha, name, lower, upper, time.perf_counter() - t_start)
 
     t_start = time.perf_counter()
-    _, suite = fiducial_band_suite_rs(
+    suite = fiducial_band_suite_rs(
         y_true=rep.y_true,
         y_score=rep.y_score,
         alphas=alphas,
@@ -412,10 +460,16 @@ def rank_space_bands(*, rep: Replicate, alphas: list[float]) -> BandSet:
         random_state=rep.method_seed,
     )
     runtime = time.perf_counter() - t_start
-    for alpha, variants in suite.items():
+    for alpha, variants in suite.bands.items():
         for name, (lower, upper) in variants.items():
             record(alpha, name, lower, upper, runtime, shared=True)
-    return bands
+    return RankSpaceResult(
+        bands=bands,
+        floor_regions={
+            alpha: regions["fiducial_hybrid"]
+            for alpha, regions in suite.floor_regions.items()
+        },
+    )
 
 
 def init_worker(m3_cache: dict[tuple[int, float], float]) -> None:
@@ -465,8 +519,13 @@ def worker_pool(
         The pool.
     """
     os.environ.update(WORKER_THREAD_ENV)
+    # Spawn on every platform: forking a parent whose torch and rayon pools
+    # are already running copies their held locks into the child.
     return ProcessPoolExecutor(
-        max_workers=workers, initializer=init_worker, initargs=(m3_cache,)
+        max_workers=workers,
+        mp_context=multiprocessing.get_context("spawn"),
+        initializer=init_worker,
+        initargs=(m3_cache,),
     )
 
 
@@ -730,18 +789,27 @@ def simulate_lhs(task: LhsTask) -> SimulatedLhs:
     ).astype(DTYPE)
 
     replicates, aucs = [], []
-    for _ in range(task.n_sim):
+    for sim_idx in range(task.n_sim):
         boot_seed = int(rng.integers(0, 2**63 - 1))
         scores_pos, scores_neg = dgp.sample(config["n_pos"], config["n_neg"], rng)
         y_score = np.concatenate([scores_pos, scores_neg]).astype(DTYPE)
+        method_seed = int(rng.integers(0, 2**63 - 1))
         replicates.append(
             Replicate(
                 y_true=y_true,
                 y_score=y_score,
                 fpr_grid=fpr_grid.astype(DTYPE),
                 true_tpr=true_tpr,
-                method_seed=int(rng.integers(0, 2**63 - 1)),
+                method_seed=method_seed,
                 boot_seed=boot_seed,
+                provenance=(
+                    f"dgp={task.dgp_type}, lhs_idx={task.lhs_idx}, "
+                    f"params={task.params}, n_pos={config['n_pos']}, "
+                    f"n_neg={config['n_neg']}, sim_idx={sim_idx}, "
+                    f"seed_entropy={task.seed.entropy}, "
+                    f"seed_spawn_key={task.seed.spawn_key}, "
+                    f"method_seed={method_seed}, boot_seed={boot_seed}"
+                ),
             )
         )
         aucs.append(float(roc_auc_score(y_true, y_score)))
@@ -755,14 +823,14 @@ class LhsOutcome:
     Attributes:
         metadata: Per-repeat metadata records.
         empirical_aucs: Per-repeat empirical AUC.
-        bands: Per-repeat evaluations by alpha and method.
+        rank_space: Per-repeat rank-space evaluations and floor regions.
         envelopes: Per-repeat envelope results when the worker computed
             them, else None.
     """
 
     metadata: list[dict]
     empirical_aucs: list[float]
-    bands: list[BandSet]
+    rank_space: list[RankSpaceResult]
     envelopes: list[EnvelopeResult] | None
 
 
@@ -797,7 +865,7 @@ def run_lhs_task(*, task: LhsTask, alphas: list[float], B: int | None) -> LhsOut
     return LhsOutcome(
         metadata=[{**base_metadata, "sim_idx": i} for i in range(task.n_sim)],
         empirical_aucs=sim.empirical_aucs,
-        bands=[rank_space_bands(rep=rep, alphas=alphas) for rep in sim.replicates],
+        rank_space=[rank_space_bands(rep=rep, alphas=alphas) for rep in sim.replicates],
         envelopes=None
         if B is None
         else [
@@ -866,14 +934,16 @@ class UnitResults:
             outcome = self.outcomes[lhs_idx]
             envelopes = outcome.envelopes or self.gpu_envelopes[lhs_idx]
             for i in range(self.n_sim):
+                rank_space = outcome.rank_space[i]
                 bands = {
                     alpha: {**by_method, **envelopes[i].bands[alpha]}
-                    for alpha, by_method in outcome.bands[i].items()
+                    for alpha, by_method in rank_space.bands.items()
                 }
                 yield {
                     "metadata": outcome.metadata[i],
                     "empirical_auc": outcome.empirical_aucs[i],
                     "bands": bands,
+                    "floor_regions": rank_space.floor_regions,
                     "bootstrap_gen_seconds": envelopes[i].bootstrap_gen_seconds,
                 }
 
@@ -972,7 +1042,7 @@ def _band_record(band: BandResult) -> dict:
         "violation_area_above": float(band.violation_area_above),
         "violation_area_below": float(band.violation_area_below),
         "band_area": float(band.band_area),
-        "mean_band_width": float(band.band_widths.mean()),
+        "mean_band_width": band.mean_band_width,
         "proportion_grid_points_violated": float(band.proportion_grid_points_violated),
     }
     for field_name in (
@@ -992,6 +1062,69 @@ def _band_record(band: BandResult) -> dict:
     for region, violated in band.violation_by_region.items():
         record[f"violation_{region}"] = violated
     return record
+
+
+def _floor_region_record(region: NDArray[np.bool_]) -> dict:
+    """Describe one replicate's floor region at one alpha as feather columns.
+
+    The region is a prefix ``[0, left_end]`` plus a suffix
+    ``[right_start, n0]`` of the native grid, possibly overlapping.
+
+    Args:
+        region: Native-grid floor mask.
+
+    Returns:
+        The FPR of the prefix's last point and of the suffix's first point,
+        and the fraction of interior grid points inside the region.
+    """
+    n0 = len(region) - 1
+    outside = np.flatnonzero(~region)
+    left_end, right_start = (
+        (outside[0] - 1, outside[-1] + 1) if outside.size else (n0, 0)
+    )
+    interior = region[1:-1]
+    return {
+        "floor_region_left_end_fpr": left_end / n0,
+        "floor_region_right_start_fpr": right_start / n0,
+        "floor_region_interior_fraction": (
+            float(interior.mean()) if interior.size else 1.0
+        ),
+    }
+
+
+def _floor_split_record(band: BandResult, region: NDArray[np.bool_]) -> dict:
+    """Split one band's misses into those inside and outside the floor region.
+
+    Args:
+        band: Evaluation of one band on the native grid.
+        region: Native-grid floor mask of the same replicate and alpha.
+
+    Returns:
+        Whether the band misses inside and outside the region, overall and
+        by direction. Endpoints never count, as in every violation metric.
+
+    Raises:
+        ValueError: If the region and the band's grid differ in length.
+    """
+    if region.shape != band.fpr_grid.shape:
+        raise ValueError(
+            f"floor region has {region.size} points, band grid {band.fpr_grid.size}"
+        )
+    above = np.isin(band.fpr_grid, band.violation_fpr_above)
+    below = np.isin(band.fpr_grid, band.violation_fpr_below)
+    record = {}
+    for side, mask in (("in", region), ("outside", ~region)):
+        record[f"miss_{side}_floor_region"] = bool(((above | below) & mask).any())
+        record[f"miss_above_{side}_floor_region"] = bool((above & mask).any())
+        record[f"miss_below_{side}_floor_region"] = bool((below & mask).any())
+    return record
+
+
+FLOOR_SPLIT_COLUMNS = tuple(
+    f"miss_{direction}{side}_floor_region"
+    for side in ("in", "outside")
+    for direction in ("", "above_", "below_")
+)
 
 
 def _aggregate_record(band_results: list[BandResult], alpha: float) -> dict:
@@ -1055,11 +1188,16 @@ def save_results(
 
     records = []
     bands_by_method_alpha: dict[tuple[str, float], list[BandResult]] = defaultdict(list)
+    splits_by_method_alpha: dict[tuple[str, float], list[dict]] = defaultdict(list)
     for slot in results.slots():
         for alpha in alphas:
+            region = slot["floor_regions"][alpha]
+            region_record = _floor_region_record(region)
             for method_name in METHOD_NAMES:
                 result = slot["bands"][alpha][method_name]
+                split = _floor_split_record(result.band, region)
                 bands_by_method_alpha[(method_name, alpha)].append(result.band)
+                splits_by_method_alpha[(method_name, alpha)].append(split)
                 records.append(
                     {
                         "method": method_name,
@@ -1072,6 +1210,8 @@ def save_results(
                         "device": result.device,
                         "bootstrap_gen_seconds": slot["bootstrap_gen_seconds"],
                         **_band_record(result.band),
+                        **region_record,
+                        **split,
                     }
                 )
 
@@ -1080,7 +1220,14 @@ def save_results(
 
     aggregated: dict[str, dict] = defaultdict(dict)
     for (method_name, alpha), bands in bands_by_method_alpha.items():
-        aggregated[method_name][f"alpha_{alpha}"] = _aggregate_record(bands, alpha)
+        splits = splits_by_method_alpha[(method_name, alpha)]
+        aggregated[method_name][f"alpha_{alpha}"] = {
+            **_aggregate_record(bands, alpha),
+            **{
+                f"{column}_rate": float(np.mean([s[column] for s in splits]))
+                for column in FLOOR_SPLIT_COLUMNS
+            },
+        }
     aggregated["metadata"] = {
         "dgp_type": dgp_type,
         "n_total": sample_config["n_total"],
