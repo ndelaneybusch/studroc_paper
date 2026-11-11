@@ -91,6 +91,11 @@ _TRIM_GRID_THRESHOLD = 2001  # largest grid trimmed without thinning
 _TRIM_GRID_TARGET = 1000  # approximate thinned trim-grid size
 _TRIM_GRID_EDGE = 50  # grid points always kept at each end
 
+# Default cloud size. At alpha = .05 it gives a trim depth of about 9 at
+# n0 = 5,000 and above 20 at n0 = 150, which keeps the seed-to-seed standard
+# deviation of mean band width near half a percent.
+DEFAULT_N_DRAWS = 20_000
+
 
 def production_trim_rows(n_grid: int) -> NDArray | None:
     """Grid rows used for the min-p trim under the production thinning rule.
@@ -312,18 +317,6 @@ def _pointwise_order_stats(cloud: Tensor, j: int) -> tuple[Tensor, Tensor]:
     return lower, upper
 
 
-def _auto_n_draws(n_grid: int, alpha_eff: float) -> int:
-    """Monte Carlo budget from the empirical local-level law.
-
-    The realized local level of the trimmed band is approximately
-    ``ell(K, a) = 9.7e-4 * (a / 0.05)**1.2 * (K / 500)**-0.27`` (fitted in
-    round 2, ``stats/research_record.md`` Q1); requiring a trim depth of at
-    least ~5 for alpha-resolution gives ``n_draws ~ 5 / ell``.
-    """
-    ell = 9.7e-4 * (alpha_eff / 0.05) ** 1.2 * (n_grid / 500.0) ** (-0.27)
-    return int(np.clip(math.ceil(5.0 / ell), 2000, 20000))
-
-
 def fiducial_band(
     y_true: NDArray | Tensor,
     y_score: NDArray | Tensor,
@@ -357,9 +350,8 @@ def fiducial_band(
             only through their ranks.
         alpha: Significance level; the band targets simultaneous coverage
             ``1 - alpha``. Defaults to 0.05.
-        n_draws: Number of fiducial draws. ``None`` selects a budget from
-            the grid size and level (2,000-20,000; ~10,000 at
-            ``n0 = 5000``, ``alpha = 0.05``). The realized trim depth is
+        n_draws: Number of fiducial draws. ``None`` uses
+            ``DEFAULT_N_DRAWS`` (20,000). The realized trim depth is
             self-diagnosing: a warning is raised if it falls below 3,
             meaning ``n_draws`` is too small for the requested level and
             the band falls back toward the (conservative) full envelope of
@@ -451,7 +443,7 @@ def fiducial_band(
     alpha_eff = 1.0 - (1.0 - alpha) ** trim_exponent
     grid = np.arange(n0 + 1) / n0
     if n_draws is None:
-        n_draws = _auto_n_draws(len(grid), alpha_eff)
+        n_draws = DEFAULT_N_DRAWS
     if n_draws < 100:
         raise ValueError(f"n_draws must be at least 100, got {n_draws}")
 

@@ -23,7 +23,7 @@ from __future__ import annotations
 import numpy as np
 from numpy.typing import NDArray
 
-from studroc_paper.methods.fiducial_band import _auto_n_draws, production_trim_rows
+from studroc_paper.methods.fiducial_band import DEFAULT_N_DRAWS, production_trim_rows
 from studroc_paper.methods.fiducial_band_rs import (
     _apply_corner_allowances,
     _require_fiducial_core,
@@ -104,7 +104,7 @@ def build_level(
     core = _require_fiducial_core()
     n1 = int(khat[-1])
     n_grid = len(khat)
-    draws = _auto_n_draws(n_grid, level)
+    draws = DEFAULT_N_DRAWS
     lab8 = labels.astype(np.uint8)
 
     rows = full_trim_rows(n_grid)

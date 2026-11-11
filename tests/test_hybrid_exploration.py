@@ -16,7 +16,7 @@ from scripts.methods_exploration.hybrid import (  # noqa: E402
     hull,
     window_status,
 )
-from studroc_paper.methods.fiducial_band import _auto_n_draws  # noqa: E402
+from studroc_paper.methods.fiducial_band import DEFAULT_N_DRAWS  # noqa: E402
 
 
 @pytest.mark.parametrize(
@@ -44,7 +44,7 @@ def test_window_requires_unprotected_endpoint_guards(
 def test_small_n_floor_uses_production_mass_laws_and_can_fill_the_grid():
     """Even no trailing negatives can leave no usable interior at small n."""
     labels = np.r_[np.zeros(10, dtype=int), np.ones(10, dtype=int)]
-    draws = _auto_n_draws(n_grid=11, alpha_eff=0.05)
+    draws = 2000
     left, right = floor_components(labels=labels, draws=draws, depth=5)
     result = geometry(labels=labels, left=left, right=right)
     assert result["left_end_fpr"] == result["right_start_fpr"] == 0.6
@@ -191,7 +191,7 @@ def test_small_n_cloud_budgets_match_production_and_endpoint_atoms_survive(n0, n
     assert truth.evaluate(grid=np.array([0.0]))[0] == 0.15
     for alpha in [0.05, 0.5]:
         data = result[str(alpha)]
-        assert data["draws"] == _auto_n_draws(n_grid=n0 + 1, alpha_eff=alpha)
+        assert data["draws"] == DEFAULT_N_DRAWS
         assert data["arms"]["hybrid"]["area"] >= data["arms"]["raw"]["area"]
         assert not data["geometry"]["window"]["eligible"]
 

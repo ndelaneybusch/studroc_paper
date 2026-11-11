@@ -37,8 +37,8 @@ import numpy as np
 from numpy.typing import NDArray
 
 from studroc_paper.methods.fiducial_band import (
+    DEFAULT_N_DRAWS,
     _apply_corner_allowances,
-    _auto_n_draws,
     production_trim_rows,
 )
 from studroc_paper.methods.fiducial_band_rs import _require_fiducial_core
@@ -203,7 +203,7 @@ def build_alpha(
     lab8 = np.ascontiguousarray(labels, dtype=np.uint8)
     n_grid = len(khat)
     n1 = int(khat[-1])
-    n_draws = _auto_n_draws(n_grid, alpha)
+    n_draws = DEFAULT_N_DRAWS
     rows = production_trim_rows(n_grid)
 
     full_lo, full_up, j = _tube(core, lab8, n_draws, alpha, seed, n_threads, rows)

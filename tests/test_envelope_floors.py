@@ -107,7 +107,7 @@ def _expected_low_floor(fpr_np, prior_np, neg, pos, alpha=ALPHA, j_max=J_MAX):
     """Independent reconstruction of the low-FPR Beta floor from documented math."""
     n_neg, n_pos = len(neg), len(pos)
     j_used = min(j_max, n_neg)
-    alpha_event = alpha / (2 * j_max)
+    alpha_event = alpha / (2 * j_used)
     js = np.arange(1, j_used + 1)
     q_j = beta_dist.ppf(1.0 - alpha_event, js, n_neg + 1 - js)
     neg_desc = np.sort(neg)[::-1]
@@ -219,6 +219,64 @@ def test_low_floor_no_op_when_a_class_is_empty(floor_data):
     assert torch.equal(out, prior)
 
 
+@pytest.mark.parametrize(
+    ("floor_fn", "n_neg", "n_pos"),
+    [
+        (_apply_beta_orderstat_floor, 5, 40),
+        (_apply_beta_orderstat_floor, 15, 15),
+        (_apply_beta_orderstat_floor_upper_tail, 40, 5),
+        (_apply_beta_orderstat_floor_upper_tail, 15, 15),
+    ],
+    ids=["low-5neg", "low-15neg", "upper-5pos", "upper-15pos"],
+)
+def test_floor_budget_is_split_over_the_order_statistics_that_exist(
+    rng, floor_fn, n_neg, n_pos
+):
+    # A class smaller than j_max supplies fewer one-sided events, so the
+    # Bonferroni split is over those events only: the floor must not depend on
+    # how far j_max exceeds the class size, and must equal the reconstruction
+    # at the capped count.
+    neg = rng.normal(0.0, 1.0, n_neg)
+    pos = rng.normal(1.0, 1.0, n_pos)
+    y_true = torch.tensor([1] * n_pos + [0] * n_neg, dtype=torch.int64)
+    y_score = torch.tensor(np.concatenate([pos, neg]), dtype=torch.float32)
+    fpr = torch.linspace(0.0, 1.0, n_neg + 1, dtype=torch.float32)
+    prior = torch.ones_like(fpr)
+    limiting = n_neg if floor_fn is _apply_beta_orderstat_floor else n_pos
+
+    def floor(j_max):
+        return floor_fn(
+            fpr_grid=fpr,
+            lower_envelope=prior.clone(),
+            y_true=y_true,
+            y_score=y_score,
+            alpha=ALPHA,
+            j_max=j_max,
+        ).numpy()
+
+    capped = floor(limiting)
+    np.testing.assert_array_equal(floor(J_MAX), capped)
+    np.testing.assert_array_equal(floor(10 * J_MAX), capped)
+
+    score_np = y_score.numpy().astype(np.float64)
+    reconstruct = (
+        _expected_low_floor
+        if floor_fn is _apply_beta_orderstat_floor
+        else _expected_upper_tail_floor
+    )
+    expected, _ = reconstruct(
+        fpr.numpy().astype(np.float64),
+        prior.numpy().astype(np.float64),
+        score_np[n_pos:],
+        score_np[:n_pos],
+        j_max=limiting,
+    )
+    np.testing.assert_allclose(capped, expected, atol=1e-6)
+    # The floor certifies something at these sizes; a vacuous band would pass
+    # the invariance check trivially.
+    assert np.any((capped > 0.0) & (capped < 1.0))
+
+
 # ---------------------------------------------------------------------------
 # Beta order-statistic floor (high-FPR / plateau corner, mirrored)
 # ---------------------------------------------------------------------------
@@ -228,7 +286,7 @@ def _expected_upper_tail_floor(fpr_np, prior_np, neg, pos, alpha=ALPHA, j_max=J_
     """Independent reconstruction of the high-FPR Beta floor."""
     n_neg, n_pos = len(neg), len(pos)
     j_used = min(j_max, n_pos)
-    alpha_event = alpha / (2 * j_max)
+    alpha_event = alpha / (2 * j_used)
     js = np.arange(1, j_used + 1)
     rho_j = beta_dist.ppf(1.0 - alpha_event, js, n_pos + 1 - js)
     tpr_bounds = 1.0 - rho_j

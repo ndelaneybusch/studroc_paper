@@ -34,7 +34,7 @@ from scripts.complement_trim.design import (
     select_cells,
     with_reps,
 )
-from studroc_paper.methods.fiducial_band import _auto_n_draws
+from studroc_paper.methods.fiducial_band import DEFAULT_N_DRAWS
 
 SCHEMA = "complement-trim-cell/v1"
 CHECKPOINT = 50
@@ -152,11 +152,11 @@ def dry_run(cells: list[Cell], *, n_threads: int) -> None:
     khat = khat_from_labels(lab_s=labels)
     start = time.time()
     build_level(labels=labels, khat=khat, level=0.05, seed=seed, n_threads=n_threads)
-    unit = (time.time() - start) / (2 * probe.n0 * _auto_n_draws(probe.n0 + 1, 0.05))
+    unit = (time.time() - start) / (2 * probe.n0 * DEFAULT_N_DRAWS)
     total = 0.0
     for cell in cells:
         work = sum(
-            2 * cell.n0 * _auto_n_draws(cell.n0 + 1, level)
+            2 * cell.n0 * DEFAULT_N_DRAWS
             for alpha in ALPHAS
             for level in (alpha, alpha / 2)
         )

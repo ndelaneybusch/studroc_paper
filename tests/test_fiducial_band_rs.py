@@ -9,7 +9,7 @@ independent RNG streams, so agreement is statistical, not bit-wise).
 import numpy as np
 import pytest
 
-pytest.importorskip("fiducial_core")
+fiducial_core = pytest.importorskip("fiducial_core")
 
 from studroc_paper.methods import (  # noqa: E402
     M3Floor,
@@ -18,7 +18,7 @@ from studroc_paper.methods import (  # noqa: E402
     fiducial_band_suite_rs,
     production_trim_rows,
 )
-from studroc_paper.methods.fiducial_band import _auto_n_draws  # noqa: E402
+from studroc_paper.methods.fiducial_band import DEFAULT_N_DRAWS  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -237,8 +237,7 @@ SUITE_FLOORS = {
 def _suite_case(name: str) -> tuple[np.ndarray, np.ndarray]:
     rng = np.random.default_rng(17)
     if name == "thinned_heavy_tail":
-        # Grid above the thinning threshold, so the automatic draw budget
-        # differs across levels and the suite must trim a cloud prefix.
+        # Grid above the thinning threshold, so the trim runs on thinned rows.
         n0, n1 = 2300, 250
         y_score = np.r_[rng.standard_t(2, n0), rng.standard_t(2, n1) + 3.5]
     elif name == "small_floor_covers_grid":
@@ -257,9 +256,9 @@ def _suite_case(name: str) -> tuple[np.ndarray, np.ndarray]:
 def test_suite_bands_equal_separate_calls_bit_for_bit(case, k):
     """One shared cloud must reproduce every separately computed band exactly.
 
-    The suite draws one cloud sized for the largest budget and trims its
-    leading rows per level; any drift in the tie-break stream, the kernel
-    seed, the prefix rows, or the recalibrated depth shows up as a mismatch.
+    The suite draws one cloud and trims all of it at every level; any drift
+    in the tie-break stream, the kernel seed, the draw count, or the
+    recalibrated depth shows up as a mismatch.
     """
     y_true, y_score = _suite_case(case)
     alphas = [0.5, 0.2, 0.05]
@@ -319,8 +318,19 @@ def test_suite_floor_regions_are_native_prefix_plus_suffix(case, k):
                 assert np.array_equal(outside, np.arange(outside[0], outside[-1] + 1))
 
 
-def test_suite_shares_one_draw_budget_per_level():
-    """The heavy-tail case must exercise distinct budgets across levels."""
-    n_grid = 2301
-    budgets = {a: _auto_n_draws(n_grid, a) for a in (0.5, 0.2, 0.05)}
-    assert budgets[0.05] > budgets[0.5]
+def test_default_draw_count_gives_resolved_trim_depth_at_every_level():
+    """The default cloud must resolve the trim at alpha = .05 on a large grid.
+
+    A depth near the j < 3 fallback makes one band's level move in steps of a
+    third; the default budget has to keep it well clear at the largest grid
+    the final run uses.
+    """
+    rng = np.random.default_rng(4)
+    n = 5000
+    labels = np.r_[np.zeros(n, dtype=np.uint8), np.ones(n, dtype=np.uint8)]
+    order = np.argsort(-np.r_[rng.normal(0, 1, n), rng.normal(1.2, 1, n)])
+    cloud = fiducial_core.FiducialCloud(labels[order], DEFAULT_N_DRAWS, 5, 0)
+    rows = production_trim_rows(n + 1).astype(np.uint64)
+    depths = {a: cloud.trim_depth(DEFAULT_N_DRAWS, a, rows) for a in (0.5, 0.2, 0.05)}
+    assert depths[0.05] >= 7
+    assert depths[0.05] < depths[0.2] < depths[0.5] <= DEFAULT_N_DRAWS // 2

@@ -388,10 +388,11 @@ def _apply_beta_orderstat_floor(
     anchored at a smaller-FPR operating point whose true FPR provably (with
     high probability) sits at or below t. For t < q_1 no order statistic
     qualifies and the floor is vacuous (zero): no distribution-free lower
-    bound exists there. The alpha budget is split Bonferroni-style across
-    the 2 * j_max one-sided events (j_max Beta quantile events plus j_max
-    Wilson bounds). With ties the true exceedance is stochastically smaller
-    than the Beta law, so discrete scores err conservative.
+    bound exists there. With J = min(j_max, n_neg) order statistics in use,
+    the alpha budget is split Bonferroni-style across the 2 * J one-sided
+    events (J Beta quantile events plus J Wilson bounds). With ties the true
+    exceedance is stochastically smaller than the Beta law, so discrete
+    scores err conservative.
 
     Args:
         fpr_grid: FPR grid values.
@@ -399,9 +400,10 @@ def _apply_beta_orderstat_floor(
         y_true: True binary labels.
         y_score: Predicted scores.
         alpha: Total alpha budget for the floor.
-        j_max: Number of order statistics used. The floor's jurisdiction
-            ends at the Beta upper quantile of the j_max-th order statistic
-            (roughly 1.7 * j_max / n_neg grid points).
+        j_max: Largest number of order statistics used; capped at n_neg.
+            The floor's jurisdiction ends at the Beta upper quantile of the
+            last order statistic used (roughly 1.7 * j_max / n_neg grid
+            points when n_neg exceeds j_max).
 
     Returns:
         Lower envelope with the floor applied (pointwise minimum within the
@@ -415,7 +417,7 @@ def _apply_beta_orderstat_floor(
     if j_used == 0 or n_pos == 0:
         return lower_envelope
 
-    alpha_event = alpha / (2 * j_max)
+    alpha_event = alpha / (2 * j_used)
     js = np.arange(1, j_used + 1)
     q_j = beta_dist.ppf(1.0 - alpha_event, js, n_neg + 1 - js)
 
@@ -485,8 +487,9 @@ def _apply_beta_orderstat_floor_upper_tail(
 
     On the TPR plateau this lowers an over-tight lower envelope (collapsed
     bootstrap support) to an exact, distribution-free bound, mirroring what
-    the low-FPR floor does at the steep corner. The alpha budget is split
-    Bonferroni-style across the 2 * j_max one-sided events.
+    the low-FPR floor does at the steep corner. With J = min(j_max, n_pos)
+    order statistics in use, the alpha budget is split Bonferroni-style
+    across the 2 * J one-sided events.
 
     Args:
         fpr_grid: FPR grid values.
@@ -494,7 +497,8 @@ def _apply_beta_orderstat_floor_upper_tail(
         y_true: True binary labels.
         y_score: Predicted scores.
         alpha: Total alpha budget for the floor.
-        j_max: Number of positive order statistics used.
+        j_max: Largest number of positive order statistics used; capped at
+            n_pos.
 
     Returns:
         Lower envelope with the floor applied (pointwise minimum within the
@@ -508,7 +512,7 @@ def _apply_beta_orderstat_floor_upper_tail(
     if j_used == 0 or n_neg == 0:
         return lower_envelope
 
-    alpha_event = alpha / (2 * j_max)
+    alpha_event = alpha / (2 * j_used)
     js = np.arange(1, j_used + 1)
     # Certified true-TPR lower bound at the j-th smallest positive
     rho_j = beta_dist.ppf(1.0 - alpha_event, js, n_pos + 1 - js)
@@ -552,13 +556,14 @@ def _beta_tail_mask(
         fpr_grid: FPR grid values.
         n_neg: Number of negative samples.
         alpha: Total alpha budget (split as in the Beta floor).
-        j_max: Number of order statistics defining the jurisdiction.
+        j_max: Largest number of order statistics defining the jurisdiction;
+            capped at n_neg.
 
     Returns:
         Boolean tensor marking grid points inside either tail jurisdiction.
     """
     j_used = min(j_max, n_neg)
-    alpha_event = alpha / (2 * j_max)
+    alpha_event = alpha / (2 * j_used)
     q_j = float(beta_dist.ppf(1.0 - alpha_event, j_used, n_neg + 1 - j_used))
     low_tail = (fpr_grid > 0.0) & (fpr_grid <= q_j)
     high_tail = (fpr_grid < 1.0) & (fpr_grid >= 1.0 - q_j)

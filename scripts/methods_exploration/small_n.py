@@ -5,7 +5,7 @@ from itertools import product
 
 import numpy as np
 
-from studroc_paper.methods.fiducial_band import _auto_n_draws, production_trim_rows
+from studroc_paper.methods.fiducial_band import DEFAULT_N_DRAWS, production_trim_rows
 
 from .common import (
     Curve,
@@ -112,7 +112,7 @@ def measure(
     values = truth.evaluate(grid=grid)
     result = {}
     for alpha in [0.05, 0.5]:
-        draws = draw_multiplier * _auto_n_draws(n_grid=len(grid), alpha_eff=alpha)
+        draws = draw_multiplier * DEFAULT_N_DRAWS
         raw, depths = fiducial_edges(
             labels=labels,
             truth=truth,

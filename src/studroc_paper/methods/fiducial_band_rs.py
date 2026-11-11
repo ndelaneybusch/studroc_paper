@@ -31,9 +31,9 @@ from numpy.typing import NDArray
 from torch import Tensor
 
 from .fiducial_band import (
+    DEFAULT_N_DRAWS,
     TieBreak,
     _apply_corner_allowances,
-    _auto_n_draws,
     _merged_labels,
     production_trim_rows,
 )
@@ -108,9 +108,10 @@ def fiducial_band_rs(
             Used only through their ranks; ties handled by ``tie_break``.
         alpha: Significance level; the band targets simultaneous coverage
             ``1 - alpha``. Defaults to 0.05.
-        n_draws: Number of fiducial draws. ``None`` selects the same budget
-            rule as the reference implementation (2,000-20,000). A warning
-            is raised when the realized trim depth falls below 3.
+        n_draws: Number of fiducial draws. ``None`` uses
+            ``DEFAULT_N_DRAWS`` (20,000), as the reference implementation
+            does. A warning is raised when the realized trim depth falls
+            below 3.
         trim_exponent: Exponent ``C`` of the level remap
             ``alpha_eff = 1 - (1 - alpha)**C``; ``1.0`` (default) is the raw
             fiducial credible band. Validity caveat (2026-09-01): at C = 1
@@ -195,9 +196,8 @@ def fiducial_band_suite_rs(
 ) -> FiducialSuite:
     """Compute fiducial bands at several levels and floor settings at once.
 
-    Breaks ties once and generates one fiducial cloud, sized for the largest
-    draw budget among ``alphas``; every level trims the leading rows its own
-    budget calls for. The band for ``(alpha, name)`` is bit-identical to
+    Breaks ties once and generates one fiducial cloud; every level trims the
+    whole cloud. The band for ``(alpha, name)`` is bit-identical to
     ``fiducial_band_rs(..., alpha=alpha, m3_floor=m3_floors[name])`` with the
     same ``random_state`` and remaining arguments, so the variants are paired
     on one cloud while costing a single generation.
@@ -208,8 +208,8 @@ def fiducial_band_suite_rs(
         alphas: Significance levels.
         m3_floors: Output name to floor setting, as ``m3_floor`` in
             :func:`fiducial_band_rs` (``False`` for the raw band).
-        n_draws: Draw count for every level; ``None`` applies the automatic
-            budget per level.
+        n_draws: Draw count for every level; ``None`` uses
+            ``DEFAULT_N_DRAWS``.
         trim_exponent: Level remap exponent ``C``, as in
             :func:`fiducial_band_rs`.
         k: Optional output grid size, as in :func:`fiducial_band_rs`.
@@ -255,12 +255,10 @@ def fiducial_band_suite_rs(
 
     grid = np.arange(n0 + 1) / n0
     alpha_effs = {alpha: 1.0 - (1.0 - alpha) ** trim_exponent for alpha in alphas}
-    draws = {
-        alpha: _auto_n_draws(len(grid), alpha_eff) if n_draws is None else n_draws
-        for alpha, alpha_eff in alpha_effs.items()
-    }
-    if min(draws.values()) < 100:
-        raise ValueError(f"n_draws must be at least 100, got {min(draws.values())}")
+    shared_draws = DEFAULT_N_DRAWS if n_draws is None else n_draws
+    if shared_draws < 100:
+        raise ValueError(f"n_draws must be at least 100, got {shared_draws}")
+    draws = dict.fromkeys(alphas, shared_draws)
 
     # Descending-score label sequence (= ascending rank space), ties broken.
     lab_s = _merged_labels(y_true_np, y_score_np, tie_break, rng)

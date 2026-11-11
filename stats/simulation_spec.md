@@ -89,8 +89,8 @@ For each DGP:
 | `fiducial_hybrid` | C = 1 fiducial band with the localized exact M3 floor (`M3Floor()` defaults: exact region rule, tails-recalibrated trim, tightened closure, sample-size split; see `stats/experiments/closure_split_report.md`) |
 
 `fiducial` and `fiducial_hybrid` are computed together by
-`fiducial_band_suite_rs` from one fiducial cloud per replicate, sized for the
-largest per-level draw budget; each band is bit-identical to a separate
+`fiducial_band_suite_rs` from one fiducial cloud of 20,000 draws per replicate,
+trimmed in full at every level; each band is bit-identical to a separate
 `fiducial_band_rs` call with the same seed.
 
 Dropped from earlier runs: the pointwise bootstrap and Wilson rectangle

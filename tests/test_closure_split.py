@@ -35,7 +35,7 @@ from scripts.closure_split.curves import (  # noqa: E402
 )
 from studroc_paper.methods import M3Floor, fiducial_band_rs  # noqa: E402
 from studroc_paper.methods.fiducial_band import (  # noqa: E402
-    _auto_n_draws,
+    DEFAULT_N_DRAWS,
     _merged_labels,
 )
 from studroc_paper.methods.fiducial_ladder import khat_from_labels  # noqa: E402
@@ -224,7 +224,7 @@ def test_core_arms_equal_the_production_entry_point(alpha):
             alpha=alpha,
             random_state=9,
             n_threads=1,
-            n_draws=_auto_n_draws(n0 + 1, alpha),
+            n_draws=DEFAULT_N_DRAWS,
             m3_floor=floor,
         )
         assert np.array_equal(lo, built["bands"][arm][0]), arm
