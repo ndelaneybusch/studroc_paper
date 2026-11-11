@@ -1,10 +1,5 @@
 # Next ROC bands: the strongest candidates
 
-*Working assessment, 2026-09-05. Incorporates the completed Stage F study,
-the fiducial counterexamples, the production M3 construction, and a new
-paired experiment. Recommendations are judgments; guarantees, measurements,
-and conjectures are identified separately.*
-
 The best near-term empirical band is the **C = 1 fiducial band with a
 localized exact floor**. The best established finite-sample guarantee is
 **M3**. Keep both. Neither yet satisfies the full objective: the hybrid has
