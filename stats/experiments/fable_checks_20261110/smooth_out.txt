@@ -1,0 +1,10 @@
+bn80 n=500/500: E z_truth^2 at t=.1,.3,.5,.7,.9: [0.88  0.946 0.94  0.946 1.072]
+   roughness E(dz)^2 at lags 1,4,16 truth: [0.0003, 0.0041, 0.0597] cloud: [0.0101, 0.0514, 0.1955]
+   a=0.5: production-style j=85.7 cov=0.727 (up 0.163, lo 0.110) core-miss=0.167 | smooth-truth j=175.1 cov=0.533 (up 0.277, lo 0.213) core-miss=0.293 width ratio=0.8659
+   a=0.2: production-style j=22.7 cov=0.910 (up 0.053, lo 0.037) core-miss=0.063 | smooth-truth j=38.2 cov=0.883 (up 0.073, lo 0.043) core-miss=0.070 width ratio=0.9518
+   a=0.05: production-style j=4.3 cov=0.963 (up 0.007, lo 0.030) core-miss=0.020 | smooth-truth j=1.9 cov=0.983 (up 0.003, lo 0.013) core-miss=0.010 width ratio=1.1258
+diag n=500/500: E z_truth^2 at t=.1,.3,.5,.7,.9: [0.97  0.973 0.992 0.882 0.845]
+   roughness E(dz)^2 at lags 1,4,16 truth: [0.0002, 0.0033, 0.0471] cloud: [0.0103, 0.0498, 0.1749]
+   a=0.5: production-style j=75.3 cov=0.767 (up 0.147, lo 0.097) core-miss=0.140 | smooth-truth j=137.4 cov=0.620 (up 0.217, lo 0.193) core-miss=0.217 width ratio=0.9252
+   a=0.2: production-style j=20.1 cov=0.903 (up 0.057, lo 0.040) core-miss=0.063 | smooth-truth j=24.9 cov=0.913 (up 0.057, lo 0.033) core-miss=0.057 width ratio=1.1093
+   a=0.05: production-style j=3.9 cov=0.973 (up 0.010, lo 0.017) core-miss=0.013 | smooth-truth j=3.4 cov=0.977 (up 0.017, lo 0.007) core-miss=0.017 width ratio=1.0776

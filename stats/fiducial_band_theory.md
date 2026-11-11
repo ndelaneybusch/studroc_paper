@@ -1,6 +1,6 @@
 # Rank-space fiducial ROC bands: construction, guarantees, and next theory
 
-*Working theory, 2026-09-06. Companion to the
+*Working theory, 2026-09-06; §§6.6 and 12.1a added 2026-11-10. Companion to the
 [method assessment](next_method_ideas.md), the
 [research record](research_record.md) (all measurements), and the
 [Python implementation](../src/studroc_paper/methods/fiducial_band.py).
@@ -19,6 +19,10 @@ The most useful additions developed here are:
 - a distribution-free integrated-width bound for full gap bracketing (§3.1);
 - exact empirical-ROC moment identities, and a sharp asymptotic bound on
   directional imbalance (§§4, 6);
+- the second-order reason the raw tube over-covers: its centre is a kernel
+  smooth of the empirical ROC at bandwidth $n_0^{-1/2}$, so the truth is
+  smoother than the draws that calibrate the trim; a depth computed from
+  smoothed draws returns interior coverage to nominal (§6.6);
 - precise coverage-transfer and hybrid inequalities (§8);
 - missing-mass lower bounds showing what an honest band must leave open (§9);
 - exact, interpretable alternatives to the hybrid's empirical cut-point
@@ -28,7 +32,10 @@ The most useful additions developed here are:
 - a computable finite-sample honest outer inversion allowing arbitrary
   monotone completions, and convergent likelihood bounds for refining it
   (§§12.6–12.7). These are conservative alternatives, not a validity
-  theorem for the production trim.
+  theorem for the production trim;
+- M3 written as a bracket hull over an auxiliary set fixed in advance, an
+  exact generalization to curved class regions, and a ceiling showing that no
+  such region recovers the direct ROC geometry (§12.1a).
 
 **Status.** “Exact” means a finite-sample or deterministic statement under
 its explicit assumptions. “Asymptotic” means a limit under the stated
@@ -542,13 +549,22 @@ Three distinctions prevent overinterpreting Theorem 7.
   Other locations determine a different cutoff. Full-grid calibration
   can be more conservative on $I$, and moving tails are outside the
   theorem altogether.
-- **Capped simulation budget.** Production's automatic $M$ is clipped to
-  2,000–20,000. This does not satisfy $M_n/\log K_n\to\infty$ along an
+- **Fixed simulation budget.** Production's default is $M=20{,}000$ at every
+  size and level. This does not satisfy $M_n/\log K_n\to\infty$ along an
   unbounded sequence.
 - **Thinned trim grid.** Above 2,001 columns, production keeps about
   1,000 interior trim points plus the first and last 50. Its interior
   mesh does not tend to zero. Building the tube on the full grid does
   not restore the omitted depth constraints.
+
+The direction of the thinning effect is exact. The thinned rows are a subset
+of the full grid, so Proposition 10b gives $j_{\rm thin}\ge j_{\rm full}$ on
+every cloud, and the thinned band is nested inside the full-grid band
+pointwise: thinning can only narrow the band and can only lose coverage. On
+300 paired binormal AUC .8 replicates at $n_0=n_1=5{,}000$, the thinned depth
+was 6–15% larger and the band .6–1.7% narrower; coverage was .667 against .680
+at $\alpha=.5$, .883 against .887 at $.2$, and .963 on both at $.05$. At this
+size the cost is within the surplus of §6.6.
 
 Thus Theorem 7 concerns a well-defined asymptotic version, not full-curve
 asymptotic validity for all production settings. These are specifications
@@ -652,6 +668,136 @@ The conditional cloud must reproduce estimation uncertainty *around its
 random data center*. An unconditional draw includes both center error
 and auxiliary error. Dividing the conditional spread by $\sqrt2$ would
 destroy the calibration argument.
+
+### 6.6 Second order: the band is centred on a kernel smooth, and the truth is smoother than a draw
+
+Theorem 7 is a first-order statement. The raw tube nevertheless over-covers on
+benign shapes at every tested size, most visibly at large $\alpha$, and the
+surplus is still there on interior-only versions. The cause is a second-order
+property of the cloud that is the same at every interior FPR.
+
+**Representation. [Asymptotic; heuristic derivation, checked numerically]**
+Let $N_b(t)$ count the negative anchors of draw $b$ at or below $t$, and put
+$\beta_b(t)=N_b(t)/n_0-t$. Conditional on the data,
+$\beta_b(t)\approx N(0,h_t^2)$ with
+$$
+ h_t^2=\frac{t(1-t)}{n_0+2}.
+$$
+At FPR $t$ the draw reads the rank path at empirical FPR $t+\beta_b(t)$, then
+maps the positive count there through its own positive anchors, whose bridge
+is $\gamma_b$. With $E=\widehat R-R$ the sampling error,
+$$
+ \widetilde R_b(t)-R(t)=Z'_b(t)+E\big(t+\beta_b(t)\big)+O_p(\log n/n),
+ \qquad Z'_b(t)=R'(t)\beta_b(t)+\gamma_b(R(t)).            \tag{6.7}
+$$
+$Z'_b$ is independent of the data and has the sampling law of $E$ to first
+order; this is Theorem 7. The data enter each draw through $E$ evaluated at a
+*randomly shifted* argument. Averaging over draws, the cloud centre
+$m=E_*\widetilde R_b$ is
+$$
+ m(t)-R(t)=(\mathsf K_tE)(t),\qquad
+ \mathsf K_t=\text{convolution with }N(0,h_t^2).            \tag{6.8}
+$$
+The centre is a kernel smooth of the empirical ROC with bandwidth
+$h_t\asymp n_0^{-1/2}$, about $\sqrt{n_0t(1-t)}$ grid cells. So
+$$
+ R-m=-\mathsf K_tE,\qquad
+ \widetilde R_b-m=Z'_b+\{E(t+\beta_b)-\mathsf K_tE\}.       \tag{6.9}
+$$
+The truth's deviation from the centre is a smoothed error process. A draw's
+deviation is a full-roughness process plus an extra resampling term.
+
+**Consequences.** Let $\omega(t)=R'(t)\{1+\lambda R'(t)\}$, the local variogram
+rate of $Z$ in (6.2): $\operatorname{Var}\{Z(t+s)-Z(t)\}\approx\omega(t)|s|$.
+
+1. *Scale.* From (6.9) and $E|\beta-\beta'|=2h_t/\sqrt\pi$,
+   $$
+    \frac{\operatorname{Var}(R-m)}{E\operatorname{Var}_*(\widetilde R_b)}
+    \approx\frac{1-\kappa(t)}{1+\kappa(t)},\qquad
+    \kappa(t)=\frac{\omega(t)h_t}{\sqrt\pi\,\sigma^2(t)}.    \tag{6.10}
+   $$
+   On the balanced diagonal $\kappa=\{\pi n t(1-t)\}^{-1/2}$: .05 at
+   $n=500$, $t=.5$. This is an $n^{-1/2}$ effect.
+2. *Roughness.* The tube's depth is calibrated on paths that are rough down to
+   the grid. The truth's deviation is smooth below $h_t$, so its supremum
+   lacks the fine-scale excursions that set the cutoff. The cutoff exceeds
+   what the truth needs by an amount of order
+   $\sqrt{\omega h_t}/\sigma\asymp n^{-1/4}$ in normal-score units. This is
+   the dominant term, and it decays slowly.
+3. *Implicit slope.* The cross term between $R'\beta_b$ and $E(t+\beta_b)$
+   makes the cloud's spread use the slope of $\widehat R$ at bandwidth $h_t$.
+   Its relative error is $O_p(n^{-1/4})$ with mean zero, a random perturbation
+   of width, not a bias.
+
+Items 1 and 2 are conservative. Neither is a guarantee: both rest on the
+regular-interior expansion and say nothing about corners, jumps, or unseen
+mass.
+
+**Checks.** Scripts in `experiments/fable_checks_20261110/` (`pit.py`,
+`smooth.py`, `smooth2.py`, `thin.py`), on binormal AUC .8 and the diagonal at
+500/500, 300–400 replicates:
+
+- The squared increment of the truth's standardized deviation from the centre
+  is 33–50 times smaller than a draw's at lag one grid cell, 12–15 times at lag
+  4, and 3.3–3.9 times at lag 16; $h_t$ is 11 cells at $t=.5$.
+- The raw tube, trimmed and checked on FPR $(.1,.9)$ only, misses at
+  .020–.022, .090–.110, and .273–.285 for $\alpha=.05,.2,.5$. The locations of
+  the truth's deepest excursion have the same distribution over FPR deciles as
+  the draws' own. The surplus is uniform in location, as (6.9) predicts, and
+  is not an end-geometry effect.
+- The standardized second moment of $R-m$ averages about .93 over the probe
+  points (range .84–1.07 across points and three shapes, each with standard
+  error near .08), consistent with (6.10) but not resolved by it at this
+  replication.
+- At $n_0=n_1=5{,}000$ the production band still covers .667, .883, .963.
+  The $\alpha=.5$ surplus has fallen from about .23 to .17 for a tenfold
+  increase in $n$, the slow decay of item 2.
+
+**A trim calibrated for a smooth truth. [Heuristic; prototype measured]**
+Equation (6.9) says how the truth sits relative to the centre: like a smoothed
+draw. Form pseudo-truths $P_b=m+s\cdot\mathsf K\{(c_b-m)/s\}$, with $s$ the
+column standard deviation of the cloud, compute their depths *against the
+unsmoothed cloud*, and take the trim depth as the $(\lfloor aM\rfloor+1)$-th
+smallest of those depths. The tube is still an order-statistic tube of the
+original cloud; only the depth changes, and it is larger.
+
+On interior columns (at least 8 ranks from each end on both axes), 250
+replicates per cell, $M=6{,}000$:
+
+| Shape, sizes | $\alpha$ | Interior miss, production trim | Interior miss, smooth-truth trim | Width ratio |
+|---|---:|---:|---:|---:|
+| Binormal .8, 500/500 | .5 | .304 | .524 | .83 |
+| | .2 | .104 | .208 | .87 |
+| | .05 | .032 | .060 | .91 |
+| Heteroskedastic (σ ratio 3), 500/500 | .5 | .300 | .440 | .85 |
+| | .2 | .116 | .172 | .89 |
+| | .05 | .040 | .056 | .92 |
+| Binormal .95, 150/150 | .5 | .320 | .544 | .76 |
+| | .2 | .112 | .208 | .81 |
+| | .05 | .020 | .048 | .86 |
+
+The corrected interior miss rates are at nominal within sampling error (about
+.03 at $\alpha=.5$, .015 at .05) on all three shapes and levels, at 8–24%
+less width. That the correction lands on nominal is the quantitative
+confirmation of (6.9): the surplus is the centre-smoothing effect and little
+else.
+
+This is not a free improvement of the shipped band. The same surplus is what
+currently absorbs part of the exterior risk of the hybrid (§10.4): the
+recalibrated hybrid already returns healthy cells to the raw band's coverage,
+and its lowest cells sit at .948–.960. A smooth-truth depth would put the
+interior at nominal and leave those cells below it unless the exterior term is
+bounded some other way. The kernel is also wrong at the ends, where the cloud
+is skewed and $h_t$ is comparable to $t$: applied to all columns without
+standardization it produced a *smaller* depth at $\alpha=.05$. It belongs on
+the complement of the floor region, as a candidate arm with its own study, not
+as a change to the default.
+
+**What this settles.** Fixed exponents $C>1$ looked usable at moderate $n$
+because they spend this surplus; they fail asymptotically because the surplus
+vanishes while the remap does not. The smooth-truth depth is the remap that
+vanishes at the right rate, because it is computed from the bandwidth that
+causes the surplus.
 
 ## 7. Why the tails are a different experiment
 
@@ -1410,9 +1556,26 @@ $$
  P_*(\text{no tail draw})=(1-\ell)^M.
 $$
 Thus $M\ell$ controls tail resolution, while (11.4) controls absolute
-marginal-CDF error. The production rule targeting about five tail draws
-is an *expected-count* rule, not a high-probability precision guarantee.
-Its upper cap can prevent that target from being met.
+marginal-CDF error.
+
+Until 2026-11-10 the budget came from a fitted local-level law targeting about
+five tail draws, clipped to 2,000–20,000, and each level trimmed only its own
+leading rows of a shared cloud. Realized depths sat below the target: 3–5 at
+$\alpha=.05$ for $n_0$ from 150 to 5,000, and about 5 at $\alpha=.2$,
+$n_0=5{,}000$. A $j$-th extreme of $M$ draws cuts a tail probability whose
+relative standard deviation is about $j^{-1/2}$ at each column, 45–55% there.
+In the band this showed up as pointwise edge noise of 3–4.5% of the half-width
+and a seed-to-seed standard deviation of mean width of .9–1.6%. Coverage was
+not measurably affected (.948 against .950 at 50/50).
+
+The default is now a flat 20,000 draws, trimmed in full at every level. At
+$\alpha=.05$ the depth is 21–23 at $n_0=150$, 13–15 at 500, 9–11 at 1,500 and
+8–9 at 5,000; the seed standard deviation of mean width is .45–.66% and mean
+width is .4–.7% smaller. Two properties of the trim remain tied to the depth.
+Integer depths make the realized trimmed fraction fall short of $a$, which is
+conservative. In the other direction, a tube built from the same draws that
+calibrate it has fresh-draw content below its in-sample content, by more when
+$j$ is small.
 
 Fresh conditional cloud content can be assessed without in-sample
 optimism: build a tube on one auxiliary batch, evaluate whole-curve
@@ -1498,6 +1661,135 @@ a one-sample CDF band, and the negative-class variance term vanishes.
 An honest one-sample construction that allows atoms then gives an honest
 ROC band directly. This is a useful stronger-guarantee special case,
 not a justification for treating an estimated $F$ as known.
+
+### 12.1a M3 as a bracket hull over a set fixed in advance, and the ceiling on curved class regions
+
+**Proposition 12g (auxiliary-set form). [Exact; derived here]** Let
+$\mathcal A$ be any measurable set of spacing pairs chosen without reference
+to the labels, and let $B_{\mathcal A}(\lambda)$ be the pointwise hull of the
+full brackets $\mathcal B_\lambda(s)$ of §3.1 over $s\in\mathcal A$. Then for
+every $R$,
+$$
+ P_R\{R\in B_{\mathcal A}(\Lambda)\}\ge\mathsf P(\mathcal A).      \tag{12.1a}
+$$
+
+*Proof.* By (12.9) the labels are a deterministic function of $R$ and the true
+own-class spacing pair $S^{\rm true}\sim\mathsf P$, and
+$R\in\mathcal B_\Lambda(S^{\rm true})$ always. On
+$\{S^{\rm true}\in\mathcal A\}$ that bracket is one of those in the hull.
+$\square$
+
+M3 is the case in which $\mathcal A$ is a product of two order-statistic
+rectangles: "all monotone completions consistent with the class bounds" is
+exactly the hull of brackets over anchors inside the rectangle. This puts the
+two methods on one axis. Both report a hull over a set of auxiliary spacings
+that has probability $1-\alpha$. M3 fixes the set before the labels are seen
+and uses brackets. The production fiducial tube lets the labels choose the set
+(the draws that are deep *in ROC space, given this rank path*) and uses one
+completion per draw. The first difference is what removes the guarantee
+(§12.5); the second is the completion issue of §3.1. Any improvement of M3
+that keeps its theorem is a better choice of the fixed set.
+
+**One-sided statistics and the pairing that matters.** Write
+$A_{c,i}$ for class $c$'s true anchors in ROC coordinates and $\beta_{c,i}$ for
+the Beta$(i,n_c+1-i)$ CDF. Put
+$$
+ T_c^{L}=\max_i\,-\Phi^{-1}\{\beta_{c,i}(A_{c,i})\},\qquad
+ T_c^{U}=\max_i\,\Phi^{-1}\{\beta_{c,i}(A_{c,i})\},
+$$
+the largest lower-side and upper-side excursions in normal-score units, and let
+$x_+=\max(x,0)$. The M3 upper edge at $t$ reads only *lower* bounds on negative
+anchors and *upper* bounds on positive anchors; the lower edge reads the other
+two. So the upper edge is governed by the pair $(T_0^L,T_1^U)$ and the lower
+edge by $(T_0^U,T_1^L)$. The pairs $(T_0^L,T_1^L)$ and $(T_0^U,T_1^U)$ move the
+two class CDFs the same way and largely cancel in the ROC. M3's rectangle
+spends probability on all four corners of each class pair, and only two of
+them cost width.
+
+**Proposition 12h (lower-set composition). [Exact; derived here]** Let
+$\mathcal D\subset[0,\infty)^2$ be a closed lower set: $(x,y)\in\mathcal D$ and
+$x'\le x$, $y'\le y$ imply $(x',y')\in\mathcal D$. For $(x,y)$ let
+$U_{x,y}$ be the M3 upper edge built from the one-sided bounds
+$A_{0,i}\ge\beta_{0,i}^{-1}(\Phi(-x))$ and $A_{1,j}\le\beta_{1,j}^{-1}(\Phi(y))$,
+and $L_{x,y}$ the lower edge from the mirrored bounds. Define
+$$
+ U_{\mathcal D}=\sup_{(x,y)\in\mathcal D}U_{x,y},\qquad
+ L_{\mathcal D}=\inf_{(x,y)\in\mathcal D}L_{x,y}.
+$$
+Then
+$$
+ P_R\{L_{\mathcal D}\le R\le U_{\mathcal D}\}\ \ge\
+ \mathsf P\{(T^L_{0+},T^U_{1+})\in\mathcal D,\ (T^U_{0+},T^L_{1+})\in\mathcal D\},
+                                                              \tag{12.1b}
+$$
+and the right side is distribution-free. Since the edges are monotone in
+$(x,y)$, the supremum and infimum are attained on the upper boundary of
+$\mathcal D$. For a staircase $\mathcal D=\bigcup_k[0,x_k]\times[0,y_k]$ the
+band is the hull of finitely many M3 compositions, and the right side of
+(12.1b) is a signed sum of products of two-sided non-crossing probabilities
+with unequal one-sided levels, which the existing exact dynamic program
+evaluates. M3 is $\mathcal D=[0,c]^2$.
+
+*Proof.* On the event in (12.1b), the true anchors satisfy the one-sided bounds
+of some $(x,y)\in\mathcal D$ for the upper edge and of some
+$(x',y')\in\mathcal D$ for the lower edge. The composition argument of
+Proposition 12 uses, for each edge, only those one-sided bounds. $\square$
+
+The region may depend on the class sizes and on $\alpha$, not on the ranks.
+A class-level split is the choice of a rectangle's aspect ratio; a curved
+region replaces that single choice by an envelope over allocations, so the
+allocation adapts to the local ratio of the two sampling errors at each $t$
+without reading the data.
+
+**Gaussian width of a region, and a ceiling. [Asymptotic heuristic; computed]**
+In the regular interior, with $a_t,b_t$ as in (11.2) and
+$(\cos\varphi_t,\sin\varphi_t)\propto(b_t,a_t)$, the half-width of
+$B_{\mathcal D}$ at $t$ is, to first order, $h_{\mathcal D}(\varphi_t)\sqrt{a_t^2+b_t^2}$
+with the support function
+$h_{\mathcal D}(\varphi)=\sup_{\mathcal D}(x\cos\varphi+y\sin\varphi)$.
+The square has $h(\varphi)=c(\cos\varphi+\sin\varphi)$, which is (11.2)'s
+$a+b$; a quarter disc has constant $h=c$, the direct ROC geometry. Every region
+with content $1-\alpha$ lies in a half-plane, so for each $\varphi$
+$$
+ h_{\mathcal D}(\varphi)\ \ge\
+ Q_{1-\alpha}\{\cos\varphi\,T^L_{0+}+\sin\varphi\,T^U_{1+}\}.       \tag{12.1c}
+$$
+This bound does not vanish relative to the square, because each one-sided
+maximum is concentrated well above zero: both classes' typical excursions are
+paid whether or not they occur at matching places on the curve.
+
+Calibrated multipliers (400,000 simulated order-statistic vectors per class;
+both edge pairs jointly; half-width at $a_t=b_t$ in units of
+$\sqrt{a_t^2+b_t^2}$):
+
+| $n_0=n_1$, $\alpha$ | Square (M3) | $\ell_4$ region | Quarter disc | Ceiling (12.1c) | Fiducial tube |
+|---|---:|---:|---:|---:|---:|
+| 50, .05 | 4.53 | 3.92 | 3.68 | 3.57 | 2.90 |
+| 500, .05 | 4.86 | 4.25 | 4.05 | 3.96 | 3.16 |
+| 500, .5 | 3.56 | 3.19 | 3.06 | 2.98 | 2.18 |
+
+The fiducial column is the normal score of the realized local level. Where one
+class dominates ($\varphi=0$ or $\pi/2$) the disc is 15–22% wider than the
+square and the $\ell_4$ region 3–7% wider.
+
+Three conclusions follow.
+
+- No choice of region can make a composition band more than about 16–21%
+  narrower than M3 where the two sampling errors are equal, and the fiducial
+  tube is a further 20–27% below that ceiling. The remaining gap is not a
+  rectangle artifact. It is the price of calibrating on two class maxima that
+  do not know which negative rank faces which positive rank. Closing it needs
+  the pairing, which only the candidate curve supplies: test inversion (§12.2).
+- The gain is local to where the classes contribute comparably. On paired
+  bands (300 replicates per cell, staircase with 24 steps) the $\ell_4$ region
+  has area .92–.96 of M3 on the diagonal and binormal AUC .8 at balanced sizes,
+  .95–1.00 at binormal AUC .95, and 1.02–1.08 on a shifted $t_2$ pair; at
+  900/100 it is .96–1.06. The quarter disc reaches .89 on the diagonal at
+  500/500 and 1.16–1.21 on the shifted $t_2$ pair. This reproduces the mixed
+  screen of the Fisher-product region with a better exchange rate, because only
+  the two harmful corners are rounded.
+- For the hybrid, the floor acts where one class dominates. The square is the
+  right floor there, and a rounded region would widen it.
 
 ### 12.2 Direct test inversion: exactness without two-CDF rectangles
 
@@ -1999,6 +2291,18 @@ distinguish those results from a guarantee for the existing trim.
    proof-completion project, but it would not settle unrestricted
    full-curve coverage.
 
+6. **The interior surplus as a design quantity.** Section 6.6 identifies the
+   raw tube's interior over-coverage and shows a depth rule that removes it.
+   Three things are missing. First, a proof of (6.7)–(6.9) with explicit
+   remainder, including the $n^{-1/4}$ constant in the cutoff shift. Second,
+   the behaviour of the smooth-truth depth under imbalance, at small $n$
+   where $h_t$ spans a large share of the grid, and at $n_0\ge5{,}000$.
+   Third, and decisive for the hybrid: the surplus currently pays for part of
+   the unbounded exterior term, so removing it converts a conservative band
+   with unexplained slack into a calibrated band with an explicit exposure.
+   That exchange should be measured on the red-team cells before it is
+   adopted anywhere.
+
 **Research judgment.** Resolve full-bracket calibration first, then
 joint tail/interior risk; postpone fine-tuning the router wedge.
 Finishing the interior theorem offers a comparatively tractable formal
@@ -2041,7 +2345,13 @@ The corresponding work sequence is:
    extension. Fiducial geometry may prioritize subdivisions, never
    restrict the domain. Efficient inversion of calibrated Monte Carlo
    rank tests remains a separate, potentially sharper route.
-5. **Optimize error placement only after controlling risk.** Separate
+5. **Smooth-truth depth as a paired arm.** On the complement of the floor
+   region, compute the depth from kernel-smoothed standardized draws (§6.6)
+   on the same cloud as the default hybrid. Report interior and whole-band
+   coverage at $\alpha=.5,.2,.05$, the region-boundary flips, and the
+   red-team cells. The prediction on file is interior miss at nominal and
+   8–17% less width at 500/500.
+6. **Optimize error placement only after controlling risk.** Separate
    lower/upper and regional constraints, using (6.5) as an interior
    benchmark. Retune for multiple alpha values, including .5.
    A width reduction at alpha .05 is not evidence that M3's high-alpha
