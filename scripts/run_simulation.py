@@ -1297,7 +1297,7 @@ def main() -> None:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
-        "--n-lhs", type=int, default=1000, help="Number of LHS parameter combinations"
+        "--n-lhs", type=int, default=6000, help="Number of LHS parameter combinations"
     )
     parser.add_argument(
         "--n-sim",

@@ -53,8 +53,13 @@ retained deliberately (replication / placebo checks / WH robustness probes).
 ## 3. Sampling Strategy (LHS)
 
 For each DGP:
-1.  Generate $N_{LHS} = 1000$ maximin LHS points (`src/studroc_paper/sampling/lhs.py`),
+1.  Generate $N_{LHS} = 6000$ maximin LHS points (`src/studroc_paper/sampling/lhs.py`),
     decorrelated by the Iman–Conover transform (skipped for 1-D designs).
+    The design is built greedily (`method="build"`, `dup = 5`): each new
+    point is, among $5	imes$ as many candidates as unplaced points (each
+    coordinate drawn from its column's free strata), the one farthest from its
+    nearest placed point. Nearest-point distances come from a KD-tree, so a
+    6000-point design takes under a minute.
 2.  Scale to bounds; the AUC column goes through the probit transform above.
 3.  Map to DGP parameters via `map_lhs_to_dgp`; combinations with unachievable
     AUC are filtered out.

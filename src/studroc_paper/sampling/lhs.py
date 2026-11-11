@@ -2,6 +2,7 @@ from typing import Literal
 
 import numpy as np
 from numpy.typing import NDArray
+from scipy.spatial import KDTree
 
 
 def maximin_lhs(
@@ -35,7 +36,8 @@ def maximin_lhs(
         eps: The minimum percent change in the minimum distance required to continue
             optimization in the 'iterative' method.
         max_iter: The maximum number of iterations for the 'iterative' method.
-        optimize_on: The basis for optimization.
+        optimize_on: The basis for the 'iterative' method's optimization; the
+            'build' criterion is the same on either basis.
             - 'grid': Optimizes on the integer grid [1, n].
             - 'result': Optimizes on the unit hypercube [0, 1].
         seed: Random seed for reproducibility.
@@ -46,7 +48,7 @@ def maximin_lhs(
     rng = np.random.default_rng(seed)
 
     if method == "build":
-        return _maximin_lhs_build(n, k, dup, optimize_on, rng)
+        return _maximin_lhs_build(n=n, k=k, dup=dup, rng=rng)
     elif method == "iterative":
         return _maximin_lhs_iterative(n, k, eps, max_iter, optimize_on, rng)
     else:
@@ -67,57 +69,54 @@ def _calculate_min_dist(points: NDArray[np.float64]) -> float:
 
 
 def _maximin_lhs_build(
-    n: int, k: int, dup: int, optimize_on: str, rng: np.random.Generator
+    *, n: int, k: int, dup: int, rng: np.random.Generator
 ) -> NDArray[np.float64]:
-    """
-    Sequential 'build' algorithm for Maximin LHS.
-    """
-    # Initialize available indices for each column
-    available_indices = [list(range(1, n + 1)) for _ in range(k)]
-    result_grid = np.zeros((n, k), dtype=np.int32)
+    """Sequential 'build' algorithm for Maximin LHS.
 
-    # 1. Pick the first point randomly
-    for col in range(k):
-        idx_in_list = rng.integers(0, len(available_indices[col]))
-        val = available_indices[col].pop(idx_in_list)
-        result_grid[0, col] = val
+    Each new point is the candidate farthest from its nearest placed point,
+    among ``dup`` times the number of unplaced points, with every coordinate
+    drawn from the levels still free in its column. The criterion is invariant
+    to the affine map from the integer grid to the unit cube, so it is
+    evaluated on the grid whatever ``optimize_on`` is.
 
-    # 2. Build remaining points
+    Args:
+        n: Number of sample points.
+        k: Number of dimensions.
+        dup: Candidates per unplaced point.
+        rng: Random generator.
+
+    Returns:
+        An (n x k) Latin hypercube sample on [0, 1].
+    """
+    # Free grid levels per column; the first `n_free` entries are unused
+    free_levels = np.tile(np.arange(1, n + 1, dtype=np.int64), (k, 1))
+    # Position of each level within its column of `free_levels`
+    level_pos = np.tile(np.arange(n, dtype=np.int64), (k, 1))
+    cols = np.arange(k)
+    result_grid = np.zeros((n, k), dtype=np.int64)
+
+    def place(*, row: int, point: NDArray[np.int64]) -> None:
+        # Swap each chosen level to the end of the free block, then shrink it
+        n_free = n - row - 1
+        pos = level_pos[cols, point - 1]
+        last = free_levels[cols, n_free]
+        free_levels[cols, pos] = last
+        level_pos[cols, last - 1] = pos
+        free_levels[cols, n_free] = point
+        level_pos[cols, point - 1] = n_free
+        result_grid[row] = point
+
+    place(row=0, point=free_levels[cols, rng.integers(0, n, size=k)])
+
     for i in range(1, n):
-        points_remaining = n - i
-        n_candidates = max(1, dup * points_remaining)
+        n_free = n - i
+        n_candidates = max(1, dup * n_free)
+        picks = rng.integers(0, n_free, size=(n_candidates, k))
+        candidates = free_levels[cols, picks]
 
-        best_candidate = None
-
-        current_design = result_grid[:i, :].astype(np.float64)
-        if optimize_on == "result":
-            current_design = (current_design - 0.5) / n
-
-        # IMPROVEMENT: Generate all candidates at once for vectorization
-        candidates = np.zeros((n_candidates, k), dtype=np.int32)
-        for c in range(n_candidates):
-            for col in range(k):
-                rand_idx = rng.integers(0, len(available_indices[col]))
-                candidates[c, col] = available_indices[col][rand_idx]
-
-        # Vectorized distance computation
-        candidate_points = candidates.astype(np.float64)
-        if optimize_on == "result":
-            candidate_points = (candidate_points - 0.5) / n
-
-        # Shape: (n_candidates, i) - distance from each candidate to each existing point
-        # (n_candidates, 1, k) - (1, i, k) -> (n_candidates, i, k)
-        diffs = candidate_points[:, np.newaxis, :] - current_design[np.newaxis, :, :]
-        all_dists = np.sqrt(np.sum(diffs**2, axis=2))  # (n_candidates, i)
-        min_dists = np.min(all_dists, axis=1)  # (n_candidates,)
-
-        best_idx = np.argmax(min_dists)
-        best_candidate = candidates[best_idx]
-
-        # Add best candidate and update availability
-        result_grid[i, :] = best_candidate
-        for col in range(k):
-            available_indices[col].remove(best_candidate[col])
+        tree = KDTree(result_grid[:i].astype(np.float64))
+        nearest, _ = tree.query(candidates.astype(np.float64), k=1, workers=-1)
+        place(row=i, point=candidates[np.argmax(nearest)])
 
     # Transform to [0, 1]
     zero_based_grid = result_grid - 1
