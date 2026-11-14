@@ -37,6 +37,7 @@ Usage:
     python run_simulation.py                          # Run with defaults
     python run_simulation.py --n-lhs 500 --n-sim 10  # Custom parameters
     python run_simulation.py --dgps binormal          # Run specific DGP only
+    python run_simulation.py --prevalences 0.1        # Every size at 10% positives
     python run_simulation.py --help                   # Show all options
 """
 
@@ -219,31 +220,47 @@ def scale_lhs_samples(lhs_unit: NDArray, dgp_spec: dict) -> dict[str, NDArray]:
     return columns
 
 
-def sample_configs_for(n_total: int) -> list[dict]:
+def sample_configs_for(
+    *, n_total: int, prevalences: list[float] | None = None
+) -> list[dict]:
     """Return the (n_pos, n_neg) configurations run at one total sample size.
 
-    Every size runs balanced; n = 1000 additionally runs 10% prevalence.
+    The standard design runs every size balanced and adds 10% prevalence at
+    n = 1000. Explicit prevalences replace that design: every size runs at
+    each listed prevalence, with ``n_pos = round(prevalence * n_total)``.
 
     Args:
         n_total: Total sample size.
+        prevalences: Positive-class fractions to run at every size, or None
+            for the standard design.
 
     Returns:
         Sample configurations with "n_total", "n_pos", "n_neg", and
-        "prevalence".
+        "prevalence" (the realized ``n_pos / n_total``).
+
+    Raises:
+        ValueError: If a prevalence leaves either class with fewer than two
+            observations at this size.
     """
+    if prevalences is None:
+        prevalences = [0.1, 0.5] if n_total == 1000 else [0.5]
     configs = []
-    if n_total == 1000:
+    for prevalence in prevalences:
+        n_pos = round(prevalence * n_total)
+        n_neg = n_total - n_pos
+        if min(n_pos, n_neg) < 2:
+            raise ValueError(
+                f"Prevalence {prevalence} at n = {n_total} gives n_pos = {n_pos}, "
+                f"n_neg = {n_neg}; each class needs at least 2 observations"
+            )
         configs.append(
-            {"n_total": 1000, "n_pos": 100, "n_neg": 900, "prevalence": 0.10}
+            {
+                "n_total": n_total,
+                "n_pos": n_pos,
+                "n_neg": n_neg,
+                "prevalence": n_pos / n_total,
+            }
         )
-    configs.append(
-        {
-            "n_total": n_total,
-            "n_pos": n_total // 2,
-            "n_neg": n_total // 2,
-            "prevalence": 0.5,
-        }
-    )
     return configs
 
 
@@ -1183,7 +1200,7 @@ def save_results(
     dgp_type = results.unit.design.dgp_type
     sample_config = results.unit.sample_config
     timestamp = datetime.now().strftime("%Y%m%d")
-    prev = int(sample_config["prevalence"] * 100)
+    prev = round(sample_config["prevalence"] * 100)
     base_filename = f"{dgp_type}_n{sample_config['n_total']}_prev{prev}_{timestamp}"
 
     records = []
@@ -1331,7 +1348,16 @@ def main() -> None:
         type=int,
         nargs="+",
         default=list(DEFAULT_SAMPLE_SIZES),
-        help="Total sample sizes to run (n=1000 also runs 10%% prevalence)",
+        help="Total sample sizes to run (n=1000 also runs 10%% prevalence "
+        "unless --prevalences is given)",
+    )
+    parser.add_argument(
+        "--prevalences",
+        type=float,
+        nargs="+",
+        default=None,
+        help="Positive-class fractions to run at every sample size, replacing "
+        "the standard design (balanced everywhere, plus 10%% at n=1000)",
     )
     parser.add_argument(
         "--output-dir",
@@ -1356,6 +1382,8 @@ def main() -> None:
         "--no-gpu", action="store_true", help="Run every envelope on the CPU workers"
     )
     args = parser.parse_args()
+    if args.prevalences is not None and not all(0 < p < 1 for p in args.prevalences):
+        parser.error("--prevalences must lie strictly between 0 and 1")
 
     output_dir = args.output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -1366,11 +1394,16 @@ def main() -> None:
     )
 
     dgp_types = dgp_names if "all" in args.dgps else args.dgps
-    sample_configs = [
-        config
-        for n_total in args.sample_sizes
-        for config in sample_configs_for(n_total)
-    ]
+    try:
+        sample_configs = [
+            config
+            for n_total in args.sample_sizes
+            for config in sample_configs_for(
+                n_total=n_total, prevalences=args.prevalences
+            )
+        ]
+    except ValueError as err:
+        parser.error(str(err))
 
     print("\n" + "=" * 60)
     print("SIMULATION CONFIGURATION")

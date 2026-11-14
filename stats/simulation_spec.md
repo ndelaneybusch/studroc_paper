@@ -68,7 +68,11 @@ For each DGP:
 
 -   **Sample Sizes ($n$)**: $\{10, 30, 100, 300, 1000, 3000, 10000\}$
 -   **Prevalence**: balanced for all $n \neq 1000$; for $n = 1000$ both 10%
-    ($n_{pos}=100$) and 50% ($n_{pos}=500$).
+    ($n_{pos}=100$) and 50% ($n_{pos}=500$). `--prevalences p1 p2 ...`
+    replaces this design: every sample size runs at each listed prevalence,
+    with $n_{pos} = \operatorname{round}(p\,n)$ and the realized $n_{pos}/n$
+    recorded as the prevalence. Each class needs at least two observations at
+    every size, or the run refuses to start.
 -   **Confidence Levels**: $\alpha \in \{0.5, 0.2, 0.05\}$.
 -   **Simulation repeats**: $N_{sim} = 1$ per LHS combination.
 -   **Bootstrap Replicates**: $B = 4000$ (envelope only).
