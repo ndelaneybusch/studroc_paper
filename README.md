@@ -1,314 +1,446 @@
 # A Distribution-Free Confidence Band for the ROC Curve
 
-A simultaneous confidence band for the **true population ROC curve** that is
-genuinely distribution-free, far more informative than the textbook
-distribution-free band, and well calibrated across heavy-tailed, skewed, and
-multimodal score distributions where the classical parametric bands fail.
+We present a simultaneous confidence band for the **true population ROC curve**. It makes
+no assumption about the score distributions, is about half the area of the
+Kolmogorov–Smirnov band, and holds coverage on heavy-tailed, skewed, and
+multimodal scores where the binormal band fails.
 
-The method — a **studentized bootstrap envelope** with two exact tail floors —
-is specified in [`stats/nonparam_envelope.md`](stats/nonparam_envelope.md), its
-expected behavior is derived in
-[`stats/theoretical_behavior_report.md`](stats/theoretical_behavior_report.md),
-and every figure below is produced from a 2.25M-evaluation simulation study
-spanning seven data-generating processes, six sample sizes, and three
-confidence levels.
+The method is a **rank-space fiducial band** with a **localized exact floor**
+at the two corners of the curve. 
+
+The construction and its theory are in
+[`stats/fiducial_band_theory.md`](stats/fiducial_band_theory.md). The
+simulation design is in [`stats/simulation_spec.md`](stats/simulation_spec.md).
+All numbers below come from three simulation runs at 50%, 30%, and 10%
+prevalence: seven data-generating processes (DGPs), 6,000 parameter draws per
+DGP, n = 10 to 10,000, and 50%, 80%, and 95% bands. That is 12.6 million band
+evaluations for the five methods shown here. Results are at 50% prevalence
+unless stated.
 
 ---
 
 ## 1. The problem with the methods we have
 
-If you want a band around an ROC curve today, you essentially choose between two
-families, and both have a fatal flaw.
+There are two gold-standard ROC bands: bands that assume normality and are ideal when the assumption is met, and uniform bands drawn from nonparametric approaches that guarantee coverage.
 
-**Working–Hotelling (and its ellipse-envelope refinement) assume the scores are
-binormal.** The construction parametrizes the ROC as
-`TPR = Φ(a + b·Φ⁻¹(FPR))` and lays a hyperbolic regression band around it in
-probit–probit space (Ma & Hall 1993; Working & Hotelling 1929). When both class
-score distributions really are Gaussian, this is excellent: tight bands, correct
-coverage. When they are not, the band converges confidently to *the wrong
-curve*. Worse, the failure scales with sample size — more data tightens the band
-around a biased estimate, so coverage drops toward zero exactly when you trust
-the result most.
+**Working–Hotelling assumes the scores are binormal.** It models the ROC as
+`TPR = Φ(a + b·Φ⁻¹(FPR))` and puts a regression band around the fitted line in
+probit space (Working & Hotelling 1929; Ma & Hall 1993). When both score
+distributions are Gaussian, the band is tight and its coverage is correct. When
+they are not, the band converges to the wrong curve. More data makes this
+worse: the band tightens around a biased estimate and coverage falls toward
+zero.
 
-**The Kolmogorov–Smirnov / DKW fixed-width band is distribution-free but
-uninformative.** It places a constant-width strip of half-width
-`ε = √(ln(2/α)/(2n))` around the curve (Campbell 1994; Dvoretzky–Kiefer–
-Wolfowitz 1956; Massart 1990). It never fails to cover — but it covers *too
-much*. The 50% band is nearly as wide as the 95% band, the strip has the same
-width at the steep low-FPR corner as in the flat interior, and it tells you
-almost nothing about *where* the true curve actually lies. It is a safety
-benchmark, not an answer.
+**The KS band is distribution-free but wide.** It puts a fixed margin around
+the empirical ROC, `c/√n₁` vertically and `c/√n₀` horizontally, from the
+Dvoretzky–Kiefer–Wolfowitz inequality applied to each class (Campbell 1994;
+Massart 1990). It covers, but it over-covers: its 50% band contains the true
+curve 99% of the time. The margin is the same at the steep low-FPR corner as in
+the flat interior, so it says little about where the curve is.
 
-What is actually needed is a band that is (i) **distribution-free**, like KS,
-making no parametric commitment about the score distributions; (ii)
-**substantially more informative than KS**, with width that adapts to where the
-uncertainty really is; and (iii) **well calibrated across diverse distribution
-families**, holding coverage near nominal whether the scores are Gaussian,
-heavy-tailed, skewed, or multimodal.
+**A more useful band would combine the best properties of both**:
 
-### Why "alternative distributions" is the realistic case, not the exotic one
+1. **Distribution-free.** No parametric model for the scores, works for all data.
+2. **Informative.** Much narrower than KS, with width that follows the local
+   uncertainty.
 
-Binormality is the exception, not the rule, for modern classifiers:
+### Is distribution-free really needed? Logistic regression assumes normality.
 
-- **Heavy tails.** Deep network logits and many calibrated probability outputs
-  have far heavier tails than a Gaussian; a handful of extreme-confidence
-  predictions dominate the low-FPR corner of the ROC, which is precisely where
-  parametric bands are most fragile.
-- **Skew and bounded support.** Probability outputs live in `[0, 1]` and pile up
-  near the boundaries; risk scores are often right-skewed. Neither is Gaussian on
-  any scale. Experienced practitioners will use classifier logits instead of 
-  probabilities, but it can be easy to miss because the choice doesn't impact
-  the ROC curve, but it profoundly impacts the WH confidence band around that curve.
-- **Multimodality.** When a population mixes subgroups — easy vs. hard cases,
-  multiple disease subtypes, distinct fraud patterns — the negative or positive
-  score distribution is multimodal, producing genuine inflections in the ROC that
-  no binormal model can represent.
+Non-binormal scores are extremely common.
+
+- **Heavy tails.** Network logits and many probability outputs have heavier
+  tails than a Gaussian. A few extreme scores determine the low-FPR corner of
+  the ROC.
+- **Skew and bounded support.** Probabilities lie in `[0, 1]` and pile up at
+  the ends. Risk scores are often right-skewed. Using logits instead of
+  probabilities does not change the ROC curve, but it changes the
+  Working–Hotelling band around it.
+- **Multimodality.** A population that mixes subgroups has multimodal scores.
+  The ROC then has inflections that no binormal curve can follow.
 
 ---
 
-## 2. How badly the classical bands fail
+## 2. The fiducial band
 
-The contrast is stark. The heatmaps below show coverage minus the 0.95 nominal
-target: white is perfect, blue is conservative, red is undercoverage.
+The ROC curve depends on the scores only through their ranks. Transform every
+score by `s → 1 − F(s)`, where `F` is the negative-class CDF. The negatives
+become uniform on `(0, 1)`, and the CDF of the positives becomes the true ROC
+curve. So the interleaving of the two samples carries everything the data say
+about the ROC.
 
-![Envelope vs Working–Hotelling coverage](figures/paper/fig05_envelope_vs_wh_heatmap.png)
+For any continuous distribution, the CDF values at a sample's own order
+statistics have a known law: their spacings are `Dirichlet(1, …, 1)`. This is
+exact at every sample size. The band uses it in three steps.
 
-The studentized envelope (left) is at or slightly above nominal for **every**
-distribution at **every** sample size. Working–Hotelling (right) is fine on the
-two binormal-compatible families (Binormal, Heteroscedastic Gaussian) but turns
-deep red everywhere else, and the red *deepens with n*: on Student-t data its
-coverage falls to 0.02 at n = 10,000, on Logit-normal to 0.13, on Bimodal
-negatives to 0.23. The parametric band does not merely lose efficiency
-off-model — it loses validity, catastrophically and irreversibly.
+1. **Cloud.** Draw 20,000 pairs of spacing vectors, one for each class. Each
+   pair places the negatives on the FPR axis and the positives on the TPR axis.
+   Join the points in rank order to get one candidate ROC curve per draw.
+2. **Trim.** At each FPR grid point, rank the draws. Take the band between the
+   j-th smallest and j-th largest draw at every grid point. Choose j so that a
+   `1 − α` share of the draws lies inside the band everywhere. Every grid point
+   gets the same local tail level.
 
-This is not a knife-edge that only trips on pathological data. It is a smooth,
-continuous collapse as the data drift away from binormality:
+This is followed by some minimal housekeeping: raise the upper edge to a binomial bound where the empirical TPR reaches 1, and set the lower edge to 0 where no positive exceeds the threshold.
 
-![Working–Hotelling fragility](figures/paper/fig07_wh_fragility.png)
+The band uses only ranks, so its coverage depends on the data only through the
+true ROC curve and the two sample sizes. A monotone transform of the scores
+does not change it. The only tuning input is the number of draws.
 
-As Student-t tails get heavier (degrees of freedom decreasing, top row) or the
-negative class becomes more clearly bimodal (mode separation increasing, bottom
-row), Working–Hotelling coverage slides continuously from acceptable to near
-zero, and the larger sample size (right column) makes it *worse*. The envelope
-and KS bands ride flat along the top throughout. There is no safe operating
-region for the parametric band defined by a simple diagnostic — any departure
-from binormality is paid for in coverage.
+The figure shows 95% bands on one dataset from each of three distributions.
 
----
+![Example bands](figures/readme/example_bands.png)
 
-## 3. The case for the envelope: coverage *and* tightness, on every family
-
-The right way to judge a band is jointly on coverage (must be ≥ nominal) and
-width (smaller is better). The figures below plot per-DGP coverage against mean
-band area with 95% confidence intervals, for three sample sizes (rows) and the
-three distribution families.
-
-**Gaussian-like distributions** (the home turf of the parametric methods):
-
-![Pareto CI, Gaussian-like](figures/paper/fig08b_pareto_ci_gaussian_like.png)
-
-**Heavy-tailed / skewed distributions:**
-
-![Pareto CI, heavy-tailed](figures/paper/fig08b_pareto_ci_heavy_tailed.png)
-
-**Non-standard shapes (bounded support, multimodal):**
-
-![Pareto CI, non-standard](figures/paper/fig08b_pareto_ci_nonstandard.png)
-
-Reading these together, the studentized envelope (orange) is the only method
-that stays pinned at or just above the 0.95 line *in every panel*, while sitting
-well to the left of KS (black) — i.e. tighter. The competitors each fail a
-requirement:
-
-- **KS (black)** is always at ~1.0 coverage but always the widest point — safe
-  but uninformative, exactly as designed.
-- **Working–Hotelling (dark blue)** is competitive only on Gaussian-like data,
-  and even there its coverage falls off the bottom of the plot as n grows; on
-  heavy-tailed and non-standard data it is near the floor.
-- **Wilson rectangles (green)** are tight and well-calibrated at small n but
-  drift below nominal as n increases (the Šidák correction mishandles many
-  correlated grid points).
-- **Pointwise bootstrap (light blue)** ignores multiplicity entirely and
-  under-covers everywhere.
-
-Only the envelope occupies the desirable corner — high coverage, modest width —
-across all three families and all sample sizes.
+The fiducial band (orange) is much narrower than KS (black) in every panel. It
+is wider than Working–Hotelling (blue). In the Student-t panel the true curve
+leaves the Working–Hotelling band. These are single datasets, shown for
+illustration. The evidence is in the simulations below.
 
 ---
 
-## 4. How the method works
+## 3. Coverage: the fiducial band against Working–Hotelling
 
-The band is built in three layers, each carrying a different channel of
-uncertainty. The full specification is in
-[`stats/nonparam_envelope.md`](stats/nonparam_envelope.md); the sketch:
+The heatmaps show coverage for 95% bands. White is nominal, blue is
+conservative, red is under-coverage.
 
-1. **A studentized bootstrap envelope (the interior).** Resample negatives and
-   positives with replacement, recompute the ROC for each of `B` bootstrap
-   replicates, and measure how "strange" each replicate is by its maximum
-   *studentized* deviation from the empirical curve — the pointwise deviation
-   divided by the local bootstrap standard error, maximized over the FPR grid.
-   Retain the `(1−α)` fraction of curves with the smallest such supremum
-   deviation, and take their pointwise min/max. Studentization makes the band
-   adapt to local variance — tight near the corners, wider in the high-variance
-   middle — and the envelope is naturally asymmetric, because the bootstrap
-   distribution itself is asymmetric near the boundaries. This is the inversion
-   of a bootstrap supremum statistic (Hall & Horowitz 2013), and it is correct
-   in the *interior* of the curve.
+![Coverage heatmap](figures/readme/coverage_heatmap.png)
 
-2. **A Wilson rectangle floor (the TPR plateau).** Near FPR = 1 the empirical
-   TPR sits on a plateau at ~1 and the bootstrap variance collapses to zero — the
-   envelope would pinch shut and fail to cover. Where the bootstrap variance
-   falls below the binomial (Wilson score) variance, the band is floored by a
-   Šidák-corrected Wilson rectangle. At the plateau the slope is ~0, so binomial
-   TPR uncertainty is the *complete* uncertainty model, and the Wilson floor is
-   exactly right.
+The fiducial band covers between 0.961 and 0.995 in all 49 cells. No cell is
+significantly below nominal at the 95%, 80%, or 50% level. Working–Hotelling
+holds 0.954–0.977 on the two Gaussian families. On the other five it falls with
+n. At n = 10,000 it covers 0.401 on Beta, 0.228 on bimodal negatives, 0.126 on
+logit-normal, 0.021 on Student-t, and 0.011 on Weibull scores.
 
-3. **An exact Beta order-statistic floor (the steep low-FPR corner).** At the
-   first few grid points of a steep curve the dominant uncertainty is
-   *horizontal* — the true FPR of the operating threshold, which is an extreme
-   order statistic of the negatives. No variance-based yardstick can see this,
-   and the bootstrap cannot resample beyond the observed extremes. But there is
-   one exact, finite-sample, distribution-free law available: for continuous
-   scores the true FPR exceedance at the j-th largest negative score is
-   `Beta(j, n₀+1−j)`, regardless of the score distribution (probability integral
-   transform). The lower band is floored using this law (David & Nagaraja 2003),
-   which repairs the corner exactly where the bootstrap and asymptotic arguments
-   both break down. Below FPR ≈ 7/n₀ it is honestly vacuous — no distribution-
-   free lower bound exists there, and the band says so rather than overclaiming.
+![Coverage against n](figures/readme/coverage_vs_n.png)
 
-The three layers barely overlap: each carries the uncertainty channel the others
-cannot see. The figure below shows the assembled band on nine example datasets
-(n = 300, three target AUCs × three Gaussian-like DGPs), with the regions
-color-coded by which mechanism set the lower bound:
+The failure of Working–Hotelling is gradual. It grows as the scores move away
+from the binormal model:
 
-![Example bands with components](figures/paper/fig15a_example_bands_gaussian_like.png)
+![Working–Hotelling fragility](figures/readme/wh_fragility.png)
 
-The orange band tracks the true curve (dashed) closely. The **yellow** region at
-low FPR is where the **Beta order-statistic floor** sets the lower bound; the
-**green** region near the plateau is where the **Wilson rectangle floor** sets
-it; the **unshaded** interior is the **bootstrap envelope**. As the target AUC
-rises (top to bottom) the curve steepens and the Beta floor's jurisdiction at
-the low-FPR corner does more of the work — exactly the regime where every other
-method fails.
+Each panel sweeps one distribution's shape parameter. Each curve is one sample
+size, from n = 10 (dark) to n = 10,000 (light). Working–Hotelling coverage
+falls as Student-t and Weibull tails get heavier, as the logit-normal σ grows,
+as the Beta skew strengthens, and as the negative modes separate. Wherever the
+scores depart from binormal, the larger samples are lower. The one flat panel
+is the heteroscedastic Gaussian, where the binormal model holds at every σ
+ratio.
+
+### Calibration across confidence levels
+
+The same comparison at the 50%, 80%, and 95% levels, averaged over the seven
+distributions. A calibrated band lies on the dashed line.
+
+![Level calibration](figures/readme/level_calibration.png)
+
+- **KS** covers at least 0.99 at every level. It does not respond to the
+  requested level.
+- **Working–Hotelling** is on the line at n = 10 and falls further below it at
+  every larger n.
+- **The fiducial band** is above the line at every level, and closest to it of
+  the three from n = 100. Its 95% band covers 0.97–0.99. Its 80% band covers
+  0.95 at n = 10 and 0.88 at n = 10,000. Its 50% band covers 0.85 at n = 10
+  and 0.66 at n = 10,000. The over-coverage shrinks with n.
 
 ---
 
-## 5. The properties that make it trustworthy
+## 4. Width: the fiducial band against KS
 
-**Stable across AUC.** Coverage holds near or above nominal across the full
-range of true AUC, for every DGP and sample size — it does not degrade as the
-curve gets steeper:
+Each panel plots coverage against mean band area for one distribution and
+sample size. The best position is on the dashed nominal line and to the left.
 
-![Coverage vs AUC](figures/paper/fig02_envelope_coverage_vs_auc.png)
+![Coverage against area](figures/readme/coverage_vs_area.png)
 
-**Stable across distribution shape.** Sweeping each DGP's shape parameter — tail
-heaviness, skew strength, variance ratio, mode separation, mixture weight —
-leaves coverage essentially flat above the nominal line:
+KS (black) is always the widest. Working–Hotelling (blue) is the narrowest, but
+it is far below nominal outside the two Gaussian families. The fiducial band
+(orange) is just above nominal in every panel, at about half the KS area.
 
-![Coverage vs shape](figures/paper/fig03_envelope_coverage_vs_shape.png)
+![Tightness against KS](figures/readme/tightness_vs_ks.png)
 
-**Stable across sample size, where competitors are not.** This is the decisive
-comparison. The envelope (orange) holds calibration across all six sample sizes
-on all seven families, while Working–Hotelling (blue) collapses with n on every
-non-binormal family and the Wilson rectangles (green) drift down everywhere:
+The fiducial band captures our primary goals: maintains coverage while barely sacrificing width.
 
-![Coverage vs n by DGP](figures/paper/fig06_coverage_vs_n_by_dgp.png)
-
-**Far tighter than KS, while staying calibrated.** Plotting band area on a
-WH-to-KS scale (1.0 = KS, the widest distribution-free band; 0 = WH, the
-tightest parametric band), the envelope's area falls from 90% of KS at n = 10 to
-31% at n = 10,000 — it buys most of KS's safety at roughly a third of the width
-— while its calibration error (right panel) stays flat near the ideal, unlike
-WH and the rectangles, whose errors explode with n:
-
-![Tightness vs KS](figures/paper/fig09_tightness_vs_ks.png)
-
-**When it misses, it misses small.** No finite-sample method is perfect, but the
-envelope's residual violations are tiny: the conditional miss depth is almost
-always well under a few points of TPR (left), and the 99th-percentile worst
-violation stays near zero across all sample sizes, where Working–Hotelling and
-the rectangles climb to 0.7–0.85 (right):
-
-![Violation magnitude](figures/paper/fig17_violation_magnitude.png)
+However, there are a few cases where the fiducial band runs into problems.
 
 ---
 
-## 6. Ablations: every component is load-bearing
+## 5. Where the fiducial band fails
 
-The hybrid is not over-engineered — removing any single piece breaks the band in
-a specific, predictable way.
+The fiducial band shows problems with heteroscedastic data, and it gets worse at low prevalence. 
 
-**Without the floors, the bare bootstrap envelope is not a valid band at all.**
-It fails at both corners — the collapsed-variance plateau and the steep low-FPR
-corner — covering only ~25–35% of the time. The full method repairs both:
+![Fiducial coverage by prevalence](figures/readme/fiducial_prevalence_heatmap.png)
 
-![Bare bootstrap failure](figures/paper/fig11_bare_bootstrap_failure.png)
+A row average understates the failure, because only some draws in a row cause
+it. Sweeping each distribution's shape parameter locates it. This is the view
+used for Working–Hotelling in Section 3, at 50% prevalence, with the coverage
+axis enlarged.
 
-**The two floors own different corners.** Dropping the Beta floor reopens the
-steep low-FPR corner (and the damage concentrates at high AUC, where that corner
-matters); dropping the Wilson floor reopens the plateau corner, with violation
-rates there climbing to ~0.7. Each floor is necessary for its own region:
+![Fiducial coverage against shape](figures/readme/fiducial_fragility_shape.png)
 
-![Floor ablation](figures/paper/fig12_floor_ablation.png)
+Coverage dips for heavy-tailed Student-t scores (low df) and at the extreme σ
+ratios of the heteroscedastic Gaussian. The other panels are flat. The same
+sweep against true AUC:
 
-**Neither floor alone suffices.** A Beta-only band leaves an unprotected gap just
-beyond the Beta floor's fixed-k jurisdiction; a Wilson-only band buys low-FPR
-coverage only by inflating the band to vacuous widths there. The hybrid is the
-one configuration that is neither leaky nor vacuous:
+![Fiducial coverage against AUC](figures/readme/fiducial_fragility_auc.png)
 
-![Symmetric tail ablation](figures/paper/fig13_symmetric_tail_ablation.png)
+The heteroscedastic Gaussian drops at AUC above 0.95, and Student-t begins to.
+In both figures the dips are deepest at n = 100 to 1,000 and have mostly closed
+by n = 10,000. The heatmaps above show that imbalance deepens them.
 
-**The bootstrap interior earns its place too.** Replacing the bootstrap interior
-with the floors alone yields a band that is safe at 95% but neither tight nor
-tunable — it over-covers badly at the 50% level and runs wider than the full
-method. The studentized bootstrap is what gives the interior its adaptive,
-informative width:
+### The corners are the problem
 
-![No-bootstrap ablation](figures/paper/fig14_no_bootstrap_ablation.png)
+The misses are in the corners, where the true ROC exits the lower bound.
+
+![Failure corners](figures/readme/failure_corners.png)
+
+- **Location.** Misses concentrate at FPR 90–100%, the TPR plateau. Student-t draws also miss at FPR 0–10%.
+- **Direction.** The true curve falls below the band. Below-band misses occur
+  in 5.6%, 9.3%, and 18.4% of datasets at 50%, 30%, and 10% prevalence.
+  Above-band misses stay between 1.1% and 1.3%.
+
+The cause is how the cloud fills gaps. Between two neighboring observations
+each draw interpolates linearly. In the interior the gaps are small and this is
+harmless. At the two ends it is not. The gap before the largest negative, and
+the run of negatives below the smallest positive, each carry large relative
+uncertainty. If the true ROC is convex there, it sags below the straight chord
+that the cloud draws. Heavy tails make the ROC convex at both ends. Positives
+that are more dispersed than the negatives make it convex near FPR = 1.
+Imbalance lengthens the run of negatives below the smallest positive: its
+median length at n = 1,000 is 38, 69, and 170 negatives at 50%, 30%, and 10%
+prevalence. That is why the failure grows as positives become scarce.
+
+The fiducial band has no finite-sample guarantee, and at the corners its
+first-order justification does not apply. The corners need a band that does
+have a guarantee. KS has one, but it is too wide. The next section gives a
+better one.
 
 ---
 
-## 7. What the theory says to expect
+## 6. An exact band that beats KS: the ELL band
+
+KS builds its ROC band from two one-sample CDF bands, one for each class, and
+composes them by monotonicity (Campbell 1994). The equal-local-levels (ELL)
+band uses the same composition with better class bands.
+
+1. **Class band.** For one class, the CDF at the i-th order statistic follows
+   `Beta(i, n + 1 − i)` exactly. Bound each order statistic by the `γ` and
+   `1 − γ` quantiles of its own Beta law. The same local level `γ` is used at
+   every order statistic (Berk & Jones 1979; Owen 1995; Aldor-Noiman et al.
+   2013).
+2. **Exact calibration.** The probability that all n bounds hold at once is a
+   boundary-crossing probability of uniform order statistics. It is computed
+   exactly, without Monte Carlo (Noé 1972; Moscovich & Nadler 2017). `γ` is set
+   so each class band has its target simultaneous level.
+3. **Composition.** The two class levels multiply to `1 − α`. Every pair of
+   CDFs inside the two class bands maps to an ROC curve, and the band is the
+   envelope of those curves.
+
+This gives a **finite-sample theorem**: for every pair of continuous score
+distributions and every sample size, the ELL band contains the entire true ROC
+with probability at least `1 − α` (theory doc, Proposition 12). Ties are
+handled by random tie-breaking.
+
+The KS margin is constant, so it is sized for the middle of each class
+distribution and is far too wide in the tails. The ELL bounds follow the Beta
+law of each order statistic and tighten in the tails.
+
+![ELL against KS](figures/readme/ell_vs_ks.png)
+
+- **Area (left).** The ELL band's area is significantly thinner than KS.
+- **No weak spot (middle, right).** The ELL band solves the weaknesses of the Fiducial band.
+
+The narrowing costs no coverage anywhere. The heatmaps show every cell at every
+level.
+
+![ELL coverage heatmap](figures/readme/ell_heatmap.png)
+
+The same holds under class imbalance.
+
+![ELL and KS across prevalences](figures/readme/ell_ks_prevalence.png)
+
+ELL covers at least 0.997 for every distribution at every prevalence. Its area
+is smaller than KS's for every distribution at every prevalence: about 0.14
+against 0.20 at 50% prevalence and 0.22 against 0.28 at 10%. Both bands widen
+as positives become scarce.
+
+**The ELL band carries the same kind of guarantee as KS with less width.** It is
+the better guaranteed band. It is still not the band to use everywhere: its
+area is about 1.5 times the fiducial band's, and it barely responds to the
+requested level. Its role here is as a floor.
+
+---
+
+## 7. The fiducial band with an ELL floor
+
+The final method uses the ELL band where the fiducial band fails and the
+fiducial band everywhere else.
+
+1. **Find the floor region.** The region has two parts, each set by an exact
+   law. On the left it is the first few negative order statistics, where the
+   cloud's first gap can set the lower edge (7–9 points for a 95% band once
+   n₀ ≥ 50). On the right it is the run of negatives below the smallest
+   positive, extended by an exact binomial margin.
+2. **Recalibrate the trim.** Recompute the fiducial trim depth using only the
+   grid points outside the region. The floor handles the corners, so the
+   fiducial band no longer spends level on them.
+3. **Take the hull in the region.** Inside the region the band is the pointwise
+   hull of the recalibrated fiducial band and the ELL band.
+4. **Close.** Tighten the result to a monotone band.
+
+The floor has no tuning parameter beyond two small error budgets, and it reads
+only the ranks.
+
+Two statements are exact for every ROC curve. A miss inside the floor region
+implies that the ELL band missed somewhere, so the probability of a miss inside
+the region is at most the ELL level. The probability of a miss anywhere is at
+most the ELL level plus the probability that the recalibrated fiducial band
+misses outside the region. That last term has no distribution-free bound. It is measured by
+simulation.
+
+The figure shows both bands on two datasets where the unfloored band misses at
+a corner. The seeds were chosen for that reason.
+
+![Corner examples](figures/readme/corner_examples.png)
+
+In the top row the unfloored lower edge (dashed) rises too fast at low FPR and
+the true curve falls below it at the first grid point. The floored band keeps
+its lower edge at zero through the floor region. In the bottom row the true
+curve sags below the unfloored lower edge along the plateau. The floored band
+takes the ELL lower edge there and covers.
+
+### It repairs the failing strata
+
+The figure shows coverage of both bands at true AUC > 0.9. Rows are the two
+failing strata of Section 5 (Student-t with df < 4, heteroscedastic Gaussian
+with σ₊/σ₋ > 2) and all other draws. Columns are prevalences. Bars are 95%
+Wilson intervals.
+
+![Hybrid repair](figures/readme/hybrid_repair.png)
+
+In the two failing strata the unfloored band falls as low as 0.71. The floored
+band covers between 0.956 and 1.000 at every sample size and prevalence. On all
+other draws the two bands agree to within 0.01.
+
+### It holds coverage in every cell
+
+![Worst cell](figures/readme/worst_cell.png)
+
+### It removes the corner misses and the directional bias
+
+![Hybrid misses](figures/readme/hybrid_misses.png)
+
+### The cost is small and fades with n
+
+![Floor cost](figures/readme/floor_cost.png)
+
+The floor region shrinks as data accumulate. The figure shows the share of
+datasets whose floor region contains each FPR.
+
+![Floor occupancy](figures/readme/floor_occupancy.png)
+
+The left part ends after a fixed number of order statistics, so it shrinks like
+1/n₀. The right part follows the TPR plateau, so it is longer at high AUC and
+at low prevalence.
+
+### Summary across prevalences
+
+Sample sizes n = 30 to 10,000. Coverage is the mean over the 42 DGP × n cells.
+"Cells below" counts cells whose 95% Wilson interval lies entirely below
+nominal, out of 126 (42 cells × 3 levels).
+
+| Prevalence | Method | Cov. 95% | Cov. 80% | Cov. 50% | Worst cell, 95% | Cells below | Area ÷ KS |
+|---|---|---|---|---|---|---|---|
+| 50% | Fiducial + ELL floor | 0.982 | 0.910 | 0.723 | 0.969 | 0 | 0.59 |
+| 50% | Fiducial, no floor | 0.982 | 0.916 | 0.736 | 0.961 | 0 | 0.51 |
+| 50% | ELL band | 1.000 | 0.998 | 0.986 | 0.999 | 0 | 0.79 |
+| 50% | KS | 1.000 | 0.999 | 0.990 | 1.000 | 0 | 1.00 |
+| 50% | Working–Hotelling | 0.619 | 0.495 | 0.298 | 0.011 | 85 | 0.31 |
+| 30% | Fiducial + ELL floor | 0.981 | 0.907 | 0.717 | 0.969 | 0 | 0.61 |
+| 30% | Fiducial, no floor | 0.980 | 0.913 | 0.737 | 0.939 | 1 | 0.53 |
+| 30% | ELL band | 1.000 | 0.997 | 0.979 | 0.999 | 0 | 0.80 |
+| 30% | KS | 1.000 | 0.999 | 0.989 | 1.000 | 0 | 1.00 |
+| 30% | Working–Hotelling | 0.631 | 0.504 | 0.303 | 0.014 | 85 | 0.33 |
+| 10% | Fiducial + ELL floor | 0.980 | 0.905 | 0.716 | 0.967 | 0 | 0.68 |
+| 10% | Fiducial, no floor | 0.975 | 0.909 | 0.735 | 0.893 | 5 | 0.59 |
+| 10% | ELL band | 0.999 | 0.991 | 0.952 | 0.997 | 0 | 0.82 |
+| 10% | KS | 1.000 | 0.996 | 0.978 | 0.998 | 0 | 1.00 |
+| 10% | Working–Hotelling | 0.690 | 0.546 | 0.323 | 0.034 | 80 | 0.43 |
+
+The area ratio is the mean over all 42 cells, so it is dominated by small n,
+where the floor is widest.
+
+---
+
+## 8. What the theory says
 
 The full account is in
-[`stats/theoretical_behavior_report.md`](stats/theoretical_behavior_report.md);
-the essential predictions, all confirmed in simulation:
+[`stats/fiducial_band_theory.md`](stats/fiducial_band_theory.md).
 
-- **Asymptotic validity in the interior, exact finite-sample floors at the
-  boundary.** The empirical ROC process converges weakly to a Gaussian process
-  (Hsieh & Turnbull 1996), and the studentized bootstrap inverts a supremum
-  statistic over it — but the argument holds only on compact subintervals of
-  `(0,1)`. At the *moving* boundary grid points `t = k/n₀` (fixed small k) the
-  relevant quantities are extreme order statistics, not empirical-process
-  averages: the Gaussian approximation does not apply, the bootstrap support is
-  one-sided, and the empirical ROC is upward-biased by order-statistic geometry.
-  The Beta floor is built precisely for these points, where its guarantee is
-  finite-sample and distribution-free rather than asymptotic.
-- **The two corners are governed by two different, complementary models.** At the
-  TPR plateau the curve is flat, so binomial (Wilson) variance is the complete
-  model. At the steep low-FPR corner the Hsieh–Turnbull slope term
-  `(g/f)²·t(1−t)/n₀` dominates and binomial variance is 3–6× too small — only the
-  order-statistic floor recovers it. This is why a single mechanism cannot work.
-- **Coverage degrades with AUC, and the real risk factor is early slope.** A
-  steep low-FPR rise converts threshold-location error into large vertical
-  misses; flat curves near the origin cost little. The Beta floor targets exactly
-  this regime, raising coverage on the previously failing high-AUC strata from
-  ~0.77–0.84 to 0.95–0.99.
-- **It is a high-confidence tool.** A supremum-calibrated simultaneous band is
-  inherently insensitive to α (the 0.95-vs-0.50 critical-value ratio is only
-  ~1.3–1.5×), so the band over-covers at low confidence levels. This is a
-  property of sup-norm simultaneity, not of the envelope specifically — use it
-  near 95%, not at 50%.
-- **The honest limitation is informativeness, not validity.** The lower band is
-  vacuous below FPR ≈ 7/n₀ because no distribution-free lower bound exists there.
-  Applications that need guarantees at lower FPR must size n₀ accordingly — but
-  the band declines to certify what cannot be certified, rather than overclaiming.
+- **Rank reduction is exact.** The class labels in score order are a maximal
+  invariant under monotone score transforms. A rank-based band has the same
+  coverage for every score distribution that gives the same ROC curve. This
+  does not make coverage the same for different ROC curves.
+- **The interior is asymptotically calibrated.** On a fixed interior interval
+  with a smooth ROC, the fiducial cloud reproduces the Gaussian limit of the
+  empirical ROC process (Hsieh & Turnbull 1996), and the trim becomes a
+  studentized simultaneous band. This is a proof outline, not a finite-sample
+  theorem.
+- **The band over-covers at second order.** The band is centered on a smoothed
+  version of the empirical ROC, so the true curve sits more comfortably inside
+  the cloud than a typical draw. This is why coverage is 0.97–0.99 at the 95%
+  level and well above nominal at the 50% level.
+- **The corners are a different problem.** At the ends, uncertainty is set by a
+  few extreme order statistics, not by a Gaussian limit. Linear gap-filling is
+  wrong there when the ROC is convex. No fiducial calibration fixes this.
+- **The ELL band is exact.** Its guarantee is finite-sample and
+  distribution-free. It over-covers because the composition discards
+  information.
+- **The floored band is partly proved.** Misses inside the floor region are
+  bounded by the ELL level. Misses outside it are not bounded by any theorem.
+  The simulations found no cell below nominal, but they are evidence for the
+  shapes tested, not a proof for all ROC curves.
+
+### Limitations
+
+- The band is conservative. Expect about 0.97–0.99 coverage from a 95% band.
+- It is a high-confidence tool. Its 50% band covers about 0.65–0.85.
+- At low FPR and small n the floored band is as wide as the ELL band. No
+  distribution-free band can be narrow there.
+- Use the ELL band alone when a full-curve guarantee is required.
 
 ---
+
+## Summary
+
+- KS is correct but uninformative. Binormal methods are severely anticonservative for even small departures of normality.
+- We introduce a new method, the fiducial band, that is only slightly wider than Working-Hotelling (the classic binormal band) without distributional assumptions. It covers _almost_ everywhere.
+- We introduce a second new method, the equal-local-levels (ELL) band, which gives similarly-strong guarantees as KS while being significantly narrower.
+- A hybrid of these two methods (i.e. fiducial band with an ELL floor in the tails, followed by some polishing) is both narrow and covers ~everywhere.
+
+---
+
+## Usage
+
+```python
+from studroc_paper.methods import M3Floor, fiducial_band_rs, m3_band_rs
+
+# Fiducial band with the ELL floor (the recommended band)
+fpr, lower, upper = fiducial_band_rs(
+    y_true, y_score, alpha=0.05, m3_floor=M3Floor(), random_state=0
+)
+
+# Fiducial band without the floor
+fpr, lower, upper = fiducial_band_rs(y_true, y_score, alpha=0.05, random_state=0)
+
+# ELL band (finite-sample guarantee)
+fpr, lower, upper = m3_band_rs(y_true, y_score, alpha=0.05, random_state=0)
+```
+
+The code calls the ELL band `m3` and the floored band `fiducial_hybrid`.
 
 ## Installation
 
-Requires Python 3.12+ and the [uv](https://docs.astral.sh/uv/) package manager.
+Requires Python 3.12+, the [uv](https://docs.astral.sh/uv/) package manager,
+and a Rust toolchain. The fiducial cloud and the ELL calibration run in a Rust
+kernel (`rust/`) that `uv sync` builds.
 
 ```bash
 git clone https://github.com/ndelaneybusch/studroc_paper.git
@@ -316,17 +448,17 @@ cd studroc_paper
 uv sync
 ```
 
-All bootstrap methods use PyTorch for automatic GPU acceleration (10–50× speedup
-for `B > 500`); inputs remain NumPy arrays for scikit-learn compatibility.
-
 ## Reproducing the figures
 
 ```bash
-uv run python stats/paper_figures.py
+uv run python stats/readme_figures.py            # figures in this README
+uv run python stats/paper_figures_nov11.py       # full figure set, one run
+uv run python stats/paper_figures_prevalence.py  # cross-prevalence figure set
 ```
 
-Figures are written to `figures/paper/`. The underlying simulation is driven by
-`scripts/run_simulation.py` over the data-generating processes in
+README figures are written to `figures/readme/`. The commentary on the full
+figure sets is in `notebook_paper_nov11.py` and `notebook_paper_prevalence.py`.
+The simulation is driven by `scripts/run_simulation.py` over the DGPs in
 `src/studroc_paper/datagen/` and the methods in `src/studroc_paper/methods/`.
 
 ## Repository structure
@@ -335,14 +467,16 @@ Figures are written to `figures/paper/`. The underlying simulation is driven by
 studroc_paper/
 ├── src/studroc_paper/
 │   ├── datagen/       # DGPs and true-ROC derivation
-│   ├── methods/       # Confidence band implementations (envelope_boot.py, ...)
+│   ├── methods/       # Band implementations (fiducial_band_rs.py, m3_band_rs.py,
+│   │                  #   hybrid_floor.py, ks_band.py, working_hotelling.py, ...)
 │   ├── eval/          # Coverage and width metrics
 │   ├── sampling/      # Maximin Latin Hypercube Sampling
 │   └── viz/           # Diagnostic and aggregate plots
+├── rust/              # Rust kernel for the fiducial cloud and ELL calibration
 ├── scripts/           # Simulation drivers
-├── stats/             # Method spec, theory, and figure generation
-├── data/results/      # Aggregated simulation results
-└── figures/           # Visualization outputs
+├── stats/             # Theory, simulation spec, and figure generation
+├── data/results/      # Simulation results
+└── figures/           # Figure outputs
 ```
 
 ## Development
@@ -351,16 +485,39 @@ studroc_paper/
 uv run pytest                  # Tests
 uv run ruff check --fix .      # Lint
 uv run ruff format .           # Format
-uv run mypy src/studroc_paper  # Type check
+uv run ty check                # Type check
 ```
+
+## References
+
+- Aldor-Noiman, Brown, Buja, Rolke & Stine (2013). The power to see: a new
+  graphical test of normality. *The American Statistician* 67(4).
+- Berk & Jones (1979). Goodness-of-fit test statistics that dominate the
+  Kolmogorov statistics. *Z. Wahrscheinlichkeitstheorie verw. Gebiete* 47.
+- Campbell (1994). Advances in statistical methodology for the evaluation of
+  diagnostic and laboratory tests. *Statistics in Medicine* 13.
+- Hsieh & Turnbull (1996). Nonparametric and semiparametric estimation of the
+  receiver operating characteristic curve. *Annals of Statistics* 24(1).
+- Ma & Hall (1993). Confidence bands for receiver operating characteristic
+  curves. *Medical Decision Making* 13(3).
+- Massart (1990). The tight constant in the Dvoretzky–Kiefer–Wolfowitz
+  inequality. *Annals of Probability* 18(3).
+- Moscovich & Nadler (2017). Fast calculation of boundary crossing
+  probabilities for Poisson processes. *Statistics & Probability Letters* 123.
+- Noé (1972). The calculation of distributions of two-sided
+  Kolmogorov–Smirnov type statistics. *Annals of Mathematical Statistics* 43(1).
+- Owen (1995). Nonparametric likelihood confidence bands for a distribution
+  function. *JASA* 90(430).
+- Working & Hotelling (1929). Applications of the theory of error to the
+  interpretation of trends. *JASA* 24(165A).
 
 ## Citation
 
 ```bibtex
-@misc{studroc2025,
+@misc{studroc2026,
   author    = {Delaney-Busch, Nathaniel},
   title     = {A Distribution-Free Confidence Band for the ROC Curve},
-  year      = {2025},
+  year      = {2026},
   publisher = {GitHub},
   url       = {https://github.com/ndelaneybusch/studroc_paper}
 }
