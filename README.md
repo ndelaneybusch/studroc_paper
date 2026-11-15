@@ -99,7 +99,7 @@ illustration. The evidence is in the simulations below.
 
 ## 3. Coverage: the fiducial band against Working–Hotelling
 
-The heatmaps show coverage minus 0.95 for 95% bands. White is nominal, blue is
+The heatmaps show coverage for 95% bands. White is nominal, blue is
 conservative, red is under-coverage.
 
 ![Coverage heatmap](figures/readme/coverage_heatmap.png)
@@ -164,22 +164,9 @@ However, there are a few cases where the fiducial band runs into problems.
 
 ## 5. Where the fiducial band fails
 
-The heatmaps repeat the view of Section 3 for the fiducial band alone, on a
-finer color scale. Rows are confidence levels and columns are prevalences.
+The fiducial band shows problems with heteroscedastic data, and it gets worse at low prevalence. 
 
 ![Fiducial coverage by prevalence](figures/readme/fiducial_prevalence_heatmap.png)
-
-One row changes: the heteroscedastic Gaussian.
-
-- **50% prevalence.** Its 95% band covers 0.961 at n = 300, the lowest cell in
-  the panel, but still above nominal.
-- **30% prevalence.** It covers 0.939 at n = 300.
-- **10% prevalence.** It covers 0.926, 0.897, 0.893, and 0.922 at n = 100,
-  300, 1,000, and 3,000. Its 80% band covers 0.787 at n = 300.
-- **The other six rows** do not change with prevalence.
-
-The number of cells significantly below nominal is 0, 1, and 5 at 50%, 30%, and
-10% prevalence. All are heteroscedastic-Gaussian cells.
 
 A row average understates the failure, because only some draws in a row cause
 it. Splitting the draws by shape and true AUC locates it (95% bands):
@@ -202,15 +189,11 @@ Section 7 plots these strata with and without the floor.
 
 ### The corners are the problem
 
-The next figure shows where the misses are. It uses 95% bands at n = 100 to
-3,000 and true AUC > 0.9.
+The misses are in the corners, where the true ROC exits the lower bound.
 
 ![Failure corners](figures/readme/failure_corners.png)
 
-- **Location.** In the two failing strata, misses concentrate at FPR 90–100%,
-  the TPR plateau. Between 5% and 19% of datasets have a miss there, depending
-  on prevalence. Student-t draws also miss at FPR 0–10% (about 3% of datasets).
-  At FPR 10–70% the miss rate is under 1%, the same as for all other draws.
+- **Location.** Misses concentrate at FPR 90–100%, the TPR plateau. Student-t draws also miss at FPR 0–10%.
 - **Direction.** The true curve falls below the band. Below-band misses occur
   in 5.6%, 9.3%, and 18.4% of datasets at 50%, 30%, and 10% prevalence.
   Above-band misses stay between 1.1% and 1.3%.
@@ -263,29 +246,15 @@ law of each order statistic and tighten in the tails.
 
 ![ELL against KS](figures/readme/ell_vs_ks.png)
 
-- **Area (left).** The ELL band's area at the 95% level is 0.91 of KS at
-  n = 10, 0.88 at n = 100, 0.73 at n = 1,000, and 0.66 at n = 10,000. The mean
-  ratio is below 1 at every sample size and level.
-- **Dataset by dataset.** Both bands were computed on the same datasets. At the
-  95% level the ELL band has the smaller area on at least 99.5% of datasets at
-  every n ≥ 100. At n = 30 the share is 83%.
-- **No weak spot (middle, right).** These are the two distributions on which
-  the fiducial band fails. Solid curves are the ELL band at every sample size.
-  They stay at 1.00 across the whole range of tail weight and of σ ratio. The
-  dashed curves are the unfloored fiducial band at n = 300 and n = 1,000, which
-  dips to 0.81 for the heaviest tails and to 0.90 at the extreme σ ratios.
+- **Area (left).** The ELL band's area is significantly thinner than KS.
+- **No weak spot (middle, right).** The ELL band solves the weaknesses of the Fiducial band.
 
 The narrowing costs no coverage anywhere. The heatmaps show every cell at every
 level.
 
 ![ELL coverage heatmap](figures/readme/ell_heatmap.png)
 
-The lowest cell is 0.999 at the 95% level, 0.996 at the 80% level, and 0.973 at
-the 50% level. Every cell is at or above nominal, as the theorem requires. The
-band is conservative: its 50% band covers at least 0.97.
-
-The same holds under class imbalance. The figure shows each distribution at
-n = 1,000, with one point per prevalence.
+The same holds under class imbalance.
 
 ![ELL and KS across prevalences](figures/readme/ell_ks_prevalence.png)
 
@@ -294,7 +263,7 @@ is smaller than KS's for every distribution at every prevalence: about 0.14
 against 0.20 at 50% prevalence and 0.22 against 0.28 at 10%. Both bands widen
 as positives become scarce.
 
-The ELL band carries the same kind of guarantee as KS with less width. It is
+**The ELL band carries the same kind of guarantee as KS with less width.** It is
 the better guaranteed band. It is still not the band to use everywhere: its
 area is about 1.5 times the fiducial band's, and it barely responds to the
 requested level. Its role here is as a floor.
@@ -356,46 +325,13 @@ other draws the two bands agree to within 0.01.
 
 ![Worst cell](figures/readme/worst_cell.png)
 
-Thick lines show the worst DGP at each n. Thin lines show the mean over DGPs.
-The floored band's worst cell is 0.969, 0.969, and 0.967 at 50%, 30%, and 10%
-prevalence. No cell is significantly below nominal at any level or prevalence
-(399 cell × level combinations). Its mean coverage does not change with
-prevalence.
-
 ### It removes the corner misses and the directional bias
 
 ![Hybrid misses](figures/readme/hybrid_misses.png)
 
-- **Corners (top row).** In the failing strata, the share of datasets with a
-  miss at FPR 90–100% falls from 5.0% to 0.4% at 50% prevalence, from 9.0% to
-  0.6% at 30%, and from 18.4% to 0.5% at 10%.
-- **Direction (bottom row).** Over all draws at 10% prevalence and n = 1,000,
-  the unfloored band misses below in 2.1% of datasets and above in 1.1%. The
-  floored band misses below in 0.8% and above in 1.4%. Both rates stay under
-  α/2 = 2.5% at every sample size and prevalence.
-- **A trade.** At n ≥ 100 the floored band misses above slightly more often
-  than the unfloored band, by up to 0.6 points. This is the recalibrated trim: level
-  that the floor frees at the corners is spent in the interior.
-- **Depth.** Misses are shallow. The 99th percentile of the deepest violation
-  is at most 0.004 TPR at 50% prevalence and 0.008 at 10%.
-
 ### The cost is small and fades with n
 
 ![Floor cost](figures/readme/floor_cost.png)
-
-- **Area.** Relative to the unfloored band, the floored 95% band has 1.22 times
-  the area at n = 100, 1.08 at n = 300, 1.03 at n = 1,000, and 1.00 at
-  n = 10,000. At 10% prevalence the ratios are 1.28, 1.12, 1.04, and 1.00.
-- **Where the width goes.** The extra width is at the corners. At n = 1,000 the
-  mean width at FPR = 0.01 is 0.54 with the floor and 0.32 without. From
-  FPR = 0.05 upward the two bands differ by less than 0.01.
-- **Small samples.** At n = 10 the floor region is the whole curve and the
-  band is the ELL band. At n = 30 the region covers 93% of the grid. At
-  n = 100 the band is close to the ELL width for FPR ≤ 0.1.
-- **Against KS.** The floored band's area is 0.67 of KS at n = 100, 0.50 at
-  n = 1,000, and 0.45 at n = 10,000.
-- **Lower levels.** The recalibrated trim moves coverage toward nominal. At
-  n = 1,000 the 50% band covers 0.706 with the floor and 0.725 without.
 
 The floor region shrinks as data accumulate. The figure shows the share of
 datasets whose floor region contains each FPR.
@@ -404,10 +340,7 @@ datasets whose floor region contains each FPR.
 
 The left part ends after a fixed number of order statistics, so it shrinks like
 1/n₀. The right part follows the TPR plateau, so it is longer at high AUC and
-at low prevalence. At 50% prevalence the region covers 59% of the grid at
-n = 100, 20% at n = 1,000, and 8% at n = 10,000. At 10% prevalence it covers
-30% at n = 1,000. The band moves from the ELL band to the fiducial band as the
-sample grows.
+at low prevalence.
 
 ### Summary across prevalences
 
