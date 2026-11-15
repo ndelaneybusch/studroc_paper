@@ -1,0 +1,43 @@
+{
+  "timestamp": "2026-11-13T19:20:02.589482",
+  "args": {
+    "n_lhs": "6000",
+    "n_sim": "1",
+    "bootstrap_size": "4000",
+    "confidence_levels": "[0.5, 0.2, 0.05]",
+    "dgps": "['all']",
+    "sample_sizes": "[30, 100, 300, 1000, 3000, 10000]",
+    "prevalences": "[0.1]",
+    "output_dir": "data\\results\\nov11_p10",
+    "seed": "42",
+    "workers": "24",
+    "gpu_min_neg": "500",
+    "no_gpu": "False"
+  },
+  "git_hash": "db4758c5d48aafd2b7c232764497277c9874c25c",
+  "methods": [
+    "ks",
+    "working_hotelling",
+    "envelope",
+    "m3",
+    "fiducial",
+    "fiducial_hybrid"
+  ],
+  "hybrid_floor": {
+    "rule": "exact",
+    "eps": 0.001,
+    "delta": 0.025,
+    "alpha": null,
+    "split_ratio": "sample_size",
+    "closure": "tighten",
+    "recalibrate_trim": true
+  },
+  "versions": {
+    "numpy": "2.3.5",
+    "scipy": "1.16.3",
+    "sklearn": "1.8.0",
+    "torch": "2.9.1+cu126",
+    "pandas": "2.3.3"
+  },
+  "gpu_lane_device": "NVIDIA GeForce RTX 3080"
+}
