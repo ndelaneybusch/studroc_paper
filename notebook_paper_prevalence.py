@@ -54,8 +54,8 @@
 #
 # The figure code lives in `stats/paper_figures_prevalence.py` (built on
 # `stats/paper_figures_nov11.py`); figures go to `figures/paper_prevalence/`.
-# The single-run analysis of the 10% run alone is in
-# `figures/paper_nov11_p10/`.
+# The single-run analyses of the 30% and 10% runs alone are in
+# `figures/paper_nov11_p30/` and `figures/paper_nov11_p10/`.
 #
 # **Regenerating** (figures only, no commentary):
 # ```
@@ -102,12 +102,10 @@ def at(prevalence: float) -> pd.DataFrame:
 # Replicates per DGP × n (hybrid, 95%). Empty entries are cells a run has
 # not produced yet.
 #
-# **Status when the commentary was written:** the 50% and 10% runs were
-# complete. The 30% run had finished only the binormal DGP at n = 30–3,000.
-# Its points appear in per-DGP figures where present, its per-prevalence
-# figures show binormal only, and macro averages leave it out. The
-# commentary therefore compares 50% with 10%; rerun the notebook once the
-# 30% run finishes to fill in the middle series.
+# All three runs are complete: 6,000 replicates per DGP × n from n = 30
+# (5,995 for Student-t, whose few unachievable LHS draws are dropped
+# identically in every run), so every average uses the same cells at every
+# prevalence.
 
 # %%
 pp.completeness(data)
@@ -153,26 +151,30 @@ replication.groupby(level="alpha")["z"].describe().round(2)
 pp.figP03_method_overview(cells)
 
 # %% [markdown]
-# **Reading.** Going from 50% to 10% prevalence:
+# **Reading.** Every metric moves monotonically from 50% through 30% to
+# 10%, and most of the movement happens between 30% and 10%.
 #
 # - **Hybrid.** Calibration is unchanged. Mean 95% coverage is 0.970–0.993
-#   at 10% against 0.970–0.992 at 50%, and the worst cell is 0.967 against
-#   0.969. Calibration error averaged over the three levels is slightly
-#   *lower* at 10% from n = 300 (0.101 vs. 0.114 at n = 1,000).
-# - **Raw fiducial band.** Its mean barely moves, but its worst cell falls
-#   to 0.893 (n = 1,000) and stays below 0.95 from n = 100 to 3,000. The
-#   floor exists for exactly this case.
+#   at 10% against 0.970–0.992 at 50% (0.971–0.991 at 30%), and the worst
+#   cell is 0.967, 0.969, and 0.969 at 10%, 30%, and 50%. Calibration error
+#   averaged over the three levels is slightly *lower* under imbalance from
+#   n = 300 (0.114, 0.111, and 0.101 at n = 1,000 for 50%, 30%, and 10%).
+# - **Raw fiducial band.** Its mean barely moves, but its worst cell falls:
+#   at n = 1,000 it is 0.966 balanced, 0.950 at 30%, and 0.893 at 10%. At
+#   10% it stays below 0.95 from n = 100 to 3,000; at 30% only n = 300
+#   (0.939) is below. The floor exists for exactly this case.
 # - **Envelope.** It turns *more* conservative under imbalance: coverage
-#   rises (0.990 vs. 0.984 at n = 1,000), its one sub-nominal cell from the
-#   balanced run disappears, and calibration error and area relative to KS
-#   both worsen (area ÷ KS 0.82 vs. 0.56 at n = 1,000).
+#   rises (0.984, 0.986, 0.990 at n = 1,000), its one sub-nominal cell from
+#   the balanced run is already gone at 30%, and calibration error and area
+#   relative to KS both worsen (area ÷ KS 0.56, 0.62, 0.82 at n = 1,000).
 # - **M3 and KS.** Coverage stays at about 1.00 at every prevalence.
-# - **Working–Hotelling.** It covers *more* at 10% (0.62 vs. 0.54 mean at
-#   n = 1,000) because its band widens, but it still collapses with n.
+# - **Working–Hotelling.** It covers *more* under imbalance (0.54, 0.55,
+#   0.62 mean at n = 1,000) because its band widens, but it still collapses
+#   with n.
 #
-# Every method's band is wider at 10% (bottom row). This follows from the
-# per-class sample sizes, n₀ = 0.9n and n₁ = 0.1n, not from any method's
-# design.
+# Every method's band is wider under imbalance (bottom row). This follows
+# from the per-class sample sizes, n₀ = (1 − p)n and n₁ = pn, not from any
+# method's design.
 
 # %% [markdown]
 # ### Fig P2 — Coverage shift against the balanced run
@@ -185,17 +187,20 @@ pp.figP03_method_overview(cells)
 pp.figP02_coverage_shift(cells)
 
 # %% [markdown]
-# **Reading (10% − 50%).**
+# **Reading.**
 #
-# - **Hybrid.** Every shift lies within ±0.009; the mean is −0.002, inside
-#   the Monte Carlo band.
+# - **Hybrid.** Every shift lies within ±0.009 at 10% and ±0.005 at 30%;
+#   the mean is −0.002 at 10%, inside the Monte Carlo band.
 # - **M3.** Shifts lie within −0.003 to 0.000.
 # - **Raw fiducial band.** The heteroscedastic-Gaussian row is the only
-#   structure: −0.026 at n = 30, −0.046 at 100, −0.064 at 300, −0.073 at
-#   1,000, −0.051 at 3,000, and −0.025 at 10,000. Every other cell lies
-#   within about ±0.006.
-# - **Envelope.** It shifts upward, most at n = 10,000 (+0.029 in the
-#   heteroscedastic Gaussian, about +0.015 elsewhere).
+#   structure. At 10% it is −0.026 at n = 30, −0.046 at 100, −0.064 at 300,
+#   −0.073 at 1,000, −0.051 at 3,000, and −0.025 at 10,000. At 30% the
+#   same row shows the same shape at a fifth to a third of the depth:
+#   −0.006, −0.013, −0.022, −0.015, −0.012, −0.003. Every other cell lies
+#   within about ±0.006 at both prevalences.
+# - **Envelope.** It shifts upward, most at n = 10,000: +0.029 in the
+#   heteroscedastic Gaussian and +0.007 to +0.016 elsewhere at 10%, and
+#   +0.020 and up to +0.009 at 30%.
 
 # %% [markdown]
 # ### Table 2 — Method summary at each prevalence
@@ -211,19 +216,27 @@ table2.round(3)
 # **Reading.**
 #
 # - **Cells significantly below nominal.** The hybrid has none at any level
-#   at either prevalence. The raw fiducial band has none at 50% but five at
-#   10%, all heteroscedastic Gaussian: at 95% for n = 100, 300, 1,000, and
-#   3,000 (worst 0.893), and at 80% for n = 300. Working–Hotelling has
-#   25–29 per level at both prevalences.
-# - **Area.** The hybrid's area ratio to KS rises from 0.50 to 0.59 at
-#   n = 1,000. In absolute terms its area at 10% is 1.67–1.69× its balanced
-#   area for every n ≥ 300.
-# - **Effective sample size.** That ratio is the effective-sample-size
-#   prediction: band width scales as 1/√(n·p(1−p)), and
-#   √(0.25 / 0.09) = 1.667. Both fiducial arms sit at 1.66–1.67 for
-#   n ≥ 1,000. KS is less sensitive (1.41–1.45 there) and
-#   the envelope more (up to 2.07). Imbalance costs the rank-space bands
-#   exactly what the information loss predicts, and no more.
+#   at any prevalence. The raw fiducial band has none at 50%, one at 30%
+#   (heteroscedastic Gaussian, n = 300, 95%: 0.939), and five at 10%, all
+#   heteroscedastic Gaussian: at 95% for n = 100, 300, 1,000, and 3,000
+#   (worst 0.893), and at 80% for n = 300. Working–Hotelling has 25–29 per
+#   level at every prevalence.
+# - **Area.** The hybrid's area ratio to KS is 0.50, 0.51, and 0.59 at
+#   n = 1,000 for 50%, 30%, and 10%. In absolute terms its mean area is
+#   1.09–1.10× its balanced area at 30% and 1.67–1.69× at 10% for every
+#   n ≥ 300.
+# - **Effective sample size.** Those ratios are the effective-sample-size
+#   prediction: band width scales as 1/√(n·p(1−p)), giving √(0.25 / 0.21) =
+#   1.091 at 30% and √(0.25 / 0.09) = 1.667 at 10%. Both fiducial arms sit
+#   at 1.09–1.10 and 1.66–1.67 for n ≥ 1,000. KS is less sensitive (1.41–1.45
+#   at 10%) and the envelope more (up to 2.07). Imbalance costs the
+#   rank-space bands exactly what the information loss predicts, and no
+#   more.
+# - **30% is close to balanced in information terms.** It costs only 9% in
+#   width, yet the raw band already shows its first significant failure
+#   there. The raw band's defect tracks the length of the run of negatives
+#   below the smallest positive (Fig 16), which grows faster than the
+#   information loss.
 
 # %% [markdown]
 # ## 3. Calibration
@@ -240,12 +253,13 @@ for method in pf.METHOD_ORDER:
 # %% [markdown]
 # **Reading.**
 #
-# - **Hybrid.** Its 10% column is a near copy of its 50% column at every
-#   level: 0.967–0.996 at 95%, 0.862–0.969 at 80%, and 0.624–0.893 at 50%.
-#   The sup-norm conservatism at the lower levels shrinks with n the same
-#   way at both prevalences.
+# - **Hybrid.** Its three columns are near copies at every level. At 10% it
+#   spans 0.967–0.996 at 95%, 0.862–0.968 at 80%, and 0.624–0.893 at 50%;
+#   at 30%, 0.969–0.993, 0.871–0.953, and 0.635–0.860. The sup-norm
+#   conservatism at the lower levels shrinks with n the same way at every
+#   prevalence.
 # - **Raw fiducial band.** Its heteroscedastic-Gaussian row is the only one
-#   that turns red at 10%.
+#   that changes: pale at 30%, red at 10%.
 # - **Envelope.** It gets bluer (more conservative) at 10% for n ≥ 1,000.
 # - **Working–Hotelling.** Its off-model rows are red at every prevalence.
 
@@ -265,13 +279,17 @@ pp.per_prevalence(
 # %% [markdown]
 # **Reading.**
 #
-# - **Hybrid.** At 10% it is as flat in AUC as it is balanced: every DGP
-#   and n stays within 0.955–0.99, with no high-AUC droop.
+# - **Hybrid.** Under imbalance it is as flat in AUC as it is balanced:
+#   every DGP and n stays within 0.955–0.99 at every prevalence, with no
+#   high-AUC droop.
 # - **Raw fiducial band, heteroscedastic Gaussian.** At 10% the high-AUC
 #   end gives way. Coverage falls to about 0.73 at AUC 0.98 for n = 1,000,
 #   with a dip to about 0.84 around AUC 0.87 at n = 100 and to 0.87 at the
-#   top for n = 10,000.
-# - **Raw fiducial band, Student-t.** It slips to 0.94 at the highest AUCs.
+#   top for n = 10,000. At 30% the droop is already visible but shallower:
+#   about 0.86–0.88 above AUC 0.95 at n = 300–1,000, against 0.91–0.95
+#   balanced.
+# - **Raw fiducial band, Student-t.** It slips to 0.94 at the highest AUCs
+#   at 10%; at 30% it matches the balanced run.
 # - **Raw fiducial band, other DGPs.** They are unchanged from the balanced
 #   run.
 # - **Envelope, M3, KS, and Working–Hotelling.** They show the same
@@ -290,23 +308,26 @@ pp.per_prevalence(
 )
 
 # %% [markdown]
-# **Reading.** At 10% prevalence the raw fiducial band's balanced pockets
+# **Reading.** Under imbalance the raw fiducial band's balanced pockets
 # deepen.
 #
 # - **Heteroscedastic Gaussian.** Once σ₊/σ₋ exceeds about 2, coverage falls
-#   to about 0.80 at n = 100 and 0.81 at n = 1,000 (about 0.91 and 0.95
-#   balanced).
-# - **Student-t.** The df ≈ 2 dip at n = 1,000 goes from about 0.90 to 0.83.
-#   This second, more local failure is also in the tails, and the per-cell
-#   tables average it away.
+#   to about 0.80 at n = 100 and 0.81 at n = 1,000 at 10% (about 0.91 and
+#   0.95 balanced). At 30% the pocket is halfway there: binned over
+#   σ₊/σ₋ = 3–5 it is 0.95, 0.92, and 0.86 at n = 100 and 0.95, 0.92, and
+#   0.82 at n = 1,000 for 50%, 30%, and 10%.
+# - **Student-t.** The df ≈ 2 dip at n = 1,000 goes from about 0.90 to 0.83
+#   at 10%. This second, more local failure is also in the tails, and the
+#   per-cell tables average it away. At 30% it is no deeper than balanced,
+#   so this pocket needs stronger imbalance than the heteroscedastic one.
 # - **Hybrid.** It stays flat at or above 0.95 along every shape axis at
-#   both prevalences. The one touch is the heteroscedastic Gaussian at
+#   every prevalence. The one touch is the heteroscedastic Gaussian at
 #   σ₊/σ₋ ≈ 0.2 and n = 100, at 0.948 with a wide ribbon.
 # - **Envelope.** It loses its balanced dip below nominal at large σ₊/σ₋
-#   and n = 10,000 (≈ 0.935 → 0.97), consistent with its general drift
-#   toward over-coverage under imbalance.
-# - **M3, KS, and Working–Hotelling.** They look the same at both
-#   prevalences: flat at 1.00 for the first two, collapsing off-model for
+#   and n = 10,000 (≈ 0.935 → 0.96 at 30% → 0.97 at 10%), consistent with
+#   its general drift toward over-coverage under imbalance.
+# - **M3, KS, and Working–Hotelling.** They look the same at every
+#   prevalence: flat at 1.00 for the first two, collapsing off-model for
 #   Working–Hotelling.
 
 # %% [markdown]
@@ -332,7 +353,8 @@ pp.figP24_calibration_distribution(cells)
 #   with no filled points at any prevalence.
 # - **Raw fiducial band.** At 95% four traces dive from about +0.03 at 50%
 #   to −0.03 to −0.06 at 10%, and one more crosses below zero at 80%. All
-#   five are heteroscedastic-Gaussian cells.
+#   five are heteroscedastic-Gaussian cells. Their 30% midpoints sit near
+#   zero; one (n = 300, 0.939) is already filled.
 # - **Envelope.** Its traces tilt upward (more conservative) at 10%.
 # - **Working–Hotelling.** It has a fan of filled points at every
 #   prevalence.
@@ -378,16 +400,17 @@ pp.figP25_hetero_spotlight(frames)
 #
 # - **Positives wider (σ₊/σ₋ > 1.5).** The raw fiducial band covers 0.786
 #   at n = 300 and 0.747 at n = 1,000 at 10% prevalence, against 0.924 and
-#   0.937 balanced. Its plateau-region (FPR 90–100%) violation rate is
-#   0.21–0.24 at 10% against 0.05–0.07 balanced. Even balanced it was
-#   already below nominal in this corner; imbalance multiplies the defect.
-# - **Recovery at large n.** Coverage recovers as n grows (0.896 at
-#   n = 10,000) as the per-class counts outgrow the hook.
+#   0.937 balanced and 0.865 and 0.896 at 30%. Its plateau-region
+#   (FPR 90–100%) violation rate is 0.21–0.24 at 10%, 0.09–0.13 at 30%, and
+#   0.05–0.07 balanced. Even balanced it was already below nominal in this
+#   corner; imbalance multiplies the defect.
+# - **Recovery at large n.** Coverage recovers as n grows (0.896 at 10% and
+#   0.952 at 30% for n = 10,000) as the per-class counts outgrow the hook.
 # - **Positives tighter or similar.** There is no failure at either
 #   prevalence. The bulge at FPR = 0 is resolved by the positives above
 #   the largest negative, and imbalance leaves fewer positives, not more
 #   unresolved negatives, at that end.
-# - **Hybrid.** It holds 0.96–0.99 in every column at both prevalences,
+# - **Hybrid.** It holds 0.96–0.99 in every column at every prevalence,
 #   and its plateau violation rate stays at or below 0.011.
 #
 # This confirms the mechanism: with n₀ ≫ n₁, many negatives fall below the
@@ -404,7 +427,8 @@ pp.figP25_hetero_spotlight(frames)
 # sample sizes n = 30–10,000. A prevalence appears only once its run has
 # every n for that DGP, so the pooled n mix is identical across points. The
 # per-n view, with n inside each method, is Fig 25 of the single-run
-# analyses (`figures/paper_nov11/`, `figures/paper_nov11_p10/`).
+# analyses (`figures/paper_nov11/`, `figures/paper_nov11_p30/`,
+# `figures/paper_nov11_p10/`).
 
 # %%
 for dgp in pf.SHAPE_BINS:
@@ -412,21 +436,25 @@ for dgp in pf.SHAPE_BINS:
 
 # %% [markdown]
 # **Reading.** Imbalance widens the raw band's failure region in both
-# families and leaves the hybrid where it was.
+# families and leaves the hybrid where it was. The two families respond
+# differently to moderate imbalance.
 #
-# - **Heteroscedastic Gaussian, σ₊/σ₋ = 2–5.** The raw band falls in every
-#   AUC bin at 10%, not only the highest: 0.981 → 0.931 (AUC 0.50–0.75),
-#   0.972 → 0.922, 0.967 → 0.878, and 0.945 → 0.829 (AUC > 0.95), pooled
-#   over n. Per n, the worst points at 10% are 0.64 (AUC > 0.95,
-#   n = 1,000) and 0.75 (AUC 0.90–0.95, n = 300). With σ₊/σ₋ ≤ 2 there is no
-#   shift.
+# - **Heteroscedastic Gaussian, σ₊/σ₋ = 2–5.** The raw band falls step by
+#   step with prevalence, pooled over n (50% → 30% → 10%): 0.981 → 0.976 →
+#   0.931 (AUC 0.50–0.75), 0.972 → 0.961 → 0.922, 0.967 → 0.947 → 0.878,
+#   and 0.945 → 0.905 → 0.829 (AUC > 0.95). At 10% it falls in every AUC
+#   bin, not only the highest. Per n, the worst points are 0.80 at 30%
+#   (AUC > 0.95, n = 300) and 0.64 at 10% (AUC > 0.95, n = 1,000). With
+#   σ₊/σ₋ ≤ 2 there is no shift.
 # - **Student-t, heavy tails at high AUC.** At df 1–2 and AUC > 0.95 the raw
-#   band goes from 0.872 to 0.795 pooled, reaching 0.48 at n = 300 and 0.58
-#   at n = 1,000 for 10%. At df 2–4 and AUC > 0.95 it goes from 0.916 to
-#   0.857, with 0.67 at n = 1,000 and 0.82 even at n = 10,000. At df ≥ 4
-#   nothing moves.
-# - **Hybrid.** It stays at 0.97–0.99 pooled in every panel at both
-#   prevalences. Per n, none of its points has a Wilson upper bound below
+#   band is 0.872 balanced, 0.888 at 30%, and 0.795 at 10% pooled. Per n it
+#   reaches 0.63, 0.56, and 0.48 at n = 300, and 0.58 at n = 1,000 for 10%.
+#   At df 2–4 and AUC > 0.95 it is 0.916, 0.911, and 0.857, with 0.67 at
+#   n = 1,000 and 0.82 even at n = 10,000 for 10%. At df ≥ 4 nothing moves.
+#   The heavy-tail failure is already present balanced and changes little
+#   at 30%; only strong imbalance deepens it.
+# - **Hybrid.** It stays at 0.97–0.99 pooled in every panel at every
+#   prevalence. Per n, none of its points has a Wilson upper bound below
 #   0.95.
 
 # %% [markdown]
@@ -441,9 +469,12 @@ pp.figP08_pareto(cells)
 # **Reading.**
 #
 # - **Shape of each trace.** Every method's trace runs mostly *rightward*:
-#   imbalance costs width, not coverage.
+#   imbalance costs width, not coverage. The 50% → 30% step is short and
+#   the 30% → 10% step long, as the effective-sample-size ratios (1.09 and
+#   1.67) predict.
 # - **Hybrid and raw fiducial.** At n ≥ 1,000 their traces lie on top of
-#   each other, and both stay the tightest calibrated methods at 10%.
+#   each other, and both stay the tightest calibrated methods at every
+#   prevalence.
 # - **Envelope.** Its trace is long and flat: at n = 100–1,000 it ends up
 #   about as wide as M3 at 10% while still over-covering.
 # - **Working–Hotelling.** Its trace climbs and widens, but stays far
@@ -468,7 +499,7 @@ for n in (100, 1000, 10000):
 #
 # - **Coverage.** The coverage traces are short for every method and DGP
 #   except the raw fiducial band in the heteroscedastic Gaussian (0.966 →
-#   0.893 at n = 1,000).
+#   0.950 → 0.893 at n = 1,000).
 # - **Area.** The area traces are long and nearly identical across DGPs:
 #   the width cost of imbalance depends on the class counts, not the score
 #   distribution.
@@ -485,15 +516,17 @@ pp.per_prevalence(data=data, make=lambda p: pf.fig10_width_profile(frames[p]))
 # %% [markdown]
 # **Reading.**
 #
-# - **Width scale (Fig 9).** The panels shift up as a whole at 10%: every
-#   method is wider relative to WH and KS at small n.
-# - **Width profile (Fig 10).** At 10% the hybrid's profile flattens on the
-#   right. At n = 100 its width is 0.45 from FPR 0.5 to 0.9, identical to
-#   M3, because the plateau floor covers most of the curve there. At
-#   n = 1,000 it is 0.072 at FPR 0.9, against 0.047 for the raw band and
-#   0.084 for M3.
+# - **Width scale (Fig 9).** The panels shift up as a whole under
+#   imbalance, slightly at 30% and clearly at 10%: every method is wider
+#   relative to WH and KS at small n.
+# - **Width profile (Fig 10).** Under imbalance the hybrid's profile
+#   flattens on the right. At n = 100 and 10% its width is 0.45 from FPR 0.5
+#   to 0.9, matching M3 at FPR 0.9, because the plateau floor covers most of
+#   the curve there; at 30% it is 0.27 at FPR 0.5 and 0.20 at 0.9. At
+#   n = 1,000 and FPR 0.9 it is 0.072 at 10%, against 0.047 for the raw band
+#   and 0.084 for M3 (0.032, 0.027, and 0.042 at 30%).
 # - **Large n.** At n = 10,000 the hybrid and the raw band agree to within
-#   0.002 at every landmark.
+#   0.002 at every landmark and prevalence.
 
 # %% [markdown]
 # ## 6. Ablations of the hybrid, per prevalence
@@ -518,17 +551,18 @@ pp.per_prevalence(data=data, make=lambda p: pf.fig14_single_component_summary(at
 # - **Balanced (Fig 12).** The two fiducial arms have nearly the same mean
 #   coverage, and the floor's work shows only in the plateau-corner
 #   violation rate (0.002–0.005 raw vs. 0.000–0.002 hybrid).
-# - **At 10%, plateau corner.** The raw band's plateau-corner rate rises to
-#   0.010–0.017 for n = 100–3,000 while the hybrid's stays at
-#   0.001–0.003.
-# - **At 10%, mean coverage.** The raw band's mean coverage drops below the
-#   hybrid's from n = 300 (0.968 vs. 0.978 at n = 1,000; 0.955 vs. 0.977
-#   at AUC > 0.9).
-# - **Worst cell (Figs 11, 14).** The raw band reaches 0.893; the hybrid
-#   stays at 0.967 or above.
+# - **Plateau corner under imbalance.** For n = 100–3,000 the raw band's
+#   plateau-corner rate rises to 0.005–0.009 at 30% and 0.010–0.017 at 10%,
+#   while the hybrid's stays at 0.001–0.003.
+# - **Mean coverage under imbalance.** The raw band's mean coverage drops
+#   below the hybrid's from n = 300. At n = 1,000 it is 0.977 vs. 0.979 at
+#   30% and 0.968 vs. 0.978 at 10%; at AUC > 0.9, 0.971 vs. 0.977 and 0.955
+#   vs. 0.977.
+# - **Worst cell (Figs 11, 14).** The raw band reaches 0.939 at 30% and
+#   0.893 at 10%; the hybrid stays at 0.967 or above.
 # - **M3 alone (Fig 13).** It stays valid and wide at every prevalence. Its
-#   50% band still covers 0.95 at 10%, against 0.99 balanced, so it remains
-#   nearly blind to the nominal level.
+#   50% band covers 0.99 balanced, 0.98 at 30%, and still 0.95 at 10%, so it
+#   remains nearly blind to the nominal level.
 
 # %% [markdown]
 # ## 7. What the floor buys, per prevalence
@@ -552,13 +586,15 @@ pp.per_prevalence(data=data, make=lambda p: pf.fig19d_floor_occupancy(frames[p])
 #
 # - **Paired effect (Fig 15).** At 10%, pooled over DGPs, the floor raises
 #   95% coverage by +0.007 at n = 300 and +0.010 at n = 1,000 (95% CIs
-#   +0.006 to +0.009 and +0.008 to +0.011). Balanced, the pooled difference
-#   stays within ±0.003. The pooled number hides two opposite effects:
+#   +0.006 to +0.009 and +0.008 to +0.011). At 30% the pooled gain is
+#   +0.002 to +0.004 for n = 300–1,000, and balanced it stays within
+#   ±0.003. The pooled number hides two opposite effects:
 #   - In the heteroscedastic Gaussian the floor adds +0.04 to +0.08 at 95%
-#     for n = 30–3,000, and +0.08 to +0.11 at 80%.
+#     for n = 30–3,000 at 10%, and +0.05 to +0.11 at 80%. At 30% it adds
+#     +0.01 to +0.04 at 95% (largest at n = 300) and up to +0.04 at 80%.
 #   - In the other six DGPs the hybrid covers about 0.005 *less* at 95% and
-#     0.02–0.07 less at 80% and 50%. Where the raw band over-covers, the
-#     recalibrated trim moves it toward nominal.
+#     0.01–0.07 less at 80% and 50%, at every prevalence. Where the raw band
+#     over-covers, the recalibrated trim moves it toward nominal.
 #
 #   So under imbalance the floor both repairs the one failing shape and
 #   tightens calibration everywhere else.
@@ -566,16 +602,19 @@ pp.per_prevalence(data=data, make=lambda p: pf.fig19d_floor_occupancy(frames[p])
 #   ends after 7–9 negative order statistics at every prevalence. The right
 #   floor follows the plateau, the run of negatives below the smallest
 #   positive, which lengthens as positives become scarce. At n = 1,000 the
-#   suffix holds a median 38 negatives at 50%, 108 at 30% (binormal only so
-#   far), and 170 at 10%.
+#   suffix holds a median 38 negatives at 50%, 69 at 30%, and 170 at 10%:
+#   about 1.8× and 4.5× the balanced run, against width ratios of 1.09 and
+#   1.67. This faster growth is why the raw band's corner defect outpaces
+#   the information loss.
 # - **Share of the curve floored.** The floored share of the interior grows
-#   accordingly, from 0.20 to 0.30 at n = 1,000.
-# - **Where the misses move (Figs 17–18).** At 10% the floor removes the
-#   raw band's below-band misses inside its region (0.016 → under 0.001 at
-#   n = 300–1,000). The misses that remain sit outside it, as they do
-#   balanced. The price is in the interior: the hybrid's above-band misses
-#   outside the region run about 0.014 for n = 100–3,000, against
-#   0.006–0.010 for the raw band, because the recalibrated trim spends the
+#   accordingly: 0.20, 0.22, and 0.30 at n = 1,000.
+# - **Where the misses move (Figs 17–18).** Under imbalance the floor
+#   removes the raw band's below-band misses inside its region (0.007–0.009
+#   at 30% and 0.016 at 10% → under 0.001 at n = 300–1,000). The misses that
+#   remain sit outside it, as they do balanced. The price is in the
+#   interior: the hybrid's above-band misses outside the region run about
+#   0.011–0.013 at 30% and 0.014 at 10% for n = 100–3,000, against
+#   0.006–0.011 for the raw band, because the recalibrated trim spends the
 #   slack the floor frees.
 
 # %% [markdown]
@@ -614,16 +653,16 @@ pd.concat(audit, names=["prevalence", "method"]).round(4)
 # **Reading.**
 #
 # - **Direction.** Imbalance tilts the raw band's misses toward the truth
-#   lying *below* the band: at n = 1,000 its below-band miss rate is 0.021
-#   at 10% against 0.010 balanced. Its above-band rate barely moves (0.011
-#   vs. 0.010).
-# - **Hybrid.** The floor brings the below-band rate back to 0.008, close
-#   to balanced.
-# - **Depth.** The hybrid's P99 depth rises from 0.002–0.004 to
-#   0.003–0.008 at 10%. It stays under one point of TPR, and deep misses
+#   lying *below* the band: at n = 1,000 its below-band miss rate is 0.010
+#   balanced, 0.012 at 30%, and 0.021 at 10%. Its above-band rate barely
+#   moves (0.010–0.011).
+# - **Hybrid.** The floor holds the below-band rate at 0.008–0.009 at every
+#   prevalence.
+# - **Depth.** The hybrid's P99 depth is 0.002–0.004 balanced and at 30%,
+#   and 0.003–0.008 at 10%. It stays under one point of TPR, and deep misses
 #   (> 5 points at AUC > 0.9) remain at or below 0.0015.
 # - **Working–Hotelling.** Its deep-miss rate is unchanged by prevalence
-#   (0.42 at n = 10,000).
+#   (0.42–0.43 at n = 10,000).
 
 # %% [markdown]
 # ## 9. Cost
@@ -636,18 +675,19 @@ pp.figP23_runtime(frames)
 #
 # - **Fiducial suite.** It runs about 1.2–1.5× slower at 10% (2.1 s vs.
 #   1.3 s per replicate at n = 1,000; 11.6 s vs. 9.6 s at n = 10,000)
-#   because its grid has n₀ + 1 points and n₀ is 0.9n instead of 0.5n.
-# - **Other methods.** The closed-form methods stay in milliseconds at both
-#   prevalences.
+#   because its grid has n₀ + 1 points and n₀ is 0.9n instead of 0.5n. At
+#   30% it sits in between (1.7 s and 10.3 s).
+# - **Other methods.** The closed-form methods stay in milliseconds at every
+#   prevalence.
 
 # %% [markdown]
 # ## Conclusions
 #
 # 1. **The hybrid's calibration does not depend on prevalence.** Over
-#    n = 30–10,000 it has no cell significantly below nominal at any level,
-#    at 50% or at 10% prevalence. Its worst 95% cell is 0.967 at 10% against
-#    0.969 balanced, and its calibration error across levels is the same or
-#    slightly lower at 10%.
+#    n = 30–10,000 it has no cell significantly below nominal at any level
+#    at 50%, 30%, or 10% prevalence. Its worst 95% cell is 0.969, 0.969, and
+#    0.967, and its calibration error across levels is the same or slightly
+#    lower under imbalance.
 # 2. **Imbalance is where the floor earns its place.** Without the floor,
 #    the fiducial band fails in the heteroscedastic Gaussian when the
 #    positives are the more dispersed class: 0.747 coverage at n = 1,000
@@ -658,20 +698,26 @@ pp.figP23_runtime(frames)
 #    n = 300–1,000. Elsewhere it moves the over-covering raw band toward
 #    nominal at every level. A second, more local imbalance-amplified pocket,
 #    heavy-tailed Student-t (df ≈ 2) at n = 1,000, falls from about 0.90 to
-#    0.83 for the raw band (Fig 3) and is also absent from the hybrid.
-# 3. **The width cost of imbalance is the information cost.** Both fiducial
-#    arms are 1.66–1.69× wider at 10% than balanced for n ≥ 300. That is
-#    the effective-sample-size ratio √(0.25/0.09) = 1.667, so the rank-space
-#    bands lose nothing beyond what fewer positives must cost.
-# 4. **The envelope over-covers more under imbalance.** It stays valid,
-#    loses its one sub-nominal balanced cell, and widens to 0.82× KS at
-#    n = 1,000 (0.56× balanced), so its calibration error rises.
-# 5. **The comparators keep their character.** M3 and KS cover about 1.00 at
+#    0.83 for the raw band at 10% (Fig 3) and is also absent from the
+#    hybrid.
+# 3. **The raw band's defect grows faster than the imbalance.** At 30% the
+#    heteroscedastic-Gaussian failure is a fifth to a third as deep as at
+#    10% and already yields one significant cell (0.939); the Student-t
+#    pocket is no deeper than balanced. The defect tracks the plateau run of
+#    negatives below the smallest positive, which grows 1.8× at 30% and
+#    4.5× at 10% while the width grows only 1.09× and 1.67×.
+# 4. **The width cost of imbalance is the information cost.** Both fiducial
+#    arms are 1.09–1.10× wider at 30% and 1.66–1.69× wider at 10% than
+#    balanced for n ≥ 300. Those are the effective-sample-size ratios
+#    √(0.25/0.21) = 1.091 and √(0.25/0.09) = 1.667, so the rank-space bands
+#    lose nothing beyond what fewer positives must cost.
+# 5. **The envelope over-covers more under imbalance.** It stays valid,
+#    loses its one sub-nominal balanced cell already at 30%, and widens to
+#    0.62× KS at 30% and 0.82× at 10% for n = 1,000 (0.56× balanced), so its
+#    calibration error rises.
+# 6. **The comparators keep their character.** M3 and KS cover about 1.00 at
 #    every prevalence and level. Working–Hotelling is broken at every
 #    prevalence (25+ cells significantly below nominal per level).
-# 6. **The runs agree where they overlap.** The n = 1,000, 10% cell drawn in
+# 7. **The runs agree where they overlap.** The n = 1,000, 10% cell drawn in
 #    both runs differs only by Monte Carlo noise (z-scores at 95%: mean
 #    −0.11, SD 0.98).
-# 7. **Pending.** The 30% run was partial (binormal only) when this was
-#    written. Rerunning the notebook fills in the middle series, and the
-#    readings above should be rechecked for monotonicity in prevalence.
