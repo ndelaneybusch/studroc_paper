@@ -169,23 +169,21 @@ The fiducial band shows problems with heteroscedastic data, and it gets worse at
 ![Fiducial coverage by prevalence](figures/readme/fiducial_prevalence_heatmap.png)
 
 A row average understates the failure, because only some draws in a row cause
-it. Splitting the draws by shape and true AUC locates it (95% bands):
+it. Sweeping each distribution's shape parameter locates it. This is the view
+used for Working–Hotelling in Section 3, at 50% prevalence, with the coverage
+axis enlarged.
 
-- **Dispersed positives at high AUC.** For heteroscedastic-Gaussian draws with
-  σ₊/σ₋ > 2 and AUC > 0.95, coverage is 0.89 at n = 300 and 0.91 at n = 1,000.
-  At 30% prevalence it is 0.80 and 0.85. At 10% prevalence it is 0.75 and 0.64.
-- **Heavy tails at high AUC.** For Student-t draws with df < 4 and AUC > 0.95,
-  coverage is 0.77 at n = 300 and 0.80 at n = 1,000. At 10% prevalence it is
-  0.64 at n = 1,000. These draws are 3% of the Student-t design, so the
-  Student-t row of the heatmap does not show them.
-- **Imbalance widens the failure.** At 10% prevalence the dispersed-positive
-  draws also fail at AUC ≤ 0.90, with coverage of 0.86–0.93 for n = 30 to 300.
-- **Not monotone in n.** Coverage is worst at n = 300 to 1,000. By n = 10,000
-  it is back to 0.94–0.96 at 50% and 30% prevalence and 0.86 at 10%.
-- **Everything else is fine.** On all other draws coverage is 0.97–0.99 at
-  every n, AUC, and prevalence.
+![Fiducial coverage against shape](figures/readme/fiducial_fragility_shape.png)
 
-Section 7 plots these strata with and without the floor.
+Coverage dips for heavy-tailed Student-t scores (low df) and at the extreme σ
+ratios of the heteroscedastic Gaussian. The other panels are flat. The same
+sweep against true AUC:
+
+![Fiducial coverage against AUC](figures/readme/fiducial_fragility_auc.png)
+
+The heteroscedastic Gaussian drops at AUC above 0.95, and Student-t begins to.
+In both figures the dips are deepest at n = 100 to 1,000 and have mostly closed
+by n = 10,000. The heatmaps above show that imbalance deepens them.
 
 ### The corners are the problem
 

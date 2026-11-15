@@ -520,48 +520,125 @@ def fig_level_calibration(runs: Runs) -> None:
     save(fig=fig, name="level_calibration")
 
 
-def fig_wh_fragility(runs: Runs) -> None:
-    """Draw Working-Hotelling 95% coverage against each DGP's shape parameter.
+def draw_rate_curves(
+    *, ax: plt.Axes, df: pd.DataFrame, column: str, logx: bool
+) -> None:
+    """Draw smoothed coverage against one variable, one curve per sample size.
 
-    One panel per shape parameter and one curve per sample size, each a
-    logistic-GAM smooth with a pointwise 95% ribbon.
+    Each curve is a logistic-GAM smooth with a pointwise 95% ribbon.
+
+    Args:
+        ax: Target axes.
+        df: Trials of one method, level, and DGP.
+        column: Variable on the x-axis.
+        logx: Whether to smooth and draw on a log x-axis.
     """
-    df = runs.balanced
-    df = df[(df["alpha"] == 0.05) & (df["method"] == "working_hotelling")]
-    rows, cols = pf.grid_shape(len(pf.SHAPE_SPECS))
-    fig, axes = plt.subplots(
-        rows, cols, figsize=(3.4 * cols, 2.9 * rows), sharey=True, squeeze=False
-    )
-    for ax, (dgp, col, xlabel, logx) in zip(axes.flat, pf.SHAPE_SPECS, strict=False):
-        for n in pf.N_ORDER:
-            sub = df[(df["dgp_type"] == dgp) & (df["n_total"] == n)]
-            x = sub[col].to_numpy(float)
-            gx = np.log10(x) if logx else x
-            grid = np.linspace(gx.min(), gx.max(), 120)
-            fit = pf.fit_rate_curve(
-                x=gx, y=sub["covers_entirely"].to_numpy(), grid=grid
-            )
-            if fit is None:
-                continue
-            rate, lo, hi = fit
-            xs = 10**grid if logx else grid
-            ax.plot(xs, rate, color=pf.n_color(n), lw=1.8, label=f"n = {n:,}")
-            ax.fill_between(xs, lo, hi, color=pf.n_color(n), alpha=0.14, lw=0)
-        if logx:
-            ax.set_xscale("log")
-        pf.add_nominal_line(ax, 0.05)
-        ax.set_title(pf.dlabel(dgp), fontsize=10)
-        ax.set_xlabel(xlabel, fontsize=8.5)
-        ax.set_ylim(-0.03, 1.03)
-    for ax in axes.flat[len(pf.SHAPE_SPECS) :]:
+    for n in pf.N_ORDER:
+        sub = df[df["n_total"] == n]
+        x = sub[column].to_numpy(float)
+        gx = np.log10(x) if logx else x
+        grid = np.linspace(gx.min(), gx.max(), 120)
+        fit = pf.fit_rate_curve(x=gx, y=sub["covers_entirely"].to_numpy(), grid=grid)
+        if fit is None:
+            continue
+        rate, lo, hi = fit
+        xs = 10**grid if logx else grid
+        ax.plot(xs, rate, color=pf.n_color(n), lw=1.8, label=f"n = {n:,}")
+        ax.fill_between(xs, lo, hi, color=pf.n_color(n), alpha=0.14, lw=0)
+    if logx:
+        ax.set_xscale("log")
+    pf.add_nominal_line(ax, 0.05)
+
+
+def finish_sweep(*, fig: plt.Figure, axes: np.ndarray, used: int) -> None:
+    """Label a sweep grid's rows and put the sample-size legend in its last panel.
+
+    Args:
+        fig: Figure holding the grid.
+        axes: Panel grid whose last panel is unused.
+        used: Number of panels holding data.
+    """
+    for ax in axes.flat[used:]:
         ax.axis("off")
     for ax in axes[:, 0]:
         ax.set_ylabel("Coverage (95% band)")
     handles, labels = axes.flat[0].get_legend_handles_labels()
     axes.flat[-1].legend(handles, labels, loc="center", title="Total sample size")
-    fig.suptitle("Working–Hotelling: coverage against each distribution's shape")
     fig.tight_layout()
-    save(fig=fig, name="wh_fragility")
+
+
+def fig_shape_sweep(
+    *, runs: Runs, method: str, ylim: tuple[float, float], title: str, name: str
+) -> None:
+    """Draw one method's 95% coverage against each DGP's shape parameter.
+
+    Args:
+        runs: The loaded runs.
+        method: Method to draw.
+        ylim: Coverage axis limits.
+        title: Figure title.
+        name: Output file stem.
+    """
+    df = runs.balanced
+    df = df[(df["alpha"] == 0.05) & (df["method"] == method)]
+    rows, cols = pf.grid_shape(len(pf.SHAPE_SPECS))
+    fig, axes = plt.subplots(
+        rows, cols, figsize=(3.4 * cols, 2.9 * rows), sharey=True, squeeze=False
+    )
+    for ax, (dgp, col, xlabel, logx) in zip(axes.flat, pf.SHAPE_SPECS, strict=False):
+        draw_rate_curves(ax=ax, df=df[df["dgp_type"] == dgp], column=col, logx=logx)
+        ax.set_title(pf.dlabel(dgp), fontsize=10)
+        ax.set_xlabel(xlabel, fontsize=8.5)
+        ax.set_ylim(*ylim)
+    fig.suptitle(title)
+    finish_sweep(fig=fig, axes=axes, used=len(pf.SHAPE_SPECS))
+    save(fig=fig, name=name)
+
+
+def fig_wh_fragility(runs: Runs) -> None:
+    """Draw Working-Hotelling coverage against each DGP's shape parameter."""
+    fig_shape_sweep(
+        runs=runs,
+        method="working_hotelling",
+        ylim=(-0.03, 1.03),
+        title="Working–Hotelling: coverage against each distribution's shape",
+        name="wh_fragility",
+    )
+
+
+FIDUCIAL_SWEEP_YLIM = (0.75, 1.005)
+
+
+def fig_fiducial_fragility(runs: Runs) -> None:
+    """Draw the unfloored band's coverage against each DGP's shape parameter."""
+    fig_shape_sweep(
+        runs=runs,
+        method="fiducial",
+        ylim=FIDUCIAL_SWEEP_YLIM,
+        title="Fiducial band without a floor: coverage against each "
+        "distribution's shape",
+        name="fiducial_fragility_shape",
+    )
+
+
+def fig_fiducial_auc(runs: Runs) -> None:
+    """Draw the unfloored band's 95% coverage against true AUC, per DGP."""
+    df = runs.balanced
+    df = df[(df["alpha"] == 0.05) & (df["method"] == "fiducial")]
+    rows, cols = pf.grid_shape(len(pf.DGP_ORDER))
+    fig, axes = plt.subplots(
+        rows, cols, figsize=(3.4 * cols, 2.9 * rows), sharey=True, squeeze=False
+    )
+    for ax, dgp in zip(axes.flat, pf.DGP_ORDER, strict=False):
+        draw_rate_curves(
+            ax=ax, df=df[df["dgp_type"] == dgp], column="true_auc", logx=False
+        )
+        ax.set_title(pf.dlabel(dgp), fontsize=10)
+        ax.set_xlabel("True AUC", fontsize=8.5)
+        ax.set(xlim=(0.55, 1.0), ylim=FIDUCIAL_SWEEP_YLIM)
+    fig.suptitle("Fiducial band without a floor: coverage against true AUC")
+    finish_sweep(fig=fig, axes=axes, used=len(pf.DGP_ORDER))
+    save(fig=fig, name="fiducial_fragility_auc")
 
 
 def fig_coverage_vs_n(runs: Runs) -> None:
@@ -1370,6 +1447,8 @@ def main() -> None:
         "coverage_vs_area": fig_pareto,
         "tightness_vs_ks": fig_tightness,
         "fiducial_prevalence_heatmap": fig_fiducial_prevalence_heatmap,
+        "fiducial_fragility_shape": fig_fiducial_fragility,
+        "fiducial_fragility_auc": fig_fiducial_auc,
         "failure_corners": fig_failure_corners,
         "ell_vs_ks": fig_ell_vs_ks,
         "ell_heatmap": fig_ell_heatmap,
