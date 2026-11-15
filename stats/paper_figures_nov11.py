@@ -1,8 +1,9 @@
 """Paper figures and tables for the nov11 family of simulation runs.
 
-The runs compare the rank-space fiducial band with its localized exact M3
-floor (``fiducial_hybrid``, the method under study) against the raw fiducial
-band (paired on the same fiducial cloud), the exact M3 band, the studentized
+The runs compare the rank-space fiducial band with its localized ELL floor
+(``fiducial_hybrid``, the method under study) against the raw fiducial band
+(paired on the same fiducial cloud), the exact equal-local-level (ELL) band
+(``m3``), the studentized
 bootstrap envelope, and the KS and Working-Hotelling baselines: 6,000 LHS
 draws per DGP, seven DGPs, and 50/80/95% bands. The standard run
 (``data/results/nov11``) is balanced at n = 10 to 10,000 plus 10% prevalence
@@ -76,9 +77,9 @@ class MethodStyle:
 # Okabe-Ito palette. The two fiducial arms share a hue family (vermillion /
 # orange) because they are one band with and without the floor.
 METHODS: dict[str, MethodStyle] = {
-    "fiducial_hybrid": MethodStyle("Fiducial + M3 floor (hybrid)", "#D55E00"),
+    "fiducial_hybrid": MethodStyle("Fiducial + ELL floor (hybrid)", "#D55E00"),
     "fiducial": MethodStyle("Fiducial, no floor", "#E69F00", ls="--", marker="s"),
-    "m3": MethodStyle("M3 exact band", "#CC79A7", marker="^"),
+    "m3": MethodStyle("ELL band (equal local levels)", "#CC79A7", marker="^"),
     "envelope": MethodStyle("Studentized envelope", "#009E73", marker="v"),
     "working_hotelling": MethodStyle(
         "Working–Hotelling (binormal)", "#0072B2", marker="D"
@@ -1327,7 +1328,7 @@ def fig10_width_profile(df: pd.DataFrame) -> plt.Figure:
 
 # =============================================================================
 # 4. Ablations: the hybrid without its floor (raw fiducial) and the floor
-#    alone (M3)
+#    alone (the ELL band)
 # =============================================================================
 
 ABLATIONS = [HERO, "fiducial", "m3"]
@@ -1473,7 +1474,7 @@ def fig12_corner_ablation(df: pd.DataFrame) -> plt.Figure:
 
 
 def fig13_floor_only_ablation(cells: pd.DataFrame) -> plt.Figure:
-    """Coverage at 95% and 50% and band area for the floor alone (M3).
+    """Coverage at 95% and 50% and band area for the floor alone (the ELL band).
 
     Args:
         cells: Output of :func:`cell_summary`.
@@ -1512,13 +1513,23 @@ def fig13_floor_only_ablation(cells: pd.DataFrame) -> plt.Figure:
     ax.set_xlabel("Total sample size n")
     ax.set_ylabel("Mean band area")
     ax.set_title("Width: 95% (solid) and 50% (dashed)")
-    fig.suptitle("The floor alone (M3) is valid but wide and nearly level-blind")
+    fig.suptitle(
+        "The floor alone (the ELL band) is valid but wide and nearly level-blind"
+    )
+    fig.text(
+        0.01,
+        -0.03,
+        "ELL = equal local levels: each class's band gives every order statistic "
+        "the same exact Beta tail probability, and the two compose into an ROC band.",
+        fontsize=8,
+        color="0.4",
+    )
     fig.tight_layout()
     return save_figure(fig, "fig13_floor_only_ablation")
 
 
 def fig14_single_component_summary(cells: pd.DataFrame) -> plt.Figure:
-    """Worst-cell coverage, area relative to M3, and calibration error by n.
+    """Worst-cell coverage, area relative to the ELL band, and calibration error by n.
 
     Args:
         cells: Output of :func:`cell_summary`.
@@ -1546,7 +1557,11 @@ def fig14_single_component_summary(cells: pd.DataFrame) -> plt.Figure:
             "Worst-cell coverage (95% band)",
             "Leakiness: worst DGP × configuration",
         ),
-        (ratio, "Band area ÷ M3 area (95% band)", "Width relative to the floor alone"),
+        (
+            ratio,
+            "Band area ÷ ELL-band area (95% band)",
+            "Width relative to the floor alone",
+        ),
         (err, "Mean |coverage − nominal|, 3 levels", "Calibration across levels"),
     ]
     for ax, (data, ylabel, title) in zip(axes, panels, strict=True):
@@ -1560,7 +1575,7 @@ def fig14_single_component_summary(cells: pd.DataFrame) -> plt.Figure:
     axes[0].legend(fontsize=7.5, loc="lower left")
     fig.suptitle(
         "Neither component alone: the raw band is leaky in its worst cell, "
-        "M3 is wide and level-blind"
+        "the ELL band is wide and level-blind"
     )
     fig.tight_layout()
     return save_figure(fig, "fig14_single_component_summary")
@@ -1648,7 +1663,7 @@ def fig15_paired_floor_effect(paired: pd.DataFrame) -> plt.Figure:
     axes[1, 0].set_ylabel("Discordant replicates")
     handles, labels = axes[0, 0].get_legend_handles_labels()
     fig.legend(handles, labels, loc="lower center", ncol=4, bbox_to_anchor=(0.5, -0.06))
-    fig.suptitle("What the M3 floor changes, replicate by replicate on one cloud")
+    fig.suptitle("What the ELL floor changes, replicate by replicate on one cloud")
     fig.tight_layout()
     return save_figure(fig, "fig15_paired_floor_effect")
 
@@ -1729,7 +1744,7 @@ def fig16_floor_region_geometry(df: pd.DataFrame) -> plt.Figure:
     ax.set_title("How much of the curve the floor owns")
     ax.set_ylim(0, 1)
     ax.legend(fontsize=7.5)
-    fig.suptitle("Geometry of the localized M3 floor region")
+    fig.suptitle("Geometry of the localized ELL floor region")
     fig.tight_layout()
     return save_figure(fig, "fig16_floor_region_geometry")
 
@@ -1862,12 +1877,15 @@ EXAMPLE_SHAPE: dict[str, dict[str, float]] = {
 EXAMPLE_AUCS = [0.70, 0.85, 0.95]
 
 
-def make_example_dgp(*, dgp_type: str, auc: float):
+def make_example_dgp(
+    *, dgp_type: str, auc: float, shape: dict[str, float] | None = None
+):
     """Build a DGP at a target AUC with representative shape parameters.
 
     Args:
         dgp_type: DGP name.
         auc: Target AUC.
+        shape: Shape parameters; defaults to the DGP's ``EXAMPLE_SHAPE``.
 
     Returns:
         The DGP instance.
@@ -1892,7 +1910,8 @@ def make_example_dgp(*, dgp_type: str, auc: float):
         "weibull": make_weibull_dgp,
     }
     lhs = {"auc": np.array([auc])} | {
-        k: np.array([v]) for k, v in EXAMPLE_SHAPE[dgp_type].items()
+        k: np.array([v])
+        for k, v in (EXAMPLE_SHAPE[dgp_type] if shape is None else shape).items()
     }
     params = {}
     for key, value in map_lhs_to_dgp(dgp_type, lhs).items():
@@ -1907,14 +1926,14 @@ def make_example_dgp(*, dgp_type: str, auc: float):
 
 @dataclass(frozen=True)
 class ExampleBand:
-    """One seeded dataset with its fiducial, hybrid, and M3 bands.
+    """One seeded dataset with its fiducial, hybrid, and ELL bands.
 
     Attributes:
         fpr: Native FPR grid.
         empirical: Empirical TPR at the top of each jump.
         true: True TPR.
         bands: Method name to (lower, upper).
-        floor: Grid mask on which the hybrid took the M3 hull.
+        floor: Grid mask on which the hybrid took the ELL hull.
     """
 
     fpr: np.ndarray
@@ -2065,11 +2084,19 @@ def fig19_example_bands(*, family: str, n: int = 300) -> plt.Figure:
         Patch(
             facecolor=FLOOR_COLOR,
             alpha=FLOOR_ALPHA,
-            label="Floor region (M3 hull taken)",
+            label="Floor region (ELL hull taken)",
         ),
     ]
     fig.legend(handles=legend, loc="lower center", ncol=3, bbox_to_anchor=(0.5, -0.06))
     fig.suptitle(f"Example 95% bands at n = {n} — {family}", y=1.005)
+    fig.text(
+        0.01,
+        -0.09,
+        "ELL band: the exact equal-local-level band. Shaded: where the hybrid "
+        "takes its hull instead of the fiducial band.",
+        fontsize=8,
+        color="0.4",
+    )
     fig.tight_layout()
     slug = family.split(" ")[0].lower().replace("-", "_")
     return save_figure(fig, f"fig19_example_bands_{slug}")
@@ -2120,7 +2147,7 @@ def fig19d_floor_occupancy(df: pd.DataFrame, *, alpha: float = 0.05) -> plt.Figu
     cbar = fig.colorbar(mesh, ax=axes, fraction=0.025, pad=0.01)
     cbar.set_label("P(FPR in floor region)")
     fig.suptitle(
-        f"Where the M3 floor operates ({level_label(alpha)} band, all replicates)",
+        f"Where the ELL floor operates ({level_label(alpha)} band, all replicates)",
         y=1.06,
     )
     return save_figure(fig, "fig19d_floor_occupancy")
