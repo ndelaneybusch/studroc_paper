@@ -1,21 +1,12 @@
 # A Distribution-Free Confidence Band for the ROC Curve
 
-A simultaneous confidence band for the **true population ROC curve**. It makes
-no assumption about the score distributions, it is about half the area of the
-Kolmogorov–Smirnov band, and it holds coverage on heavy-tailed, skewed, and
+We present a simultaneous confidence band for the **true population ROC curve**. It makes
+no assumption about the score distributions, is about half the area of the
+Kolmogorov–Smirnov band, and holds coverage on heavy-tailed, skewed, and
 multimodal scores where the binormal band fails.
 
 The method is a **rank-space fiducial band** with a **localized exact floor**
-at the two corners of the curve. This README builds it in four steps:
-
-1. The fiducial band without a floor fixes the coverage failure of
-   Working–Hotelling and the width of KS (Sections 2–4).
-2. It under-covers on heavy-tailed and heteroscedastic scores when AUC is
-   high. The misses sit at the two corners of the curve (Section 5).
-3. The equal-local-levels (ELL) band is an exact band with a finite-sample
-   guarantee. It is narrower than KS (Section 6).
-4. Taking the ELL band at the corners and the fiducial band elsewhere repairs
-   the failures at a small cost in width (Section 7).
+at the two corners of the curve. 
 
 The construction and its theory are in
 [`stats/fiducial_band_theory.md`](stats/fiducial_band_theory.md). The
@@ -26,14 +17,11 @@ DGP, n = 10 to 10,000, and 50%, 80%, and 95% bands. That is 12.6 million band
 evaluations for the five methods shown here. Results are at 50% prevalence
 unless stated.
 
-Coverage means the band contains the entire true curve. Coverage closer to
-nominal is better. Coverage above nominal is conservative, not better.
-
 ---
 
 ## 1. The problem with the methods we have
 
-There are two standard families of ROC band. Each has a serious flaw.
+There are two gold-standard ROC bands: bands that assume normality and are ideal when the assumption is met, and uniform bands drawn from nonparametric approaches that guarantee coverage.
 
 **Working–Hotelling assumes the scores are binormal.** It models the ROC as
 `TPR = Φ(a + b·Φ⁻¹(FPR))` and puts a regression band around the fitted line in
@@ -50,15 +38,15 @@ Massart 1990). It covers, but it over-covers: its 50% band contains the true
 curve 99% of the time. The margin is the same at the steep low-FPR corner as in
 the flat interior, so it says little about where the curve is.
 
-A useful band needs three properties:
+**A more useful band would combine the best properties of both**:
 
-1. **Distribution-free.** No parametric model for the scores.
+1. **Distribution-free.** No parametric model for the scores, works for all data.
 2. **Informative.** Much narrower than KS, with width that follows the local
    uncertainty.
-3. **Calibrated.** Coverage near nominal on Gaussian, heavy-tailed, skewed,
-   and multimodal scores alike.
 
-### Non-binormal scores are the usual case
+### Is distribution-free really needed? Logistic regression assumes normality.
+
+Non-binormal scores are extremely common.
 
 - **Heavy tails.** Network logits and many probability outputs have heavier
   tails than a Gaussian. A few extreme scores determine the low-FPR corner of
@@ -91,9 +79,8 @@ exact at every sample size. The band uses it in three steps.
    j-th smallest and j-th largest draw at every grid point. Choose j so that a
    `1 − α` share of the draws lies inside the band everywhere. Every grid point
    gets the same local tail level.
-3. **Corner allowances.** Raise the upper edge to a binomial bound where the
-   empirical TPR reaches 1. Set the lower edge to 0 where no positive exceeds
-   the threshold.
+
+This is followed by some minimal housekeeping: raise the upper edge to a binomial bound where the empirical TPR reaches 1, and set the lower edge to 0 where no positive exceeds the threshold.
 
 The band uses only ranks, so its coverage depends on the data only through the
 true ROC curve and the two sample sizes. A monotone transform of the scores
@@ -151,20 +138,9 @@ it is far below nominal outside the two Gaussian families. The fiducial band
 
 ![Tightness against KS](figures/readme/tightness_vs_ks.png)
 
-- **Area.** The fiducial band's area is 0.66 of the KS area at n = 10, 0.55 at
-  n = 100, 0.48 at n = 1,000, and 0.45 at n = 10,000. At 10% prevalence the
-  ratio is 0.57 at n = 1,000 and 0.51 at n = 10,000.
-- **Width along the curve.** The gain is largest at low FPR. At n = 1,000 the
-  mean width at FPR = 0.05 is 0.20 for the fiducial band and 0.72 for KS. At
-  FPR = 0.5 it is 0.085 against 0.146.
-- **Price of dropping the model.** The fiducial band has about 1.7 times the
-  area of Working–Hotelling at n ≥ 1,000.
-- **Lower levels.** Simultaneous bands respond weakly to the level. The
-  fiducial band's mean coverage is 0.88–0.95 at the 80% level and 0.66–0.85 at
-  the 50% level. KS covers 0.99 at both.
+The fiducial band captures our primary goals: maintains coverage while barely sacrificing width.
 
-On these summaries the fiducial band meets all three requirements. The next
-section shows where it does not.
+However, there are a few cases where the fiducial band runs into problems.
 
 ---
 
