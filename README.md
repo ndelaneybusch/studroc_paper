@@ -117,11 +117,29 @@ from the binormal model:
 
 ![Working–Hotelling fragility](figures/readme/wh_fragility.png)
 
-Working–Hotelling coverage falls steadily as Student-t tails get heavier (top
-row) or as the negative modes separate (bottom row). The larger sample (right
-column) is worse. The fiducial band stays near the top, with one exception: at
-n = 300 it drops to about 0.81 for the heaviest tails. Section 5 examines that
-failure.
+Each panel sweeps one distribution's shape parameter. Each curve is one sample
+size, from n = 10 (dark) to n = 10,000 (light). Working–Hotelling coverage
+falls as Student-t and Weibull tails get heavier, as the logit-normal σ grows,
+as the Beta skew strengthens, and as the negative modes separate. Wherever the
+scores depart from binormal, the larger samples are lower. The one flat panel
+is the heteroscedastic Gaussian, where the binormal model holds at every σ
+ratio.
+
+### Calibration across confidence levels
+
+The same comparison at the 50%, 80%, and 95% levels, averaged over the seven
+distributions. A calibrated band lies on the dashed line.
+
+![Level calibration](figures/readme/level_calibration.png)
+
+- **KS** covers at least 0.99 at every level. It does not respond to the
+  requested level.
+- **Working–Hotelling** is on the line at n = 10 and falls further below it at
+  every larger n.
+- **The fiducial band** is above the line at every level, and closest to it of
+  the three from n = 100. Its 95% band covers 0.97–0.99. Its 80% band covers
+  0.95 at n = 10 and 0.88 at n = 10,000. Its 50% band covers 0.85 at n = 10
+  and 0.66 at n = 10,000. The over-coverage shrinks with n.
 
 ---
 
@@ -146,33 +164,41 @@ However, there are a few cases where the fiducial band runs into problems.
 
 ## 5. Where the fiducial band fails
 
-Cell averages hide a failure. Within a DGP, the draws that cause it are a
-minority. The figure splits two DGPs by shape and true AUC. Rows are Student-t
-draws with df < 4, heteroscedastic-Gaussian draws whose positives are more than
-twice as dispersed as the negatives (σ₊/σ₋ > 2), and all other draws from all
-seven DGPs. Columns are prevalences. Bars are 95% Wilson intervals.
+The heatmaps repeat the view of Section 3 for the fiducial band alone, on a
+finer color scale. Rows are confidence levels and columns are prevalences.
 
-![Fiducial failure](figures/readme/fiducial_failure.png)
+![Fiducial coverage by prevalence](figures/readme/fiducial_prevalence_heatmap.png)
 
-- **Heavy tails at high AUC.** For Student-t with df < 4 and AUC > 0.95,
-  coverage of the 95% band is 0.77 at n = 300 and 0.80 at n = 1,000. At 10%
-  prevalence it is 0.64 at n = 1,000.
-- **Dispersed positives at high AUC.** For σ₊/σ₋ > 2 and AUC > 0.95, coverage
-  is 0.89 at n = 300 and 0.91 at n = 1,000. At 30% prevalence it is 0.80 and
-  0.85. At 10% prevalence it is 0.75 and 0.64.
+One row changes: the heteroscedastic Gaussian.
+
+- **50% prevalence.** Its 95% band covers 0.961 at n = 300, the lowest cell in
+  the panel, but still above nominal.
+- **30% prevalence.** It covers 0.939 at n = 300.
+- **10% prevalence.** It covers 0.926, 0.897, 0.893, and 0.922 at n = 100,
+  300, 1,000, and 3,000. Its 80% band covers 0.787 at n = 300.
+- **The other six rows** do not change with prevalence.
+
+The number of cells significantly below nominal is 0, 1, and 5 at 50%, 30%, and
+10% prevalence. All are heteroscedastic-Gaussian cells.
+
+A row average understates the failure, because only some draws in a row cause
+it. Splitting the draws by shape and true AUC locates it (95% bands):
+
+- **Dispersed positives at high AUC.** For heteroscedastic-Gaussian draws with
+  σ₊/σ₋ > 2 and AUC > 0.95, coverage is 0.89 at n = 300 and 0.91 at n = 1,000.
+  At 30% prevalence it is 0.80 and 0.85. At 10% prevalence it is 0.75 and 0.64.
+- **Heavy tails at high AUC.** For Student-t draws with df < 4 and AUC > 0.95,
+  coverage is 0.77 at n = 300 and 0.80 at n = 1,000. At 10% prevalence it is
+  0.64 at n = 1,000. These draws are 3% of the Student-t design, so the
+  Student-t row of the heatmap does not show them.
 - **Imbalance widens the failure.** At 10% prevalence the dispersed-positive
-  stratum also fails at AUC ≤ 0.90, with coverage of 0.86–0.93 for n = 30 to
-  300.
+  draws also fail at AUC ≤ 0.90, with coverage of 0.86–0.93 for n = 30 to 300.
 - **Not monotone in n.** Coverage is worst at n = 300 to 1,000. By n = 10,000
-  it is back to 0.94–0.96 at 50% and 30% prevalence and 0.86 at 10%. More data
-  does not fix it at practical sample sizes.
+  it is back to 0.94–0.96 at 50% and 30% prevalence and 0.86 at 10%.
 - **Everything else is fine.** On all other draws coverage is 0.97–0.99 at
   every n, AUC, and prevalence.
 
-The failure is large enough to show in whole-DGP averages once the classes are
-imbalanced. The worst DGP × n cell covers 0.961 at 50% prevalence, 0.939 at
-30%, and 0.893 at 10%. The number of cells significantly below nominal is 0, 1,
-and 5. All of them are heteroscedastic-Gaussian cells.
+Section 7 plots these strata with and without the floor.
 
 ### The corners are the problem
 
@@ -237,22 +263,36 @@ law of each order statistic and tighten in the tails.
 
 ![ELL against KS](figures/readme/ell_vs_ks.png)
 
-- **Coverage.** Both bands hold their guarantee in every cell at every
-  prevalence. At the 95% level the lowest cell is 0.997 for ELL and 0.998 for
-  KS.
-- **Area.** The ELL band's area at the 95% level is 0.91 of KS at n = 10, 0.88
-  at n = 100, 0.73 at n = 1,000, and 0.66 at n = 10,000. The mean ratio is
-  below 1 at every sample size, level, and prevalence.
+- **Area (left).** The ELL band's area at the 95% level is 0.91 of KS at
+  n = 10, 0.88 at n = 100, 0.73 at n = 1,000, and 0.66 at n = 10,000. The mean
+  ratio is below 1 at every sample size and level.
 - **Dataset by dataset.** Both bands were computed on the same datasets. At the
   95% level the ELL band has the smaller area on at least 99.5% of datasets at
-  every n ≥ 100 and every prevalence. At n = 30 the share is 83–100%.
-- **Width along the curve.** At n = 1,000 the mean width at FPR = 0.05 is 0.29
-  for ELL and 0.72 for KS. At FPR = 0.9 it is 0.048 against 0.092. At n = 100
-  and above, ELL is narrower at every FPR we recorded. At n = 30 it is 2–3%
-  wider than KS at FPR 0.5–0.75.
-- **Lower levels.** The ELL band is slightly less conservative. Its 50% band
-  covers 0.94–1.00 across sample sizes and prevalences, against 0.97–1.00 for
-  KS.
+  every n ≥ 100. At n = 30 the share is 83%.
+- **No weak spot (middle, right).** These are the two distributions on which
+  the fiducial band fails. Solid curves are the ELL band at every sample size.
+  They stay at 1.00 across the whole range of tail weight and of σ ratio. The
+  dashed curves are the unfloored fiducial band at n = 300 and n = 1,000, which
+  dips to 0.81 for the heaviest tails and to 0.90 at the extreme σ ratios.
+
+The narrowing costs no coverage anywhere. The heatmaps show every cell at every
+level.
+
+![ELL coverage heatmap](figures/readme/ell_heatmap.png)
+
+The lowest cell is 0.999 at the 95% level, 0.996 at the 80% level, and 0.973 at
+the 50% level. Every cell is at or above nominal, as the theorem requires. The
+band is conservative: its 50% band covers at least 0.97.
+
+The same holds under class imbalance. The figure shows each distribution at
+n = 1,000, with one point per prevalence.
+
+![ELL and KS across prevalences](figures/readme/ell_ks_prevalence.png)
+
+ELL covers at least 0.997 for every distribution at every prevalence. Its area
+is smaller than KS's for every distribution at every prevalence: about 0.14
+against 0.20 at 50% prevalence and 0.22 against 0.28 at 10%. Both bands widen
+as positives become scarce.
 
 The ELL band carries the same kind of guarantee as KS with less width. It is
 the better guaranteed band. It is still not the band to use everywhere: its
@@ -301,7 +341,10 @@ takes the ELL lower edge there and covers.
 
 ### It repairs the failing strata
 
-The figure repeats the layout of Section 5 for true AUC > 0.9, with both bands.
+The figure shows coverage of both bands at true AUC > 0.9. Rows are the two
+failing strata of Section 5 (Student-t with df < 4, heteroscedastic Gaussian
+with σ₊/σ₋ > 2) and all other draws. Columns are prevalences. Bars are 95%
+Wilson intervals.
 
 ![Hybrid repair](figures/readme/hybrid_repair.png)
 

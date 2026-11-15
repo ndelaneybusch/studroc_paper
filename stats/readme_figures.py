@@ -30,6 +30,7 @@ import paper_figures_nov11 as pf
 import seaborn as sns
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
+from matplotlib.typing import FillStyleType
 
 FIG_DIR = Path("figures/readme")
 RUNS: dict[float, Path] = {
@@ -380,85 +381,186 @@ def fig_corner_examples() -> None:
 # =============================================================================
 
 
+def draw_coverage_heatmap(
+    *,
+    ax: plt.Axes,
+    cells: pd.DataFrame,
+    alpha: float,
+    lim: float,
+    ylabels: bool,
+    cbar: bool = True,
+) -> None:
+    """Draw one method's coverage minus nominal by DGP and n, annotated.
+
+    Args:
+        ax: Target axes.
+        cells: Cell summaries of one method at one prevalence.
+        alpha: Band level.
+        lim: Color limit, as a deviation from nominal.
+        ylabels: Whether to label the DGP rows.
+        cbar: Whether to draw the color bar.
+    """
+    cov = cells[cells["alpha"] == alpha].pivot(
+        index="dgp_type", columns="n_total", values="coverage"
+    )
+    sns.heatmap(
+        cov - (1 - alpha),
+        annot=cov,
+        fmt=".3f",
+        cmap="RdBu",
+        center=0,
+        vmin=-lim,
+        vmax=lim,
+        linewidths=0.8,
+        linecolor="white",
+        cbar=cbar,
+        cbar_kws={"label": f"Coverage − {1 - alpha:.2f}", "shrink": 0.85},
+        annot_kws={"fontsize": 7.5},
+        ax=ax,
+    )
+    ax.set_xticklabels([f"{n:,}" for n in cov.columns], rotation=0)
+    ax.set_yticklabels([pf.dlabel(d) for d in cov.index] if ylabels else [], rotation=0)
+    ax.set(xlabel="Total sample size n", ylabel="")
+    ax.grid(False)
+
+
 def fig_coverage_heatmap(runs: Runs) -> None:
     """Draw 95% coverage by DGP and n for the fiducial band and WH."""
     cells = runs.cells_at(0.5)
-    cells = cells[cells["alpha"] == 0.05]
     methods = ["fiducial", "working_hotelling"]
     fig, axes = plt.subplots(1, 2, figsize=(13.2, 4.6), constrained_layout=True)
     for i, (ax, method) in enumerate(zip(axes, methods, strict=True)):
-        cov = cells[cells["method"] == method].pivot(
-            index="dgp_type", columns="n_total", values="coverage"
-        )
-        sns.heatmap(
-            cov - 0.95,
-            annot=cov,
-            fmt=".3f",
-            cmap="RdBu",
-            center=0,
-            vmin=-0.5,
-            vmax=0.5,
-            linewidths=0.8,
-            linecolor="white",
-            cbar_kws={"label": "Coverage − 0.95", "shrink": 0.85},
-            annot_kws={"fontsize": 8},
+        draw_coverage_heatmap(
             ax=ax,
+            cells=cells[cells["method"] == method],
+            alpha=0.05,
+            lim=0.5,
+            ylabels=i == 0,
         )
-        ax.set_xticklabels([f"{n:,}" for n in cov.columns], rotation=0)
-        ax.set_yticklabels(
-            [pf.dlabel(d) for d in cov.index] if i == 0 else [], rotation=0
-        )
-        ax.set(xlabel="Total sample size n", ylabel="", title=LABELS[method])
-        ax.grid(False)
+        ax.set_title(LABELS[method])
     fig.suptitle("Coverage of 95% bands, balanced classes (6,000 datasets per cell)")
     save(fig=fig, name="coverage_heatmap")
 
 
-def fig_wh_fragility(runs: Runs) -> None:
-    """Draw 95% coverage against the departure from binormality."""
-    specs = [
-        ("student_t", "lhs_df", "Degrees of freedom (heavier tails →)", True),
-        ("bimodal_negative", "lhs_mode_separation", "Negative mode separation", False),
-    ]
-    ns = [300, 3000]
-    methods = ["fiducial", "ks", "working_hotelling"]
-    df = runs.balanced
-    df = df[df["alpha"] == 0.05]
-    fig, axes = plt.subplots(2, 2, figsize=(8.8, 6.4), sharey=True)
-    for r, (dgp, col, xlabel, logx) in enumerate(specs):
-        for c, n in enumerate(ns):
+def fig_fiducial_prevalence_heatmap(runs: Runs) -> None:
+    """Draw the unfloored band's coverage by DGP, n, level, and prevalence."""
+    fig, axes = plt.subplots(
+        len(pf.ALPHAS), len(RUNS), figsize=(16.5, 10.5), constrained_layout=True
+    )
+    for r, alpha in enumerate(pf.ALPHAS):
+        for c, prevalence in enumerate(RUNS):
             ax = axes[r, c]
-            for method in methods:
-                sub = df[
-                    (df["method"] == method)
-                    & (df["dgp_type"] == dgp)
-                    & (df["n_total"] == n)
-                ]
-                x = sub[col].to_numpy(float)
-                gx = np.log10(x) if logx else x
-                grid = np.linspace(gx.min(), gx.max(), 120)
-                fit = pf.fit_rate_curve(
-                    x=gx, y=sub["covers_entirely"].to_numpy(), grid=grid
-                )
-                if fit is None:
-                    continue
-                rate, lo, hi = fit
-                xs = 10**grid if logx else grid
-                ax.plot(xs, rate, lw=2.0, color=pf.mcolor(method), label=LABELS[method])
-                ax.fill_between(xs, lo, hi, color=pf.mcolor(method), alpha=0.14, lw=0)
-            if logx:
-                ax.set_xscale("log")
-                ax.invert_xaxis()
-            pf.add_nominal_line(ax, 0.05)
-            ax.set(xlabel=xlabel, ylim=(0, 1.04))
+            cells = runs.cells_at(prevalence)
+            draw_coverage_heatmap(
+                ax=ax,
+                cells=cells[(cells["method"] == "fiducial") & (cells["n_total"] >= 30)],
+                alpha=alpha,
+                lim=pf.DEV_LIMS[alpha],
+                ylabels=c == 0,
+                cbar=c == len(RUNS) - 1,
+            )
             if r == 0:
-                ax.set_title(f"n = {n:,}")
+                ax.set_title(plabel(prevalence))
+            if r < len(pf.ALPHAS) - 1:
+                ax.set_xlabel("")
             if c == 0:
-                ax.set_ylabel(f"{pf.dlabel(dgp)}\nCoverage (95% band)")
-    handles, labels = axes[0, 0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="lower center", ncol=3)
-    fig.suptitle("Coverage as the scores leave the binormal model")
-    fig.tight_layout(rect=(0, 0.05, 1, 1))
+                ax.set_ylabel(f"{pf.level_label(alpha)} band", fontsize=11)
+    fig.suptitle("Fiducial band without a floor: coverage by level and prevalence")
+    save(fig=fig, name="fiducial_prevalence_heatmap")
+
+
+def fig_ell_heatmap(runs: Runs) -> None:
+    """Draw the ELL band's coverage by DGP and n at each level."""
+    cells = runs.cells_at(0.5)
+    cells = cells[cells["method"] == "m3"]
+    fig, axes = plt.subplots(
+        1, len(pf.ALPHAS), figsize=(18, 4.4), constrained_layout=True
+    )
+    for i, (ax, alpha) in enumerate(zip(axes, pf.ALPHAS, strict=True)):
+        draw_coverage_heatmap(
+            ax=ax, cells=cells, alpha=alpha, lim=pf.DEV_LIMS[alpha], ylabels=i == 0
+        )
+        ax.set_title(f"{pf.level_label(alpha)} band")
+    fig.suptitle("ELL band: coverage in every cell, balanced classes")
+    save(fig=fig, name="ell_heatmap")
+
+
+def fig_level_calibration(runs: Runs) -> None:
+    """Draw empirical against nominal coverage, averaged over DGPs, by n."""
+    cells = runs.cells_at(0.5)
+    methods = ["ks", "fiducial", "working_hotelling"]
+    ns = [10, 100, 1000, 10000]
+    fig, axes = plt.subplots(1, len(ns), figsize=(14.5, 4.0), sharey=True)
+    for ax, n in zip(axes, ns, strict=True):
+        mean = (
+            cells[cells["n_total"] == n]
+            .groupby(["method", "alpha"], observed=True)["coverage"]
+            .mean()
+        )
+        for method in methods:
+            series = mean.loc[method].sort_index(ascending=False)
+            ax.plot(
+                1 - series.index,
+                series.to_numpy(),
+                lw=1.8,
+                ms=5.5,
+                label=LABELS[method],
+                **line_style(method),
+            )
+        ax.plot([0.4, 1.0], [0.4, 1.0], color="0.35", ls="--", lw=1.0, zorder=1)
+        ax.set(title=f"n = {n:,}", xlabel="Nominal coverage", ylim=(0, 1.05))
+        ax.set_xticks([0.5, 0.8, 0.95])
+    axes[0].set_ylabel("Empirical coverage\n(mean over distributions)")
+    handles, labels = axes[0].get_legend_handles_labels()
+    handles.append(Line2D([], [], color="0.35", ls="--", lw=1.0))
+    labels.append("Perfect calibration")
+    fig.legend(handles, labels, loc="lower center", ncol=4)
+    fig.suptitle("Calibration across confidence levels (balanced classes)")
+    fig.tight_layout(rect=(0, 0.07, 1, 1))
+    save(fig=fig, name="level_calibration")
+
+
+def fig_wh_fragility(runs: Runs) -> None:
+    """Draw Working-Hotelling 95% coverage against each DGP's shape parameter.
+
+    One panel per shape parameter and one curve per sample size, each a
+    logistic-GAM smooth with a pointwise 95% ribbon.
+    """
+    df = runs.balanced
+    df = df[(df["alpha"] == 0.05) & (df["method"] == "working_hotelling")]
+    rows, cols = pf.grid_shape(len(pf.SHAPE_SPECS))
+    fig, axes = plt.subplots(
+        rows, cols, figsize=(3.4 * cols, 2.9 * rows), sharey=True, squeeze=False
+    )
+    for ax, (dgp, col, xlabel, logx) in zip(axes.flat, pf.SHAPE_SPECS, strict=False):
+        for n in pf.N_ORDER:
+            sub = df[(df["dgp_type"] == dgp) & (df["n_total"] == n)]
+            x = sub[col].to_numpy(float)
+            gx = np.log10(x) if logx else x
+            grid = np.linspace(gx.min(), gx.max(), 120)
+            fit = pf.fit_rate_curve(
+                x=gx, y=sub["covers_entirely"].to_numpy(), grid=grid
+            )
+            if fit is None:
+                continue
+            rate, lo, hi = fit
+            xs = 10**grid if logx else grid
+            ax.plot(xs, rate, color=pf.n_color(n), lw=1.8, label=f"n = {n:,}")
+            ax.fill_between(xs, lo, hi, color=pf.n_color(n), alpha=0.14, lw=0)
+        if logx:
+            ax.set_xscale("log")
+        pf.add_nominal_line(ax, 0.05)
+        ax.set_title(pf.dlabel(dgp), fontsize=10)
+        ax.set_xlabel(xlabel, fontsize=8.5)
+        ax.set_ylim(-0.03, 1.03)
+    for ax in axes.flat[len(pf.SHAPE_SPECS) :]:
+        ax.axis("off")
+    for ax in axes[:, 0]:
+        ax.set_ylabel("Coverage (95% band)")
+    handles, labels = axes.flat[0].get_legend_handles_labels()
+    axes.flat[-1].legend(handles, labels, loc="center", title="Total sample size")
+    fig.suptitle("Working–Hotelling: coverage against each distribution's shape")
+    fig.tight_layout()
     save(fig=fig, name="wh_fragility")
 
 
@@ -740,21 +842,6 @@ def fig_stratum_coverage(
     save(fig=fig, name=name)
 
 
-def fig_fiducial_failure(runs: Runs) -> None:
-    """Draw the unfloored band's coverage by shape stratum and true AUC."""
-    series = [
-        Series("fiducial", (0.5, 0.9), "True AUC ≤ 0.90", "#56B4E9"),
-        Series("fiducial", (0.9, 0.95), "True AUC 0.90–0.95", "#0072B2", marker="s"),
-        Series("fiducial", (0.95, 1.0), "True AUC > 0.95", "#CC0000", marker="D"),
-    ]
-    fig_stratum_coverage(
-        runs=runs,
-        series=series,
-        title="Fiducial band without a floor: coverage by shape, AUC, and prevalence",
-        name="fiducial_failure",
-    )
-
-
 def fig_hybrid_repair(runs: Runs) -> None:
     """Draw both fiducial arms' coverage at true AUC above 0.9 by stratum."""
     series = [
@@ -877,36 +964,39 @@ def fig_failure_corners(runs: Runs) -> None:
 # =============================================================================
 
 
+ELL_SHAPE_PANELS = [
+    ("student_t", "lhs_df", "Degrees of freedom (lower = heavier tails)"),
+    ("hetero_gaussian", "lhs_sigma_ratio", "σ ratio (positive / negative)"),
+]
+CONTRAST_NS = [300, 1000]
+
+
 def fig_ell_vs_ks(runs: Runs) -> None:
-    """Draw the ELL band's area relative to KS and both bands' width profiles."""
+    """Draw the ELL band's area relative to KS and its coverage against shape.
+
+    The shape panels are the two DGPs on which the unfloored fiducial band
+    under-covers; its curves at two sample sizes are drawn for contrast.
+    """
     level_colors = {0.05: "#882255", 0.2: "#CC79A7", 0.5: "#E8B5D0"}
-    fig, axes = plt.subplots(1, 4, figsize=(16, 4.1))
+    cells = runs.cells_at(0.5)
+    fig, axes = plt.subplots(1, 3, figsize=(14.5, 4.3))
     ax = axes[0]
-    for prevalence in RUNS:
-        cells = runs.cells_at(prevalence)
-        for alpha, color in level_colors.items():
-            ratio = area_ratio(
-                cells=cells[cells["alpha"] == alpha], numerator="m3", denominator="ks"
-            )
-            ax.plot(
-                ratio.index,
-                ratio.to_numpy(),
-                color=color,
-                ls=PREV_LS[prevalence],
-                marker="^",
-                lw=1.6,
-                ms=4.5,
-            )
+    for alpha, color in level_colors.items():
+        ratio = area_ratio(
+            cells=cells[cells["alpha"] == alpha], numerator="m3", denominator="ks"
+        )
+        ax.plot(
+            ratio.index,
+            ratio.to_numpy(),
+            color=color,
+            marker="^",
+            lw=1.8,
+            ms=5,
+            label=f"{pf.level_label(alpha)} band",
+        )
     ax.axhline(1.0, color=pf.mcolor("ks"), lw=1.2)
     ax.text(10, 0.99, "KS", va="top", fontsize=9)
-    handles = [
-        *[
-            Line2D([], [], color=c, marker="^", label=f"{pf.level_label(a)} band")
-            for a, c in level_colors.items()
-        ],
-        *[Line2D([], [], color="0.3", ls=PREV_LS[p], label=plabel(p)) for p in RUNS],
-    ]
-    ax.legend(handles=handles, fontsize=7.5, loc="lower left", ncol=2)
+    ax.legend(fontsize=8, loc="lower left")
     ax.set(
         xscale="log",
         ylim=(0.5, 1.03),
@@ -914,11 +1004,142 @@ def fig_ell_vs_ks(runs: Runs) -> None:
         ylabel="ELL band area ÷ KS band area",
         title="Area relative to KS",
     )
-    draw_width_profiles(axes=axes[1:], df=runs.balanced, methods=["ks", "m3"])
-    axes[1].legend(fontsize=8, loc="lower left")
-    fig.suptitle("Two bands with finite-sample guarantees: ELL against KS")
+    df = runs.balanced
+    df = df[df["alpha"] == 0.05]
+    arms = [("m3", pf.N_ORDER, "-", 1.8), ("fiducial", CONTRAST_NS, "--", 1.2)]
+    for ax, (dgp, col, xlabel) in zip(axes[1:], ELL_SHAPE_PANELS, strict=True):
+        for method, ns, ls, lw in arms:
+            for n in ns:
+                sub = df[
+                    (df["method"] == method)
+                    & (df["dgp_type"] == dgp)
+                    & (df["n_total"] == n)
+                ]
+                gx = np.log10(sub[col].to_numpy(float))
+                grid = np.linspace(gx.min(), gx.max(), 120)
+                fit = pf.fit_rate_curve(
+                    x=gx, y=sub["covers_entirely"].to_numpy(), grid=grid
+                )
+                if fit is None:
+                    continue
+                ax.plot(10**grid, fit[0], color=pf.n_color(n), ls=ls, lw=lw)
+        pf.add_nominal_line(ax, 0.05)
+        ax.set(
+            xscale="log",
+            ylim=(0.75, 1.01),
+            xlabel=xlabel,
+            title=f"{pf.dlabel(dgp)}: coverage by shape",
+        )
+    axes[1].set_ylabel("Coverage (95% band)")
+    handles = [
+        *[
+            Line2D([], [], color=pf.n_color(n), lw=1.8, label=f"ELL, n = {n:,}")
+            for n in pf.N_ORDER
+        ],
+        *[
+            Line2D(
+                [],
+                [],
+                color=pf.n_color(n),
+                ls="--",
+                lw=1.2,
+                label=f"Fiducial (no floor), n = {n:,}",
+            )
+            for n in CONTRAST_NS
+        ],
+    ]
+    axes[2].legend(handles=handles, fontsize=7, loc="lower left", ncol=2)
+    fig.suptitle("ELL against KS: less area, and no weak spot (balanced classes)")
     fig.tight_layout()
     save(fig=fig, name="ell_vs_ks")
+
+
+PREV_FILL: dict[float, FillStyleType] = {0.5: "full", 0.3: "bottom", 0.1: "none"}
+
+
+def fig_ell_ks_prevalence(runs: Runs, *, n: int = 1000) -> None:
+    """Draw ELL and KS coverage and area per DGP, one point per prevalence.
+
+    Args:
+        runs: The loaded runs.
+        n: Total sample size.
+    """
+    methods = ["m3", "ks"]
+    cells = runs.cells[(runs.cells["n_total"] == n) & (runs.cells["alpha"] == 0.05)]
+    fig, axes = plt.subplots(1, 2, figsize=(11.0, 5.0), sharey=True)
+    offsets = dict(zip(methods, (-0.17, 0.17), strict=True))
+    for method in methods:
+        for i, dgp in enumerate(pf.DGP_ORDER):
+            rows = (
+                cells[(cells["method"] == method) & (cells["dgp_type"] == dgp)]
+                .set_index("prevalence")
+                .loc[list(RUNS)]
+            )
+            y = np.full(len(rows), i + offsets[method])
+            axes[0].errorbar(
+                rows["coverage"],
+                y,
+                xerr=[
+                    (rows["coverage"] - rows["cov_lo"]).clip(lower=0),
+                    (rows["cov_hi"] - rows["coverage"]).clip(lower=0),
+                ],
+                fmt="none",
+                ecolor=pf.mcolor(method),
+                elinewidth=0.8,
+                capsize=1.5,
+                alpha=0.6,
+            )
+            for ax, col in zip(axes, ["coverage", "area"], strict=True):
+                ax.plot(rows[col], y, color=pf.mcolor(method), lw=1.2, zorder=2)
+                for x, prevalence in zip(rows[col], rows.index, strict=True):
+                    ax.plot(
+                        x,
+                        y[0],
+                        marker=pf.METHODS[method].marker,
+                        ms=7,
+                        color=pf.mcolor(method),
+                        fillstyle=PREV_FILL[prevalence],
+                        markerfacecoloralt="white",
+                        zorder=3,
+                    )
+    axes[0].axvline(0.95, color="0.35", ls="--", lw=1.0)
+    axes[0].set_xlabel("Coverage (95% band)")
+    axes[1].set_xlabel("Mean band area")
+    axes[0].set_yticks(
+        np.arange(len(pf.DGP_ORDER)), [pf.dlabel(d) for d in pf.DGP_ORDER]
+    )
+    axes[0].invert_yaxis()
+    handles = [
+        *[
+            Line2D(
+                [],
+                [],
+                color=pf.mcolor(m),
+                marker=pf.METHODS[m].marker,
+                ms=7,
+                label=LABELS[m],
+            )
+            for m in methods
+        ],
+        *[
+            Line2D(
+                [],
+                [],
+                ls="none",
+                marker="o",
+                ms=7,
+                color="0.3",
+                fillstyle=PREV_FILL[p],
+                markerfacecoloralt="white",
+                label=plabel(p),
+            )
+            for p in RUNS
+        ],
+    ]
+    fig.legend(handles=handles, loc="lower center", ncol=5)
+    fig.suptitle(f"ELL and KS at n = {n:,}: coverage and area across prevalences")
+    fig.tight_layout(rect=(0, 0.06, 1, 1))
+    save(fig=fig, name="ell_ks_prevalence")
 
 
 # =============================================================================
@@ -1143,13 +1364,16 @@ def main() -> None:
     }
     simulated: dict[str, Callable[[Runs], None]] = {
         "coverage_heatmap": fig_coverage_heatmap,
+        "level_calibration": fig_level_calibration,
         "wh_fragility": fig_wh_fragility,
         "coverage_vs_n": fig_coverage_vs_n,
         "coverage_vs_area": fig_pareto,
         "tightness_vs_ks": fig_tightness,
-        "fiducial_failure": fig_fiducial_failure,
+        "fiducial_prevalence_heatmap": fig_fiducial_prevalence_heatmap,
         "failure_corners": fig_failure_corners,
         "ell_vs_ks": fig_ell_vs_ks,
+        "ell_heatmap": fig_ell_heatmap,
+        "ell_ks_prevalence": fig_ell_ks_prevalence,
         "hybrid_repair": fig_hybrid_repair,
         "worst_cell": fig_worst_cell,
         "hybrid_misses": fig_hybrid_misses,
