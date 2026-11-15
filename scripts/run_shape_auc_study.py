@@ -24,8 +24,15 @@ coverage ``--planning-coverage``. ``--plan`` prints that table for 0.2, 0.5,
 then exits.
 
 Results are saved per (DGP, sample configuration) in the main suite's
-long format, with ``shape_bin`` and ``auc_bin`` columns. Finished cells are
-skipped on restart, so a long run can be resumed.
+long format, with ``shape_bin`` and ``auc_bin`` columns. Finished chunks are
+checkpointed under ``<output-dir>/partial/`` every few minutes and when the
+run is interrupted (Ctrl-C); a cell's checkpoints are merged into its result
+file once its last chunk finishes. Rerunning the same command skips finished
+cells and checkpointed chunks, so a run can be stopped and resumed at any
+time. Every chunk's random stream depends only on the seed and the chunk's
+position in the design, so a resumed run produces exactly the results of an
+uninterrupted one; ``design.json`` records the design, and a run whose
+replicates, seed, levels, or strata differ from it is refused.
 
 Usage:
     uv run python scripts/run_shape_auc_study.py --plan
@@ -38,10 +45,12 @@ import argparse
 import json
 import math
 import os
+import shutil
 import subprocess
+import sys
 import time
 import warnings
-from concurrent.futures import FIRST_COMPLETED, Future, ProcessPoolExecutor, wait
+from concurrent.futures import FIRST_COMPLETED, Executor, Future, wait
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -95,6 +104,10 @@ Z_95 = float(norm.ppf(0.975))
 # Replicates simulated per worker task; small enough that the slowest
 # (n = 10,000) tasks finish in a few minutes
 CHUNK_SIZE = 10
+
+# Seconds between checkpoints of finished chunks; a run killed without the
+# chance to checkpoint loses at most this much work plus the chunks in flight
+CHECKPOINT_SECONDS = 120
 
 
 def reps_for_precision(*, half_width_pp: float, coverage: float) -> int:
@@ -509,34 +522,177 @@ def print_plan(
 # =============================================================================
 
 
-def save_cell(*, cell: StudyCell, records: list[dict], output_dir: Path) -> None:
-    """Write one cell's records as a long-format feather.
+def study_design(*, reps: int, seed: int, alphas: tuple[float, ...]) -> dict:
+    """Return everything a cell's results depend on besides the cell itself.
 
     Args:
-        cell: The study cell.
-        records: Every record of the cell.
-        output_dir: Output directory.
+        reps: Replicates per point.
+        seed: Root seed.
+        alphas: Significance levels.
+
+    Returns:
+        The design, in the JSON form stored as ``design.json``.
     """
-    frame = pd.DataFrame.from_records(records).sort_values(
-        ["shape_bin", "auc_bin", "rep_idx", "method", "alpha"], ignore_index=True
-    )
-    path = output_dir / f"{cell.stem}_individual.feather"
+    design = {
+        "reps": reps,
+        "seed": seed,
+        "alphas": list(alphas),
+        "chunk_size": CHUNK_SIZE,
+        "strata": {d: [vars(b) for b in dgp_bins(d)] for d in SHAPE_EDGES},
+    }
+    return json.loads(json.dumps(design))
+
+
+def claim_output_dir(*, output_dir: Path, design: dict) -> None:
+    """Record the design in an output directory, or check it matches.
+
+    Args:
+        output_dir: Output directory.
+        design: Design from ``study_design``.
+
+    Raises:
+        ValueError: If the directory holds results of a different design, or
+            results without a recorded design.
+    """
+    path = output_dir / "design.json"
+    if path.exists():
+        stored = json.loads(path.read_text())
+        differing = sorted(
+            k for k in design.keys() | stored.keys() if stored.get(k) != design.get(k)
+        )
+        if differing:
+            raise ValueError(
+                f"{output_dir} holds a run with a different design "
+                f"(differs in: {', '.join(differing)}); use another --output-dir "
+                "or rerun with the original arguments"
+            )
+        return
+    if (
+        any(output_dir.glob("*_individual.feather"))
+        or (output_dir / "partial").exists()
+    ):
+        raise ValueError(
+            f"{output_dir} holds results without a design.json, so they cannot "
+            "be resumed safely; use another --output-dir"
+        )
+    output_dir.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(design, indent=2))
+
+
+def partial_dir(*, output_dir: Path, stem: str) -> Path:
+    """Directory of a cell's checkpointed chunks."""
+    return output_dir / "partial" / stem
+
+
+def checkpointed_chunks(*, output_dir: Path, stem: str) -> set[tuple[int, int, int]]:
+    """Return the chunks of a cell already checkpointed.
+
+    Args:
+        output_dir: Output directory.
+        stem: The cell's file stem.
+
+    Returns:
+        (shape bin, AUC bin, first replicate) of every checkpointed chunk.
+    """
+    keys: set[tuple[int, int, int]] = set()
+    for part in partial_dir(output_dir=output_dir, stem=stem).glob("part_*.feather"):
+        frame = pd.read_feather(part, columns=["shape_bin", "auc_bin", "rep_idx"])
+        first = frame["rep_idx"] - frame["rep_idx"] % CHUNK_SIZE
+        keys.update(
+            zip(
+                frame["shape_bin"].tolist(),
+                frame["auc_bin"].tolist(),
+                first.tolist(),
+                strict=True,
+            )
+        )
+    return keys
+
+
+def chunk_key(task: ChunkTask) -> tuple[int, int, int]:
+    """(shape bin, AUC bin, first replicate) identifying a chunk in its cell."""
+    return (task.stratum.shape_bin, task.stratum.auc_bin, task.first_rep)
+
+
+def write_atomic(*, frame: pd.DataFrame, path: Path) -> None:
+    """Write a feather through a temporary file so readers never see a partial one.
+
+    Args:
+        frame: Frame to write.
+        path: Destination.
+    """
     tmp = path.with_suffix(".tmp")
     frame.to_feather(tmp)
     tmp.replace(path)
 
 
+def checkpoint(*, stem: str, records: list[dict], output_dir: Path) -> None:
+    """Append finished chunks of a cell to its checkpoints.
+
+    Args:
+        stem: The cell's file stem.
+        records: Records of whole chunks.
+        output_dir: Output directory.
+    """
+    directory = partial_dir(output_dir=output_dir, stem=stem)
+    directory.mkdir(parents=True, exist_ok=True)
+    write_atomic(
+        frame=pd.DataFrame.from_records(records),
+        path=directory / f"part_{time.time_ns()}.feather",
+    )
+
+
+def finalize_cell(*, stem: str, output_dir: Path) -> None:
+    """Merge a complete cell's checkpoints into its long-format result file.
+
+    Args:
+        stem: The cell's file stem.
+        output_dir: Output directory.
+    """
+    directory = partial_dir(output_dir=output_dir, stem=stem)
+    frame = pd.concat(
+        (pd.read_feather(p) for p in sorted(directory.glob("part_*.feather"))),
+        ignore_index=True,
+    ).sort_values(
+        ["shape_bin", "auc_bin", "rep_idx", "method", "alpha"], ignore_index=True
+    )
+    write_atomic(frame=frame, path=output_dir / f"{stem}_individual.feather")
+    shutil.rmtree(directory)
+    if not any(directory.parent.iterdir()):
+        directory.parent.rmdir()
+
+
+def pending_cells(*, cells: list[StudyCell], output_dir: Path) -> list[StudyCell]:
+    """Return the cells without a result file, clearing stale checkpoints.
+
+    Args:
+        cells: Study cells.
+        output_dir: Output directory.
+
+    Returns:
+        Cells still to run, in the given order.
+    """
+    pending = []
+    for cell in cells:
+        if (output_dir / f"{cell.stem}_individual.feather").exists():
+            # Checkpoints left by an exit between saving a cell and clearing them
+            shutil.rmtree(
+                partial_dir(output_dir=output_dir, stem=cell.stem), ignore_errors=True
+            )
+        else:
+            pending.append(cell)
+    return pending
+
+
 def run_study(
-    *,
-    tasks: dict[str, list[ChunkTask]],
-    pool: ProcessPoolExecutor,
-    output_dir: Path,
-    workers: int,
+    *, tasks: dict[str, list[ChunkTask]], pool: Executor, output_dir: Path, workers: int
 ) -> None:
-    """Run every chunk, saving each cell as soon as its last chunk arrives.
+    """Run every chunk not yet checkpointed, saving each cell once complete.
 
     Chunks are submitted largest sample size first, so the slowest work
-    starts immediately, with a bounded number in flight.
+    starts immediately, with a bounded number in flight. Finished chunks are
+    checkpointed every ``CHECKPOINT_SECONDS`` and whenever the loop exits,
+    including on Ctrl-C; queued chunks are cancelled on the way out.
 
     Args:
         tasks: Chunk tasks per cell, keyed by the cell's file stem.
@@ -544,31 +700,57 @@ def run_study(
         output_dir: Output directory.
         workers: Worker processes, which bounds the in-flight queue.
     """
+    pending: dict[str, list[ChunkTask]] = {}
+    for stem, cell_tasks in tasks.items():
+        saved = checkpointed_chunks(output_dir=output_dir, stem=stem)
+        pending[stem] = [t for t in cell_tasks if chunk_key(t) not in saved]
+        if not pending[stem]:
+            finalize_cell(stem=stem, output_dir=output_dir)
+            tqdm.write(f"  Saved: {stem}")
     queue = sorted(
-        (task for cell_tasks in tasks.values() for task in cell_tasks),
+        (task for cell_tasks in pending.values() for task in cell_tasks),
         key=lambda t: -t.cell.sample_config["n_neg"],
     )
-    remaining = {stem: len(cell_tasks) for stem, cell_tasks in tasks.items()}
-    collected: dict[str, list[dict]] = {stem: [] for stem in tasks}
-    in_flight: dict[Future, StudyCell] = {}
-    progress = tqdm(total=len(queue), desc="Chunks")
+    total = sum(len(cell_tasks) for cell_tasks in tasks.values())
+    remaining = {stem: len(cell_tasks) for stem, cell_tasks in pending.items()}
+    buffers: dict[str, list[dict]] = {stem: [] for stem in pending}
+    in_flight: dict[Future, ChunkTask] = {}
+    progress = tqdm(total=total, initial=total - len(queue), desc="Chunks")
+
+    def flush() -> None:
+        for stem, records in buffers.items():
+            if records:
+                checkpoint(stem=stem, records=records, output_dir=output_dir)
+                buffers[stem] = []
+
+    last_checkpoint = time.monotonic()
     position = 0
-    while position < len(queue) or in_flight:
-        while position < len(queue) and len(in_flight) < 4 * workers:
-            task = queue[position]
-            in_flight[pool.submit(run_chunk, task)] = task.cell
-            position += 1
-        done, _ = wait(in_flight, return_when=FIRST_COMPLETED)
-        for future in done:
-            cell = in_flight.pop(future)
-            collected[cell.stem].extend(future.result())
-            remaining[cell.stem] -= 1
-            progress.update()
-            if remaining[cell.stem] == 0:
-                records = collected.pop(cell.stem)
-                save_cell(cell=cell, records=records, output_dir=output_dir)
-                tqdm.write(f"  Saved: {cell.stem}")
-    progress.close()
+    try:
+        while position < len(queue) or in_flight:
+            while position < len(queue) and len(in_flight) < 4 * workers:
+                task = queue[position]
+                in_flight[pool.submit(run_chunk, task)] = task
+                position += 1
+            done, _ = wait(in_flight, return_when=FIRST_COMPLETED)
+            for future in done:
+                stem = in_flight.pop(future).cell.stem
+                buffers[stem].extend(future.result())
+                remaining[stem] -= 1
+                progress.update()
+                if remaining[stem] == 0:
+                    flush()
+                    finalize_cell(stem=stem, output_dir=output_dir)
+                    tqdm.write(f"  Saved: {stem}")
+            if time.monotonic() - last_checkpoint >= CHECKPOINT_SECONDS:
+                flush()
+                last_checkpoint = time.monotonic()
+    except BaseException:
+        for future in in_flight:
+            future.cancel()
+        raise
+    finally:
+        flush()
+        progress.close()
 
 
 def write_metadata(*, args: argparse.Namespace, reps: int, output_dir: Path) -> None:
@@ -670,7 +852,13 @@ def main() -> None:
         half_width_pp=args.precision_pp, coverage=args.planning_coverage
     )
     output_dir = args.output_dir
-    output_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        claim_output_dir(
+            output_dir=output_dir,
+            design=study_design(reps=reps, seed=args.seed, alphas=alphas),
+        )
+    except ValueError as err:
+        parser.error(str(err))
     cells = [
         StudyCell(
             dgp_type=dgp,
@@ -681,12 +869,14 @@ def main() -> None:
         if dgp in args.dgps
         for config in sample_configs
     ]
-    pending = [
-        c for c in cells if not (output_dir / f"{c.stem}_individual.feather").exists()
-    ]
+    pending = pending_cells(cells=cells, output_dir=output_dir)
+    resumed = sum(
+        partial_dir(output_dir=output_dir, stem=c.stem).exists() for c in pending
+    )
     print(
         f"{len(cells)} cells × {len(dgp_bins(args.dgps[0]))} strata, {reps:,} "
-        f"replicates per point; {len(cells) - len(pending)} cells already saved"
+        f"replicates per point; {len(cells) - len(pending)} cells already saved, "
+        f"{resumed} resuming from checkpoints"
     )
     if not pending:
         return
@@ -696,8 +886,17 @@ def main() -> None:
         sample_configs=sample_configs, alphas=list(alphas), workers=args.workers
     )
     tasks = plan_tasks(cells=pending, reps=reps, seed=args.seed, alphas=alphas)
-    with worker_pool(workers=args.workers, m3_cache=m3_cache) as pool:
-        run_study(tasks=tasks, pool=pool, output_dir=output_dir, workers=args.workers)
+    try:
+        with worker_pool(workers=args.workers, m3_cache=m3_cache) as pool:
+            run_study(
+                tasks=tasks, pool=pool, output_dir=output_dir, workers=args.workers
+            )
+    except KeyboardInterrupt:
+        print(
+            "\nInterrupted; finished chunks are checkpointed. "
+            "Rerun the same command to resume."
+        )
+        sys.exit(130)
     print(f"Results saved to: {output_dir}")
 
 
