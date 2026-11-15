@@ -404,10 +404,16 @@ The full account is in
 - It is a high-confidence tool. Its 50% band covers about 0.65–0.85.
 - At low FPR and small n the floored band is as wide as the ELL band. No
   distribution-free band can be narrow there.
-- The fiducial cloud is the slow part. Median time per dataset was 0.16 s at
-  n = 100, 1.3 s at n = 1,000, and 9.6 s at n = 10,000, measured on one thread
-  under the simulation's load. The ELL band takes milliseconds.
 - Use the ELL band alone when a full-curve guarantee is required.
+
+---
+
+## Summary
+
+- KS is correct but uninformative. Binormal methods are severely anticonservative for even small departures of normality.
+- We introduce a new method, the fiducial band, that is only slightly wider than Working-Hotelling (the classic binormal band) without distributional assumptions. It covers _almost_ everywhere.
+- We introduce a second new method, the equal-local-levels (ELL) band, which gives similarly-strong guarantees as KS while being significantly narrower.
+- A hybrid of these two methods (i.e. fiducial band with an ELL floor in the tails, followed by some polishing) is both narrow and covers ~everywhere.
 
 ---
 
