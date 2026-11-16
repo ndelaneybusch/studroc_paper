@@ -169,7 +169,7 @@ P\left(\forall t: R(t) \in [L(t), U(t)]\right)
 where, for independent standard Brownian bridges $`B_0, B_1`$,
 
 ```math
-Z(t) = B_1\big(R(t)\big) - \sqrt{\lambda}\, R'(t)\, B_0(t), \qquad \operatorname{Var} Z(t) = \sigma^2(t) = R(t)\{1-R(t)\} + \lambda R'(t)^2\, t(1-t).
+Z(t) = B_1\big(R(t)\big) - \sqrt{\lambda}\, R'(t)\, B_0(t), \qquad \mathrm{Var}\, Z(t) = \sigma^2(t) = R(t)\{1-R(t)\} + \lambda R'(t)^2\, t(1-t).
 ```
 
 If, in addition, the tube is trimmed on $`I`$ alone, the trim mesh tends to zero, $`M_n / \log K_n \to \infty`$ (with $`K_n`$ the number of trim columns), and the limiting depth cutoff is a continuity and local strict-increase point, then
