@@ -319,6 +319,22 @@ In the two failing strata the unfloored band falls as low as 0.71. The floored
 band covers between 0.956 and 1.000 at every sample size and prevalence. On all
 other draws the two bands agree to within 0.01.
 
+A stratified study checks this at higher resolution. It draws 6,000 datasets
+for every combination of tail weight (Student-t df), true AUC, and sample size
+at 50% prevalence, so the rare heavy-tailed, high-AUC combinations are sampled
+as densely as the common ones. Each panel shows the floored band, the unfloored
+band, and the ELL band alone, with n increasing left to right within each
+method.
+
+![Coverage by Student-t df and AUC](figures/readme/shape_auc_student_t.png)
+
+The unfloored band fails along a ridge of heavy tails and high AUC, and the
+sample size where it is worst grows as the tails lighten: 0.67 at n = 300 for
+df 1–2 and AUC above 0.95, 0.83 at n = 1,000 for df 2–4, and 0.94 at
+n = 10,000 for df 4–10. The floored band covers between 0.968 and 0.996 in
+every panel and at every n. The ELL band alone covers at least 0.997
+everywhere, which is the conservatism the fiducial interior avoids.
+
 ### It holds coverage in every cell
 
 ![Worst cell](figures/readme/worst_cell.png)
@@ -455,6 +471,10 @@ uv run python stats/readme_figures.py            # figures in this README
 uv run python stats/paper_figures_nov11.py       # full figure set, one run
 uv run python stats/paper_figures_prevalence.py  # cross-prevalence figure set
 ```
+
+The shape × AUC grid in Section 7 reads the stratified study, which
+`scripts/run_shape_auc_study.py --reps 6000` writes to
+`data/results/shape_auc_study/`.
 
 README figures are written to `figures/readme/`. The commentary on the full
 figure sets is in `notebook_paper_nov11.py` and `notebook_paper_prevalence.py`.

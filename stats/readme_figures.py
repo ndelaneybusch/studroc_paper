@@ -11,8 +11,10 @@ step compares:
 4. The fiducial band with the ELL floor against the unfloored band.
 
 Trials come from the balanced run and the 30% and 10% prevalence runs
-(``data/results/nov11``, ``nov11_p30``, ``nov11_p10``). Figures are written
-to ``figures/readme/`` as PNG.
+(``data/results/nov11``, ``nov11_p30``, ``nov11_p10``). The shape × AUC grid
+comes from the stratified study (``data/results/shape_auc_study``, written by
+``scripts/run_shape_auc_study.py``). Figures are written to
+``figures/readme/`` as PNG.
 
 Usage:
     uv run python stats/readme_figures.py
@@ -38,6 +40,7 @@ RUNS: dict[float, Path] = {
     0.3: Path("data/results/nov11_p30"),
     0.1: Path("data/results/nov11_p10"),
 }
+SHAPE_AUC_STUDY = Path("data/results/shape_auc_study")
 PREV_COLORS = {0.5: "#3B0F70", 0.3: "#B73779", 0.1: "#FC8961"}
 PREV_LS = {0.5: "-", 0.3: "--", 0.1: ":"}
 METHODS = ["fiducial", "fiducial_hybrid", "m3", "working_hotelling", "ks"]
@@ -1428,6 +1431,45 @@ def fig_floor_occupancy(runs: Runs) -> None:
     save(fig=fig, name="floor_occupancy")
 
 
+def fig_shape_auc_student_t() -> None:
+    """Coverage of the three fiducial-family bands by Student-t df and AUC bin.
+
+    Drawn from the stratified study, which gives every (df bin, AUC bin, n)
+    point the same number of replicates.
+    """
+    dgp = "student_t"
+    df = pf.load_results(SHAPE_AUC_STUDY)
+    rates = pf.binned_rates(df=df, dgp=dgp, alpha=0.05, inner="n_total")
+    ns = sorted(rates.index.get_level_values("n_total").unique())
+    fig, _ = pf.shape_auc_grid(
+        rates=rates,
+        dgp=dgp,
+        inner="n_total",
+        inner_values=ns,
+        color_of=pf.n_color,
+        fill_of=lambda _: "full",
+        alpha=0.05,
+    )
+    fig.legend(
+        handles=[
+            Line2D(
+                [], [], marker="o", ls="none", color=pf.n_color(n), label=f"n = {n:,}"
+            )
+            for n in ns
+        ],
+        loc="lower center",
+        ncol=len(ns),
+        bbox_to_anchor=(0.5, -0.03),
+    )
+    fig.suptitle(
+        "Student-t, 50% prevalence: 95% band coverage by tail weight (df) and "
+        "true AUC\n"
+        "n increases left to right within each method"
+    )
+    fig.tight_layout()
+    save(fig=fig, name="shape_auc_student_t")
+
+
 def main() -> None:
     """Write the README figures, or only those named on the command line."""
     parser = argparse.ArgumentParser(description="Write the README figures")
@@ -1459,7 +1501,10 @@ def main() -> None:
         "floor_cost": fig_floor_cost,
         "floor_occupancy": fig_floor_occupancy,
     }
-    unknown = set(only or []) - set(examples) - set(simulated)
+    stratified: dict[str, Callable[[], None]] = {
+        "shape_auc_student_t": fig_shape_auc_student_t
+    }
+    unknown = set(only or []) - set(examples) - set(simulated) - set(stratified)
     if unknown:
         parser.error(f"unknown figures: {sorted(unknown)}")
     pf.set_style()
@@ -1471,6 +1516,9 @@ def main() -> None:
         for name, make in simulated.items():
             if only is None or name in only:
                 make(runs)
+    for name, make in stratified.items():
+        if only is None or name in only:
+            make()
     print(f"Wrote README figures to {FIG_DIR}/")
 
 
