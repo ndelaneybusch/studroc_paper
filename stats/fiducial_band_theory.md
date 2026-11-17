@@ -1049,7 +1049,8 @@ $$
 for every $R$, which is $\alpha_M/2$ to first order (.0253 at
 $\alpha_M=.05$). The in-region directional miss probability of the hybrid is
 therefore capped at essentially half the M3 level, in each direction
-separately.
+separately. These regional claims concern the unclosed hull and widening;
+the tightened closure needs the distinction in §10.7.
 
 This is why rank-only, AUC-based, or cloud-based selection of a **floor
 region** is allowed in (8.2). It is also why the regional M3 cap is not a
@@ -1619,9 +1620,12 @@ M3 band on the same $A$, followed by reverse cumulative minima for lower
 edges and forward cumulative maxima for upper edges, also preserves it.
 Thus coverage of the recalibrated hybrid implies coverage of the original
 hybrid for each coupled realization, while the reverse need not hold.
-Both hybrids still contain M3 on $A$, so the regional error bound of §8
-survives. Their edges need not coincide on $A$; absence of added in-region
-misses in the experiment is not a universal consequence of nesting.
+Under widening, both hybrids still contain M3 on $A$, so the regional
+error bound of §8 survives. Tightening also preserves nesting, because
+forward maxima and reverse minima preserve the same edge orderings, but
+does not generally preserve M3 containment on $A$ (§10.7). Their edges
+need not coincide on $A$; absence of added in-region misses in an experiment
+is not a universal consequence of nesting.
 
 **Corollary 10d (monotonicity of the implemented left-cut criterion).
 [Exact]** The implemented left cut uses the fixed-parameter function
@@ -1653,8 +1657,9 @@ The hybrid's region hull, before closure, is
 $\tilde L=\min(L_F,L_M)\mathbb 1_A+L_F\mathbb 1_{A^c}$ and
 $\tilde U=\max(U_F,U_M)\mathbb 1_A+U_F\mathbb 1_{A^c}$ on the grid. Both
 pieces are monotone, but $\tilde L$ can step down entering the right region
-and $\tilde U$ can step down leaving the left region. Production closes
-them by widening (§8). The alternative is the shape tightening of §8:
+and $\tilde U$ can step down leaving the left region. Widening (§8)
+encloses the hull. The default production closure instead uses the shape
+tightening of §8:
 $$
  L_T(t_k)=\max_{i\le k}\tilde L(t_i),\qquad
  U_T(t_k)=\min_{i\ge k}\tilde U(t_i).
@@ -1688,13 +1693,34 @@ $$
  q_R(B_T)-q_R(B_W)=P_R\{B_W\text{ covers},\ \text{the hull misses}\}\ \ge0 .
 $$
 
-These are replicates where the truth leaves the hull outside $A$, but inside
-the room that widening carries out of the region: lower edges left of the
-right region, upper edges right of the left region. Nothing bounds that
-event; the [closure/split experiment](experiments/closure_split_spec.md)
-measures it. Tightening keeps every exact statement the hybrid has: domination
-of its fiducial parent, the regional M3 cap, and (8.2). It gives up only the
-unaccounted protection that widening adds next to the region.
+These are replicates where the truth leaves the hull but is covered by the
+extra room from widening. Widening can propagate that room outside $A$:
+lower edges left of the right region, upper edges right of the left region.
+Nothing bounds the coverage difference; the
+[closure/split experiment](experiments/closure_split_spec.md) measures it.
+Tightening preserves domination of its fiducial parent and the whole-band
+inequality (8.2), but not an M3-only regional miss cap.
+
+**Regional scope and exterior identity. [Exact; derived here]** At a column
+outside $A$, the hull equals the fiducial parent. Proposition 10e(2)
+sandwiches the tightened band between them, so $B_T=B_F$ there. Thus the
+native-grid exterior miss events are identical. Inside $A$, tightening can
+propagate an exterior violation into the region even when M3 covers globally.
+For example, let $A=\{0,3,4\}$ on five columns, take monotone parent edges
+$L_F=(0,.2,.6,.6,1)$ and $U_F=(.8,.9,.95,1,1)$, and a hull partner $[0,1]$
+everywhere. The monotone truth $(0,.2,.4,.5,1)$ lies in that partner globally,
+but tightening yields $L_T=(0,.2,.6,.6,.6)$ and misses at index 3 in $A$.
+The hull already missed at exterior index 2, so simultaneous coverage is
+unchanged. This counterexample refutes a general regional-containment
+argument; it is not a measured ELL miss probability. The regional cap in
+§8 applies to the hull and widened band. For tightening, only the whole-band
+bound, including the parent exterior term, follows from this argument.
+The same distinction holds separately for upper and lower misses.
+
+The current algorithm, its empty-complement fallback, and the full-grid
+floor case are specified in [`hybrid_band.md`](hybrid_band.md). A full-grid
+floor returns the hull of the fiducial and M3 bands, equal to M3 only when
+M3 contains its fiducial partner.
 
 ## 11. Width and the Monte Carlo layer
 

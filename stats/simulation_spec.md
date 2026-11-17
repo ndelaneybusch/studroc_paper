@@ -123,9 +123,11 @@ Per band (`src/studroc_paper/eval/eval.py`), saved long-format per CI to feather
     `floor_region_right_start_fpr`, `floor_region_interior_fraction` — and,
     for every method on that same region, whether it misses inside and
     outside it, overall and by direction (`miss_{,above_,below_}{in,outside}_floor_region`).
-    The two sides partition each band's miss. The floor theory bounds the
-    in-region miss probability of the hybrid by the M3 level; the outside
-    term is the unproved one.
+    A band can miss on both sides. The unclosed hull and widened hybrid have
+    an M3-only in-region bound. The default tightened hybrid preserves the
+    hull's simultaneous coverage event, but can move an exterior violation
+    into the region; its proved whole-band bound includes the recalibrated
+    parent's exterior term. See [`hybrid_band.md` §3](hybrid_band.md#3-properties).
 -   Tightness: band area, mean width over interior grid points, width at
     landmark FPRs (0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9), mean width per FPR
     region.

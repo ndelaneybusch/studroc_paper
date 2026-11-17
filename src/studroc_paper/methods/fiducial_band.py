@@ -391,10 +391,12 @@ def fiducial_band(
             budgets, the closure (``"widen"`` or ``"tighten"``), the M3 class
             split, and whether the trim depth is recalibrated. Without
             recalibration the floored band contains the raw band pointwise;
-            under either closure the in-region miss probability is capped at
-            the M3 level, and misses outside the region have no
-            distribution-free bound. Requires the
-            ``fiducial_core`` extension for the M3 component.
+            under either closure the whole-band miss probability is at most
+            the M3 level plus the selected parent's exterior miss probability.
+            That exterior term has no distribution-free bound. An M3-only
+            regional cap holds under widening; tightening can propagate an
+            exterior miss into the region. See ``stats/hybrid_band.md``.
+            Requires the ``fiducial_core`` extension for the M3 component.
 
     Returns:
         Tuple of ``(fpr_grid, lower_envelope, upper_envelope)`` numpy

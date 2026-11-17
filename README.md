@@ -288,12 +288,14 @@ fiducial band everywhere else.
 The floor has no tuning parameter beyond two small error budgets, and it reads
 only the ranks.
 
-Two statements are exact for every ROC curve. A miss inside the floor region
-implies that the ELL band missed somewhere, so the probability of a miss inside
-the region is at most the ELL level. The probability of a miss anywhere is at
-most the ELL level plus the probability that the recalibrated fiducial band
-misses outside the region. That last term has no distribution-free bound. It is measured by
-simulation.
+Tightening preserves the unclosed hull's simultaneous coverage event for
+every monotone ROC. The probability of a miss anywhere is at most the ELL
+level plus the probability that the recalibrated fiducial band misses outside
+the region. That exterior term has no distribution-free bound and is measured
+by simulation. An ELL-only bound on misses inside the region holds before
+closure and with widening, but tightening can move an exterior miss into the
+region. The algorithm and the scope of these guarantees are specified in
+[`stats/hybrid_band.md`](stats/hybrid_band.md).
 
 The figure shows both bands on two datasets where the unfloored band misses at
 a corner. The seeds were chosen for that reason.

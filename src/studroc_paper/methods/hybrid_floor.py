@@ -12,35 +12,33 @@ lower-edge miss (theory doc section 7.4; Stage F report sections 4 and 7).
 
 The floor repairs exactly those two regions by taking the pointwise hull of
 the fiducial band and the exact M3 band there, then closing the result to a
-monotone band (see Closure below). Three statements are exact for every ROC
+monotone band (see Closure below). Two statements are exact for every ROC
 curve and every region rule, including rules that read the data or the cloud:
 
 * the floored band contains the fiducial band it was built from pointwise
   (the raw band, or the recalibrated band under ``recalibrate_trim``);
-* a miss inside the region implies a full-curve M3 miss, so the in-region
-  miss probability is at most the M3 level;
 * the whole-band miss probability is at most the M3 level plus the
-  probability that the raw band misses somewhere outside the region.
+  probability that the selected fiducial parent misses outside the region.
 
-The exterior term has no distribution-free bound. The region rule therefore
-changes width and the unproved term only, never the proved ones.
+Before closure and under widening, a regional miss implies a full-curve M3
+miss, giving an M3-only regional cap. Tightening can propagate an exterior
+miss into the region and does not preserve that cap. The exterior term has
+no distribution-free bound. The full specification is ``stats/hybrid_band.md``.
 
 Region rules
 ------------
-``"exact"`` derives both cut points from exact laws of the cloud and the
-sample, each with a declared budget:
+``"exact"`` derives its cut criteria from exact laws of the cloud and sample:
 
 * **Left prefix.** At native grid point ``k`` the number of draws whose
   first negative anchor lies beyond ``t_k`` is ``Binomial(M, p_k)`` with
   ``p_k = (1 - k / n0) ** n0`` exactly, because that anchor is
-  ``Beta(1, n0)`` whatever the truth is. Those draws contribute chord
-  values, which are always the lowest values at ``t_k``, so the band's
-  lower edge (the ``j``-th smallest draw) is a chord whenever at least
-  ``j`` such draws exist. The cutoff is the smallest ``k`` at which that
-  event has probability at most ``eps``; the cutoff point is included.
-  The rule is insensitive to ``eps`` (two orders of magnitude move it by
-  at most one grid point) and uses the exact chord probability, which
-  matters at small ``n0`` where ``exp(-k)`` overstates it.
+  ``Beta(1, n0)`` whatever the truth is. The cutoff is the smallest ``k``
+  where the numerical binomial tail at the realized depth ``j`` is at
+  most ``eps``; the cutoff point is included. Since ``j`` is selected
+  from the same cloud, this plug-in calculation is not an error guarantee
+  for the adaptive cutoff. The count alone also does not identify which
+  draw supplies the lower order statistic. The exact reach probability
+  matters at small ``n0``, where ``exp(-k)`` overstates it.
 * **Right run.** Let ``K`` be the number of negatives ranked below the
   smallest positive. Conditional on the positives, ``K`` is
   ``Binomial(n0, S)`` with ``S`` the unknown negative mass below that
@@ -51,10 +49,11 @@ sample, each with a declared budget:
   Proposition 10a), and it is pointwise optimal among monotone bounds for a
   single boundary.
 
-``"stage_f"`` is the frozen rule measured in the Stage F study: the first
-``ceil(log(M + 1))`` grid points and the saturated run extended inward by
-``ceil(2 sqrt(K))``. On the left it replaces the declared budget by the
-condition that the expected chord count be at most one, which at a trim
+``"stage_f"`` is the frozen rule measured in the Stage F study: indices
+through ``ceil(log(M + 1))`` inclusive, capped at ``n0``, and the saturated
+run extended inward by ``ceil(2 sqrt(max(K, 1)))``. On the left it replaces
+the binomial-tail criterion by a cutoff where the expected reach count is
+at most one, which at a trim
 depth of 5 sits between ``eps`` of about 4e-3 and 5e-5 depending on
 rounding, so the two rules agree within one grid point in either direction
 at ``alpha = .05`` and the frozen rule is longer at ``alpha = .5``. On the
@@ -75,20 +74,21 @@ monotonicity at the region boundaries, so it is closed in one of two ways:
   lowers the upper edge to its reverse cumulative minimum. A monotone truth
   inside the hull at every grid point is inside the tightened band at every
   grid point, and conversely, because the tightened band lies inside the hull.
-  So the tightened band misses exactly when the unclosed hull does, and all
-  three exact statements above hold for it. When the fiducial edges are
+  So the tightened band misses globally exactly when the unclosed hull
+  does, and the whole-band inequality above holds. When the fiducial edges are
   monotone the tightened band still contains them, and it is contained in the
-  widened band. What it gives up is the room that widening adds outside the
-  region, which no theorem accounts for.
+  widened band. It equals the fiducial parent outside the native mask, but
+  can cut back the M3 room inside the mask. Its coverage difference from
+  widening has no distribution-free bound.
 
 Tails-recalibrated trim
 -----------------------
 With ``recalibrate_trim`` the trim depth is recomputed on the same cloud over
 the production trim rows outside the region, after the region has been fixed
-from the full-grid depth (theory doc section 10.6). The recalibrated depth is
+from the original production-grid depth (theory doc section 10.6). The recalibrated depth is
 never smaller (Proposition 10b), so the band is nested inside the
-full-grid hybrid on the same cloud (Corollary 10c). It no longer contains the
-raw fiducial band.
+original-depth hybrid on the same cloud (Corollary 10c). Containment of the
+original raw fiducial band is no longer guaranteed.
 """
 
 import math
@@ -121,9 +121,9 @@ class M3Floor:
     Attributes:
         rule: Region rule, ``"exact"`` (declared-budget cut points) or
             ``"stage_f"`` (the frozen Stage F frontier rule).
-        eps: Left-cutoff budget for the exact rule: the largest tolerated
-            probability that the raw lower edge at the first unfloored grid
-            point is a chord draw.
+        eps: Threshold for the exact rule's binomial-tail calculation at
+            the inclusive left cutoff. The adaptive use of the cloud's
+            depth does not give this threshold a coverage interpretation.
         delta: Right-margin budget for the exact rule: the largest tolerated
             probability that the true saturated-run boundary lies inside the
             unfloored region.
@@ -196,15 +196,16 @@ def chord_probability(*, n0: int, k: int) -> float:
 def exact_left_cutoff(*, n0: int, n_draws: int, trim_depth: int, eps: float) -> int:
     """Return the inclusive left cutoff of the exact floor rule.
 
-    The cutoff is the smallest grid index at which fewer than ``trim_depth``
-    chord draws are present with probability at least ``1 - eps``, so that
-    the raw lower edge beyond it is set by anchored draws.
+    The cutoff is the smallest grid index whose fixed-parameter binomial
+    tail for at least ``trim_depth`` reaching end gaps is at most ``eps``.
+    A depth selected from the same cloud does not make this a probability
+    guarantee for the adaptive cutoff or the selected lower edge.
 
     Args:
         n0: Negative-class sample size.
         n_draws: Fiducial cloud size ``M``.
         trim_depth: Realized one-indexed trim depth ``j``.
-        eps: Tolerated probability that the edge at the cutoff is a chord.
+        eps: Threshold for the fixed-parameter binomial-tail criterion.
 
     Returns:
         Inclusive native-grid index in ``0..n0``.
