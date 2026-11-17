@@ -1,0 +1,436 @@
+{
+  "timestamp": "2026-11-14T20:58:31.371813",
+  "args": {
+    "reps": "6000",
+    "precision_pp": "1.0",
+    "planning_coverage": "0.95",
+    "plan": "False",
+    "dgps": "['student_t', 'hetero_gaussian']",
+    "sample_sizes": "[30, 100, 300, 1000, 3000, 10000]",
+    "prevalences": "[0.5]",
+    "confidence_levels": "[0.05]",
+    "output_dir": "data\\results\\shape_auc_study",
+    "seed": "20261114",
+    "workers": "24"
+  },
+  "reps_per_point": 6000,
+  "methods": [
+    "m3",
+    "fiducial",
+    "fiducial_hybrid"
+  ],
+  "shape_edges": {
+    "student_t": [
+      1.0,
+      2.0,
+      4.0,
+      10.0,
+      30.0
+    ],
+    "hetero_gaussian": [
+      0.2,
+      0.5,
+      1.0,
+      2.0,
+      5.0
+    ]
+  },
+  "auc_edges": [
+    0.5,
+    0.75,
+    0.9,
+    0.95,
+    1.0
+  ],
+  "strata": {
+    "student_t": [
+      {
+        "shape_bin": 0,
+        "auc_bin": 0,
+        "shape_range": [
+          1.1,
+          2.0
+        ],
+        "auc_range": [
+          0.55,
+          0.75
+        ]
+      },
+      {
+        "shape_bin": 0,
+        "auc_bin": 1,
+        "shape_range": [
+          1.1,
+          2.0
+        ],
+        "auc_range": [
+          0.75,
+          0.9
+        ]
+      },
+      {
+        "shape_bin": 0,
+        "auc_bin": 2,
+        "shape_range": [
+          1.1,
+          2.0
+        ],
+        "auc_range": [
+          0.9,
+          0.95
+        ]
+      },
+      {
+        "shape_bin": 0,
+        "auc_bin": 3,
+        "shape_range": [
+          1.1,
+          2.0
+        ],
+        "auc_range": [
+          0.95,
+          0.99
+        ]
+      },
+      {
+        "shape_bin": 1,
+        "auc_bin": 0,
+        "shape_range": [
+          2.0,
+          4.0
+        ],
+        "auc_range": [
+          0.55,
+          0.75
+        ]
+      },
+      {
+        "shape_bin": 1,
+        "auc_bin": 1,
+        "shape_range": [
+          2.0,
+          4.0
+        ],
+        "auc_range": [
+          0.75,
+          0.9
+        ]
+      },
+      {
+        "shape_bin": 1,
+        "auc_bin": 2,
+        "shape_range": [
+          2.0,
+          4.0
+        ],
+        "auc_range": [
+          0.9,
+          0.95
+        ]
+      },
+      {
+        "shape_bin": 1,
+        "auc_bin": 3,
+        "shape_range": [
+          2.0,
+          4.0
+        ],
+        "auc_range": [
+          0.95,
+          0.99
+        ]
+      },
+      {
+        "shape_bin": 2,
+        "auc_bin": 0,
+        "shape_range": [
+          4.0,
+          10.0
+        ],
+        "auc_range": [
+          0.55,
+          0.75
+        ]
+      },
+      {
+        "shape_bin": 2,
+        "auc_bin": 1,
+        "shape_range": [
+          4.0,
+          10.0
+        ],
+        "auc_range": [
+          0.75,
+          0.9
+        ]
+      },
+      {
+        "shape_bin": 2,
+        "auc_bin": 2,
+        "shape_range": [
+          4.0,
+          10.0
+        ],
+        "auc_range": [
+          0.9,
+          0.95
+        ]
+      },
+      {
+        "shape_bin": 2,
+        "auc_bin": 3,
+        "shape_range": [
+          4.0,
+          10.0
+        ],
+        "auc_range": [
+          0.95,
+          0.99
+        ]
+      },
+      {
+        "shape_bin": 3,
+        "auc_bin": 0,
+        "shape_range": [
+          10.0,
+          30.0
+        ],
+        "auc_range": [
+          0.55,
+          0.75
+        ]
+      },
+      {
+        "shape_bin": 3,
+        "auc_bin": 1,
+        "shape_range": [
+          10.0,
+          30.0
+        ],
+        "auc_range": [
+          0.75,
+          0.9
+        ]
+      },
+      {
+        "shape_bin": 3,
+        "auc_bin": 2,
+        "shape_range": [
+          10.0,
+          30.0
+        ],
+        "auc_range": [
+          0.9,
+          0.95
+        ]
+      },
+      {
+        "shape_bin": 3,
+        "auc_bin": 3,
+        "shape_range": [
+          10.0,
+          30.0
+        ],
+        "auc_range": [
+          0.95,
+          0.99
+        ]
+      }
+    ],
+    "hetero_gaussian": [
+      {
+        "shape_bin": 0,
+        "auc_bin": 0,
+        "shape_range": [
+          0.2,
+          0.5
+        ],
+        "auc_range": [
+          0.55,
+          0.75
+        ]
+      },
+      {
+        "shape_bin": 0,
+        "auc_bin": 1,
+        "shape_range": [
+          0.2,
+          0.5
+        ],
+        "auc_range": [
+          0.75,
+          0.9
+        ]
+      },
+      {
+        "shape_bin": 0,
+        "auc_bin": 2,
+        "shape_range": [
+          0.2,
+          0.5
+        ],
+        "auc_range": [
+          0.9,
+          0.95
+        ]
+      },
+      {
+        "shape_bin": 0,
+        "auc_bin": 3,
+        "shape_range": [
+          0.2,
+          0.5
+        ],
+        "auc_range": [
+          0.95,
+          0.99
+        ]
+      },
+      {
+        "shape_bin": 1,
+        "auc_bin": 0,
+        "shape_range": [
+          0.5,
+          1.0
+        ],
+        "auc_range": [
+          0.55,
+          0.75
+        ]
+      },
+      {
+        "shape_bin": 1,
+        "auc_bin": 1,
+        "shape_range": [
+          0.5,
+          1.0
+        ],
+        "auc_range": [
+          0.75,
+          0.9
+        ]
+      },
+      {
+        "shape_bin": 1,
+        "auc_bin": 2,
+        "shape_range": [
+          0.5,
+          1.0
+        ],
+        "auc_range": [
+          0.9,
+          0.95
+        ]
+      },
+      {
+        "shape_bin": 1,
+        "auc_bin": 3,
+        "shape_range": [
+          0.5,
+          1.0
+        ],
+        "auc_range": [
+          0.95,
+          0.99
+        ]
+      },
+      {
+        "shape_bin": 2,
+        "auc_bin": 0,
+        "shape_range": [
+          1.0,
+          2.0
+        ],
+        "auc_range": [
+          0.55,
+          0.75
+        ]
+      },
+      {
+        "shape_bin": 2,
+        "auc_bin": 1,
+        "shape_range": [
+          1.0,
+          2.0
+        ],
+        "auc_range": [
+          0.75,
+          0.9
+        ]
+      },
+      {
+        "shape_bin": 2,
+        "auc_bin": 2,
+        "shape_range": [
+          1.0,
+          2.0
+        ],
+        "auc_range": [
+          0.9,
+          0.95
+        ]
+      },
+      {
+        "shape_bin": 2,
+        "auc_bin": 3,
+        "shape_range": [
+          1.0,
+          2.0
+        ],
+        "auc_range": [
+          0.95,
+          0.99
+        ]
+      },
+      {
+        "shape_bin": 3,
+        "auc_bin": 0,
+        "shape_range": [
+          2.0,
+          5.0
+        ],
+        "auc_range": [
+          0.55,
+          0.75
+        ]
+      },
+      {
+        "shape_bin": 3,
+        "auc_bin": 1,
+        "shape_range": [
+          2.0,
+          5.0
+        ],
+        "auc_range": [
+          0.75,
+          0.9
+        ]
+      },
+      {
+        "shape_bin": 3,
+        "auc_bin": 2,
+        "shape_range": [
+          2.0,
+          5.0
+        ],
+        "auc_range": [
+          0.9,
+          0.95
+        ]
+      },
+      {
+        "shape_bin": 3,
+        "auc_bin": 3,
+        "shape_range": [
+          2.0,
+          5.0
+        ],
+        "auc_range": [
+          0.95,
+          0.99
+        ]
+      }
+    ]
+  },
+  "git_hash": "ad54487e26b6d1c7dcdbf96db2ed47a1fc0e72d1"
+}
