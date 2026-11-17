@@ -34,15 +34,15 @@ calibrated (cached per ``(n, alpha_class)``).
 
 The class levels multiply (independent samples): ``alpha_class`` per class is
 set by ``(1 - alpha_F)(1 - alpha_G) = 1 - alpha`` with the split ratio
-``rho``: ``1 - alpha_F = (1-alpha)^rho``. The default ``rho = 0.5`` is the
-Sidak split; ``"sample_size"`` sets ``rho`` from the class sizes
-(:mod:`.class_split`). The ratio never reads the ranks, so any such choice
+``rho``: ``1 - alpha_F = (1-alpha)^rho``. The default ``"sample_size"`` sets
+``rho`` from the class sizes (:mod:`.class_split`); ``rho = 0.5`` is the
+Sidak split. The ratio never reads the ranks, so any such choice
 preserves the theorem.
 
 Corner honesty: the upper edge at ``t = 0`` is the composition's own value
 (the exact Beta bound at the count of positives ranked above the top
 negative) — pinning ``U(0) = 0`` is *invalid* distribution-free
-(theory doc, Corollary 9.3: continuous scores can have ``R(0) > 0``). Users
+(theory doc, Corollary 9a: continuous scores can have ``R(0) > 0``). Users
 who can assert ``R(0) = 0`` (overlapping supports) may opt into the pin via
 ``assume_r0_zero=True``. ``R(1) = 1`` holds for every continuous DGP, so
 both edges are pinned to 1 at ``t = 1``.
@@ -279,7 +279,7 @@ def m3_band_rs(
     Distribution-free simultaneous confidence band with a finite-sample
     coverage theorem: ``P(forall t: L(t) <= R(t) <= U(t)) >= 1 - alpha`` for
     every continuous score distribution, at every sample size (theory doc
-    Proposition 12). Wider than the fiducial band (measured 1.45-2.19x its
+    Proposition 12). Wider than the fiducial band (about 1.6x its mean
     area at alpha=0.05) but provable, deterministic given the ranks, and
     orders of magnitude cheaper: one O(n) pass after a cached per-(n, level)
     calibration.
@@ -306,7 +306,7 @@ def m3_band_rs(
         assume_r0_zero: If True, pin ``U(0) = 0``. Valid only under the
             *user-asserted* assumption ``R(0) = 0`` (class supports overlap
             at the top); the distribution-free default is the composition's
-            own exact bound at ``t = 0`` (Corollary 9.3 of the theory doc).
+            own exact bound at ``t = 0`` (Corollary 9a of the theory doc).
         random_state: Seed or ``numpy.random.Generator`` for tie-breaking
             only — the band is otherwise deterministic given the ranks.
 

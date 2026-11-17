@@ -1,6 +1,9 @@
 # Rank-space fiducial ROC bands: construction, guarantees, and next theory
 
-*Working theory, 2026-09-06; §§6.6 and 12.1a added 2026-11-10. Companion to the
+*Working theory, 2026-09-06; §§6.6 and 12.1a added 2026-11-10; Propositions
+6a, 9c, 9d, 12i and the explicit M3 composition added 2026-11-16 from the
+method specifications ([`fiducial_band.md`](fiducial_band.md),
+[`ell_band.md`](ell_band.md)). Companion to the
 [method assessment](next_method_ideas.md), the
 [research record](research_record.md) (all measurements), and the
 [Python implementation](../src/studroc_paper/methods/fiducial_band.py).
@@ -19,10 +22,9 @@ The most useful additions developed here are:
 - a distribution-free integrated-width bound for full gap bracketing (§3.1);
 - exact empirical-ROC moment identities, and a sharp asymptotic bound on
   directional imbalance (§§4, 6);
-- the second-order reason the raw tube over-covers: its centre is a kernel
-  smooth of the empirical ROC at bandwidth $n_0^{-1/2}$, so the truth is
-  smoother than the draws that calibrate the trim; a depth computed from
-  smoothed draws returns interior coverage to nominal (§6.6);
+- a second-order smoothing heuristic for the raw tube's over-coverage,
+  supported by experiments with a depth computed from smoothed draws;
+  its remainder control and cutoff-rate argument remain open (§6.6);
 - precise coverage-transfer and hybrid inequalities (§8);
 - missing-mass lower bounds showing what an honest band must leave open (§9);
 - exact, interpretable alternatives to the hybrid's empirical cut-point
@@ -34,8 +36,16 @@ The most useful additions developed here are:
   (§§12.6–12.7). These are conservative alternatives, not a validity
   theorem for the production trim;
 - M3 written as a bracket hull over an auxiliary set fixed in advance, an
-  exact generalization to curved class regions, and a ceiling showing that no
-  such region recovers the direct ROC geometry (§12.1a).
+  exact generalization to curved class regions, and a necessary support-function
+  bound interpreted through a Gaussian width approximation (§12.1a);
+- exact missing-mass coverage inequalities at both corners: an infimum bound
+  of $1-(1-1/n_0)^{n_0}$ at the left for $n_0\ge2$, and a right-corner
+  inequality with small measured coverage for tiny misses; a zero-coverage
+  asymptotic limit is not established (Proposition 9c);
+- M3's edges as explicit index gathers, a finite-sample bound of
+  $1-\sqrt{1-\alpha}$ on each directional miss, the one-sided bands that
+  follow from it, and M3's closed form on the separated path
+  (§12.1, Propositions 12i and 9d).
 
 **Status.** “Exact” means a finite-sample or deterministic statement under
 its explicit assumptions. “Asymptotic” means a limit under the stated
@@ -93,6 +103,18 @@ $L(t)=L(t_k)$ and $U(t)=U(t_{k+1})$. Coverage at every grid point then
 implies coverage everywhere, including for a discontinuous $R$.
 Linear interpolation of the edges does not have this implication.
 Reported numerical integrals must specify which extension they integrate.
+
+For the conservative extension, the area is exactly
+$$
+ W_{\rm step}=\sum_{k=0}^{K-1}(t_{k+1}-t_k)
+             \{U(t_{k+1})-L(t_k)\}.
+$$
+The main simulation suite instead reports trapezoidal integration of grid
+widths. The continuum M3 composition before grid sampling is a third
+representation, with its own area (Proposition 9d). The suite excludes both
+endpoints from coverage diagnostics and counts a violation only when the
+TPR exceedance is greater than $10^{-6}$; the exact coverage statements here
+use the strict, full-curve criterion with zero tolerance.
 
 ## 2. What rank invariance does—and does not—give
 
@@ -436,10 +458,11 @@ infinite conditional law.
 An extreme-rank-length refinement orders the sorted vectors of pointwise
 depths lexicographically, breaking minimum-depth ties. It can give finer
 content control, but does not solve the credible-to-confidence problem.
-An envelope of curves with $D_b\ge j$ is contained in the $j$ tube.
-There is no general reverse inclusion of a narrower rectangular tube
-inside that curve envelope: different coordinates can be extremized by
-different rejected curves.
+On the trim columns $J$, an envelope of curves with $D_b\ge j$ is contained
+in the $j$ tube. There is no general reverse inclusion of the tube inside
+that curve envelope: different coordinates can be extremized by different
+rejected curves. At output columns omitted from $J$, retained curves need
+not lie inside the tube at all.
 
 **The production corner allowances.** The upper edge is widened by
 $$
@@ -461,6 +484,24 @@ is $U_{(k+1)}$, and $\ell$ was selected using the same data and cloud.
 For a fixed threshold selected independently of the positive sample,
 and a fixed local error budget, the ordinary binomial argument is exact.
 Section 10 uses that distinction constructively.
+
+**Proposition 6a (structure of the reported band). [Exact]** For every label
+path, level, and cloud:
+
+1. *Monotone edges.* $L$ and $U$ are nondecreasing on the grid. Pointwise
+   order statistics of nondecreasing curves are nondecreasing; the zeroed
+   set $\{k:\widehat k_k=0\}$ is an initial segment because $\widehat k_k$ is
+   nondecreasing; the upper edge is a running maximum.
+2. *Nesting in the level on a common cloud.* $j=D_{(\lfloor aM\rfloor+1)}$,
+   clipped, is nondecreasing in $a$. By the argument of Corollary 10c, a
+   larger $j$ raises $L_{\rm raw}$, lowers $U_{\rm raw}$ and $U_{\rm CP}$ at
+   every column, and the allowances and running maximum preserve the order.
+   Bands trimmed from one cloud at $\alpha<\alpha'$ therefore satisfy
+   $B_{\alpha'}\subseteq B_\alpha$ pointwise. Bands at different levels from
+   *different* clouds need not nest.
+
+Item 2 is why production trims one stored cloud at every requested level: a
+family of levels reported for one dataset cannot cross.
 
 ## 6. Interior asymptotics, including directional balance
 
@@ -669,45 +710,69 @@ random data center*. An unconditional draw includes both center error
 and auxiliary error. Dividing the conditional spread by $\sqrt2$ would
 destroy the calibration argument.
 
-### 6.6 Second order: the band is centred on a kernel smooth, and the truth is smoother than a draw
+### 6.6 A second-order smoothing heuristic for interior over-coverage
 
 Theorem 7 is a first-order statement. The raw tube nevertheless over-covers on
 benign shapes at every tested size, most visibly at large $\alpha$, and the
-surplus is still there on interior-only versions. The cause is a second-order
-property of the cloud that is the same at every interior FPR.
+surplus is still there on interior-only versions. The proposed explanation
+is a second-order smoothing effect. It suggests the same rate at regular
+interior points, with a coefficient depending on location and ROC shape;
+neither that rate nor a universal sign of the effect is proved here.
 
 **Representation. [Asymptotic; heuristic derivation, checked numerically]**
 Let $N_b(t)$ count the negative anchors of draw $b$ at or below $t$, and put
-$\beta_b(t)=N_b(t)/n_0-t$. Conditional on the data,
-$\beta_b(t)\approx N(0,h_t^2)$ with
+$\beta_b(t)=N_b(t)/n_0-t$. Conditional on the data, the anchors are uniform
+order statistics, so $N_b(t)\sim\operatorname{Binomial}(n_0,t)$ exactly and
 $$
- h_t^2=\frac{t(1-t)}{n_0+2}.
+ h_t^2=\operatorname{Var}_*\beta_b(t)=\frac{t(1-t)}{n_0}.
 $$
+On a fixed interior, approximate $\beta_b(t)$ by $N(0,h_t^2)$.
 At FPR $t$ the draw reads the rank path at empirical FPR $t+\beta_b(t)$, then
 maps the positive count there through its own positive anchors, whose bridge
-is $\gamma_b$. With $E=\widehat R-R$ the sampling error,
+is $\gamma_b$. With $E=\widehat R-R$ the sampling error, a schematic
+representation is
 $$
- \widetilde R_b(t)-R(t)=Z'_b(t)+E\big(t+\beta_b(t)\big)+O_p(\log n/n),
- \qquad Z'_b(t)=R'(t)\beta_b(t)+\gamma_b(R(t)).            \tag{6.7}
+ \begin{aligned}
+ \widetilde R_b(t)-R(t)&\approx Z'_b(t)+E\big(t+\beta_b(t)\big)+q_b(t),\\
+ Z'_b(t)&=R'(t)\beta_b(t)+\gamma_b(R(t)),\\
+ q_b(t)&=R(t+\beta_b(t))-R(t)-R'(t)\beta_b(t).
+ \end{aligned}                                           \tag{6.7}
 $$
-$Z'_b$ is independent of the data and has the sampling law of $E$ to first
-order; this is Theorem 7. The data enter each draw through $E$ evaluated at a
-*randomly shifted* argument. Averaging over draws, the cloud centre
-$m=E_*\widetilde R_b$ is
+The auxiliary bridge term $Z'_b$ has the sampling covariance to first order,
+consistent with Theorem 7. Equation (6.7) is not an expansion with a proved
+second-order remainder: finite-sample and completion errors, replacement of
+the positive bridge's random argument by $R(t)$, and Gaussian approximation
+errors still need control. The data enter through $E$ at a randomly shifted
+argument. Averaging this representation motivates the cloud-centre approximation
+for $m=E_*\widetilde R_b$,
 $$
- m(t)-R(t)=(\mathsf K_tE)(t),\qquad
- \mathsf K_t=\text{convolution with }N(0,h_t^2).            \tag{6.8}
+ m(t)-R(t)\approx(\mathsf K_tE)(t)+b_R(t),\qquad
+ b_R(t)=(\mathsf K_tR)(t)-R(t),\qquad
+ (\mathsf K_tf)(t)=E_{Z\sim N(0,1)}f(t+h_tZ).              \tag{6.8}
 $$
-The centre is a kernel smooth of the empirical ROC with bandwidth
-$h_t\asymp n_0^{-1/2}$, about $\sqrt{n_0t(1-t)}$ grid cells. So
-$$
- R-m=-\mathsf K_tE,\qquad
- \widetilde R_b-m=Z'_b+\{E(t+\beta_b)-\mathsf K_tE\}.       \tag{6.9}
-$$
-The truth's deviation from the centre is a smoothed error process. A draw's
-deviation is a full-roughness process plus an extra resampling term.
+This operator is local: on a fixed interior a bounded extension outside a
+neighborhood contributes exponentially little. Its bandwidth is
+$h_t\asymp n_0^{-1/2}$, about $\sqrt{n_0t(1-t)}$ grid cells. The smoothing
+bias $b_R$ cannot be silently dropped. If $R$ has a bounded second derivative
+on the neighborhood, $b_R(t)=O(h_t^2)=O(n_0^{-1})$ uniformly there. At a
+bounded positive class-size ratio this is smaller than the proposed
+$n^{-3/4}$ unstandardized roughness scale. The $C^1$ assumptions of Theorem 7
+alone do not establish that comparison or control the other remainders.
 
-**Consequences.** Let $\omega(t)=R'(t)\{1+\lambda R'(t)\}$, the local variogram
+Keeping the bias and curvature terms, the schematic centered expressions are
+$$
+ \begin{aligned}
+ R-m&\approx-\mathsf K_tE-b_R,\\
+ \widetilde R_b-m&\approx Z'_b+\{E(t+\beta_b)-\mathsf K_tE\}
+                              +\{q_b-b_R\}.
+ \end{aligned}                                           \tag{6.9}
+$$
+When the omitted terms and smoothing bias are negligible at the scale of
+interest, the truth's deviation is approximately a smoothed error process.
+A draw's deviation additionally contains auxiliary bridge and resampling
+fluctuations. This is the mechanism explored below.
+
+**Heuristic consequences.** Let $\omega(t)=R'(t)\{1+\lambda R'(t)\}$, the local variogram
 rate of $Z$ in (6.2): $\operatorname{Var}\{Z(t+s)-Z(t)\}\approx\omega(t)|s|$.
 
 1. *Scale.* From (6.9) and $E|\beta-\beta'|=2h_t/\sqrt\pi$,
@@ -720,18 +785,19 @@ rate of $Z$ in (6.2): $\operatorname{Var}\{Z(t+s)-Z(t)\}\approx\omega(t)|s|$.
    $n=500$, $t=.5$. This is an $n^{-1/2}$ effect.
 2. *Roughness.* The tube's depth is calibrated on paths that are rough down to
    the grid. The truth's deviation is smooth below $h_t$, so its supremum
-   lacks the fine-scale excursions that set the cutoff. The cutoff exceeds
-   what the truth needs by an amount of order
-   $\sqrt{\omega h_t}/\sigma\asymp n^{-1/4}$ in normal-score units. This is
-   the dominant term, and it decays slowly.
+   lacks fine-scale excursions. This suggests a cutoff surplus of order
+   $\sqrt{\omega(t)h_t}/\sigma(t)\asymp n^{-1/4}$ in normal-score units,
+   potentially larger than the scale effect. The coefficient varies with
+   $t$ and $R$; deriving a supremum-quantile rate from this local calculation
+   and controlling the other terms remain open.
 3. *Implicit slope.* The cross term between $R'\beta_b$ and $E(t+\beta_b)$
    makes the cloud's spread use the slope of $\widehat R$ at bandwidth $h_t$.
-   Its relative error is $O_p(n^{-1/4})$ with mean zero, a random perturbation
-   of width, not a bias.
+   A fluctuation scale of $n^{-1/4}$ is suggested by this bandwidth. A
+   second-order expansion is needed to separate its random and bias terms.
 
-Items 1 and 2 are conservative. Neither is a guarantee: both rest on the
-regular-interior expansion and say nothing about corners, jumps, or unseen
-mass.
+Items 1 and 2 suggest conservative effects after neglecting the other terms.
+Neither proves a coverage rate or sign, and neither addresses corners,
+jumps, or unseen mass.
 
 **Checks.** Scripts in `experiments/fable_checks_20261110/` (`pit.py`,
 `smooth.py`, `smooth2.py`, `thin.py`), on binormal AUC .8 and the diagonal at
@@ -743,19 +809,21 @@ mass.
 - The raw tube, trimmed and checked on FPR $(.1,.9)$ only, misses at
   .020–.022, .090–.110, and .273–.285 for $\alpha=.05,.2,.5$. The locations of
   the truth's deepest excursion have the same distribution over FPR deciles as
-  the draws' own. The surplus is uniform in location, as (6.9) predicts, and
-  is not an end-geometry effect.
+  the draws' own in these checks. The observed surplus is spread across the
+  interior, consistent with the smoothing mechanism rather than solely an
+  end-geometry effect.
 - The standardized second moment of $R-m$ averages about .93 over the probe
   points (range .84–1.07 across points and three shapes, each with standard
   error near .08), consistent with (6.10) but not resolved by it at this
   replication.
 - At $n_0=n_1=5{,}000$ the production band still covers .667, .883, .963.
   The $\alpha=.5$ surplus has fallen from about .23 to .17 for a tenfold
-  increase in $n$, the slow decay of item 2.
+  increase in $n$, consistent with slow decay but not enough to identify its rate.
 
 **A trim calibrated for a smooth truth. [Heuristic; prototype measured]**
-Equation (6.9) says how the truth sits relative to the centre: like a smoothed
-draw. Form pseudo-truths $P_b=m+s\cdot\mathsf K\{(c_b-m)/s\}$, with $s$ the
+Equation (6.9) motivates approximating the truth's deviation by a smoothed
+draw when the bias and remainders are small. Form pseudo-truths
+$P_b=m+s\cdot\mathsf K\{(c_b-m)/s\}$, with $s$ the
 column standard deviation of the cloud, compute their depths *against the
 unsmoothed cloud*, and take the trim depth as the $(\lfloor aM\rfloor+1)$-th
 smallest of those depths. The tube is still an order-statistic tube of the
@@ -778,26 +846,26 @@ replicates per cell, $M=6{,}000$:
 
 The corrected interior miss rates are at nominal within sampling error (about
 .03 at $\alpha=.5$, .015 at .05) on all three shapes and levels, at 8–24%
-less width. That the correction lands on nominal is the quantitative
-confirmation of (6.9): the surplus is the centre-smoothing effect and little
-else.
+less width. These results support the smoothing hypothesis on the tested
+cells, but do not isolate it from other second-order terms or prove the
+proposed cutoff rate.
 
-This is not a free improvement of the shipped band. The same surplus is what
-currently absorbs part of the exterior risk of the hybrid (§10.4): the
+This is not a free improvement of the shipped band. Interior conservatism may
+absorb part of the exterior risk of the hybrid (§10.4): the
 recalibrated hybrid already returns healthy cells to the raw band's coverage,
-and its lowest cells sit at .948–.960. A smooth-truth depth would put the
-interior at nominal and leave those cells below it unless the exterior term is
-bounded some other way. The kernel is also wrong at the ends, where the cloud
+and its lowest cells sit at .948–.960. If a smooth-truth depth brought interior
+coverage to nominal, remaining exterior failures could cause under-coverage.
+Their joint behavior must be assessed. The kernel is also wrong at the ends, where the cloud
 is skewed and $h_t$ is comparable to $t$: applied to all columns without
 standardization it produced a *smaller* depth at $\alpha=.05$. It belongs on
 the complement of the floor region, as a candidate arm with its own study, not
 as a change to the default.
 
-**What this settles.** Fixed exponents $C>1$ looked usable at moderate $n$
-because they spend this surplus; they fail asymptotically because the surplus
-vanishes while the remap does not. The smooth-truth depth is the remap that
-vanishes at the right rate, because it is computed from the bandwidth that
-causes the surplus.
+**Implications and open questions.** The interior calibration theorem already
+shows why a fixed $C>1$ cannot preserve the nominal limit in its regime.
+Smoothing offers a candidate correction that changes with sample size,
+but its second-order validity and its interaction with the hybrid's exterior
+risk require further proof and experiments.
 
 ## 7. Why the tails are a different experiment
 
@@ -972,8 +1040,16 @@ A miss outside $A$ implies a fiducial exterior miss. This proves (8.2).
 
 Directionally, replace $\alpha_M$ by
 $P_R(V^\pm(B_M))$ and the exterior event by $V^\pm(B_F;A^c)$.
-M3's global guarantee alone bounds each of these M3 probabilities by
-$\alpha_M$; it does not allocate $\alpha_M/2$ to each side.
+A global guarantee alone bounds each of these probabilities only by
+$\alpha_M$. For M3 built from ELL class bands, Proposition 12i gives the
+sharper
+$$
+ P_R(V^\pm(B_M))\le1-\sqrt{1-\alpha_M}
+$$
+for every $R$, which is $\alpha_M/2$ to first order (.0253 at
+$\alpha_M=.05$). The in-region directional miss probability of the hybrid is
+therefore capped at essentially half the M3 level, in each direction
+separately.
 
 This is why rank-only, AUC-based, or cloud-based selection of a **floor
 region** is allowed in (8.2). It is also why the regional M3 cap is not a
@@ -1100,6 +1176,142 @@ perfect separation. They do not prove M3 is optimal, or that every
 dataset requires zero lower edge over a universal seven-rank strip.
 The constants follow from a specified indistinguishability argument
 and error level.
+
+**Proposition 9c (missing-mass counterexamples and worst-case coverage bounds).
+[Exact inequalities for the mathematical construction]** Fix $n_0\ge2$,
+$n_1\ge1$, $\alpha\in(0,1)$, $M\ge100$ and $C>0$, and let $B_F$ be the
+band of §5 with its allowances, evaluated in exact arithmetic. On the
+separated path $\widehat k_k=n_1$ for every $k$, so the lower allowance never
+applies and $U\equiv1$.
+
+*(a) Left corner.* Every polyline rises from $(0,0)$ through points with
+strictly positive coordinates, so $c_b(t_1)>0$ for every draw and
+$L(t_1)=c_{(j)}(t_1)>0$ almost surely. Under Corollary 9b's alternative with
+any $\epsilon\in(1/n_0,1)$, $R(t_1)=0$ and the separated path has probability
+$(1-\epsilon)^{n_0}$. Hence
+$$
+ \inf_{F,G}P\{R\in B_F\}\le1-\Big(1-\frac1{n_0}\Big)^{n_0}
+ \ \downarrow\ 1-e^{-1},                                    \tag{9.6}
+$$
+at most .652 for $n_0\ge10$. This is an infimum bound obtained as
+$\epsilon\downarrow1/n_0$, not necessarily the coverage of one fixed
+construction. It rules out uniform nominal coverage whenever
+$\alpha<(1-1/n_0)^{n_0}$, independently of $M$ and $C$; it does not prove
+failure at every level for each fixed sample size. Mass below $1/n_0$ cannot
+be used here, because $L(0)=0$ and the left-extension of §1 already give
+$L=0$ on $[0,t_1)$.
+
+*(b) Right corner.* Put $\Delta=1-L(t_{n_0-1})$ on the separated path. Its law
+depends only on $(n_0,n_1,\alpha,M,C)$, through the cloud. Under Lemma 9's
+alternative, $R_\pi(t_{n_0-1})=1-\pi$, so for every $\pi\in(0,1)$
+$$
+ P_{R_\pi}\{R_\pi\in B_F\}\le1-(1-\pi)^{n_1}\,P_*\{\Delta<\pi\}.   \tag{9.7}
+$$
+**Right-corner scaling. [Heuristic and empirical]** On the separated path the
+negatives share the last positive gap, and a draw
+whose last negative anchor lies left of $t_{n_0-1}$ has
+$1-c_b(t_{n_0-1})=S^1_{\rm last}(1-f_{(n_0)})/\{n_0(1-u_{n_0})\}$: an
+end spacing times a within-gap interpolation factor. This is (7.3) with
+$K=n_0$, $k=1$. The last-segment condition has probability
+$(1-1/n_0)^{n_0}\to e^{-1}$, so this formula alone does not control all
+draws or the selected lower edge. It motivates a $1/(n_0n_1)$ scale, which
+is supported over the measured range: at $\alpha=.05$, $M=20{,}000$,
+$n_0n_1\Delta$ is 12.5–14.1 at 100 per class and 12.6–13.6 at 1,000 per
+class (20 clouds each).
+
+For fixed $c$ and $\pi=c/(n_0n_1)$, (9.7) becomes
+$$
+ P_{R_\pi}\{R_\pi\in B_F\}
+ \le1-\left(1-\frac{c}{n_0n_1}\right)^{n_1}
+          P_*\{n_0n_1\Delta<c\}.                            \tag{9.8}
+$$
+The first factor in the product is approximately $e^{-c/n_0}$, but a zero
+limit for the bound also requires $P_*\{n_0n_1\Delta<c\}\to1$. A measured
+range from finitely many clouds does not establish that convergence for
+fixed $c$. These calculations therefore do not prove a zero-coverage limit.
+
+**Possible asymptotic proof route. [Open]** For fixed $M$, $\alpha$ and $C$,
+one could first try to prove tightness of $n_0n_1\Delta$ as $n_0\to\infty$
+under a stated regime for $n_1$, accounting for every interpolation segment
+and the adaptive trim depth. If that tightness holds, choosing
+$\pi_n=c_n/(n_0n_1)$ with $c_n\to\infty$ and $c_n/n_0\to0$ makes both
+factors in the miss bound tend to one. For example, $c_n=\sqrt{n_0}$ would
+give $\pi_n=1/(n_1\sqrt{n_0})$. This conditional route uses a larger sliver
+than fixed $O(1/(n_0n_1))$ mass and is not a proof of the stronger claim at
+that scale. It would concern the exact-arithmetic construction; float32
+quantization and nonzero evaluation tolerance require separate treatment.
+
+*Checks* (300 replicates at 100 per class, 150 at 1,000; M3 covered every
+replicate in every cell):
+
+| Construction | $n_0=n_1$ | Parameter | $P$(feature unseen) | Raw tube coverage |
+|---|---:|---|---:|---:|
+| Right, (9.7) | 100 | $\pi=40/n_0n_1$ | .670 | .360 |
+| | 100 | $\pi=100/n_0n_1$ | .366 | .663 |
+| | 1,000 | $\pi=40/n_0n_1$ | .961 | .040 |
+| | 1,000 | $\pi=100/n_0n_1$ | .905 | .080 |
+| Left, (9.6) | 20 / 100 / 1,000 | $\epsilon=1.05/n_0$ | .34–.35 | .17 / .22 / .25 |
+
+In the right-corner cells the tube covered exactly when a rare positive was
+observed. In the left-corner cells it also missed in most replicates that did
+contain a high-scoring negative, because the truth jumps from 0 to 1 within
+the first few grid points.
+
+Two readings matter. First, (9.6)–(9.8) concern the strict simultaneous
+criterion. In the measured right-corner case at 1,000 per class the sliver
+mass is $\pi=4\times10^{-5}$; the actual lower-edge exceedance at
+$t_{n_0-1}$ on the separated path is $(\pi-\Delta)_+$. The left-corner
+miss is not small: $L(t_1)$ is .17–.21 where the truth is zero. Second, the
+separated path is the limiting case of the ordinary mechanism of §7.4. With a
+saturated run of $K$ negatives the same argument gives a miss whenever a
+positive sliver of mass above about $q_{1,\ell}/(n_1K)$ lies below that run,
+and such a sliver is unseen with probability $(1-\pi)^{n_1}$; this is the
+sliver family measured at .505–.613 (§7.2).
+
+**A tolerance form of honesty. [Definition; proposal]** The corner failures
+differ by orders of magnitude in the size of the miss, which the binary
+criterion hides. Call a band $(\alpha,\tau)$-honest if
+$P_R\{\exists t:R(t)<L(t)-\tau\ \text{or}\ R(t)>U(t)+\tau\}\le\alpha$
+throughout the class. Every exact statement here is the case $\tau=0$.
+For the particular right-corner alternative with $\pi=c/(n_0n_1)$,
+$\tau\ge\pi$ suppresses its lower-edge failure on the separated path.
+Part (a) still gives a failure when $\tau<L(t_1)$, and other slivers can
+have larger effects. A tolerance of order $1/n_1$, the empirical TPR step,
+is a possible scale to study for an exterior bound in (10.11). It changes
+the inferential target; no uniform bound or removal of the general
+unseen-mass obstruction follows from this proposal.
+
+**Proposition 9d (continuum M3 on the separated path). [Exact]** Let
+$\gamma_0,\gamma_1$ be the calibrated ELL class levels of §12.1. On the
+separated path the continuum composition before grid sampling is
+$$
+ U\equiv1,\qquad
+ L(t)=\begin{cases}0,&t\le1-\gamma_0^{1/n_0},\\
+ \gamma_1^{1/n_1},&1-\gamma_0^{1/n_0}<t<1,\end{cases}\qquad
+ W(B_{\rm M3})=1-\gamma_0^{1/n_0}\gamma_1^{1/n_1}.          \tag{9.9}
+$$
+*Proof.* In the explicit form (12.1d), $p_i=n_1$ for every $i\ge1$, so the
+upper edge is the sentinel. $i_L(t)=0$ iff
+$t\le b^+_{0,1}=1-\gamma_0^{1/n_0}$, the Beta$(1,n_0)$ quantile, and otherwise
+$L=b^-_{1,n_1}=\gamma_1^{1/n_1}$, the Beta$(n_1,1)$ quantile. $\square$
+
+The area in (9.9) integrates the continuum composition. Sampling it and
+using the conservative step extension gives $W_{\rm step}$ of §1, which
+can be larger. Trapezoidal grid area, used in the main simulations, is a
+third quantity and need not equal either of these areas.
+
+Since $\gamma_c<\alpha$, M3 meets (9.3) and (9.4). Its area exceeds (9.5) by
+the factor $\log(1/\gamma)/\log(1/\alpha)$ in the limit for balanced classes:
+2.1–2.9 at $\alpha=.05$ for 10 to 5,000 per class (.141 against .058 at 100
+per class). This is the first quantitative statement of M3's distance from a
+lower bound, and it isolates the cause. On this path only the two end order
+statistics matter, and ELL has spent the class budget equally over all $n$ of
+them. A band that put all of $\alpha_c$ on the end order statistic would
+attain (9.5) here and be useless elsewhere. The ratio
+$\log(1/\gamma)/\log(1/\alpha)$ is therefore the price, at the corners, of
+equal local levels; a local-level profile $\gamma_i$ that is larger at the
+ends, calibrated by the same exact recursion, trades interior width for
+corner width along that axis and preserves the theorem.
 
 ## 10. Hybrid cut points with exact meanings
 
@@ -1549,21 +1761,34 @@ marginal rank error vanish when $M/\log K\to\infty$. Convergence of the
 depth cutoff additionally uses its continuity and the empirical
 distribution of draw depths, not just marginal ranks.
 
-At a fixed column and a fixed continuous-law lower-tail probability
-$\ell$, the number of draws in that tail is Binomial$(M,\ell)$.
+At a fixed column and a fixed population quantile of the continuous cloud
+law with lower-tail probability $p$, the number of draws below that
+threshold is Binomial$(M,p)$.
 For example,
 $$
- P_*(\text{no tail draw})=(1-\ell)^M.
+ P_*(\text{no tail draw})=(1-p)^M.
 $$
-Thus $M\ell$ controls tail resolution, while (11.4) controls absolute
-marginal-CDF error.
+Thus $Mp$ controls resolution of a fixed tail, while (11.4) controls
+absolute marginal-CDF error. At an untied column the selected $j$-th order
+statistic instead has exactly $j-1$ cloud values below it. The nominal
+rank level $\ell=j/(M+1)$ is not an exact fresh-draw tail probability when
+$j$ is selected using the cloud; $M\ell$ is a resolution heuristic.
+
+Cloud storage in float32 operates on TPR values, not probability ranks.
+Comparing its spacing with $1/M$ does not bound its effect on order
+statistics or depth: rounding can create ties. A numerical assessment
+should compare the same generated cloud before and after conversion,
+including changes in ties, trim depths, and band edges over the supported
+sample sizes and significance levels.
 
 Until 2026-11-10 the budget came from a fitted local-level law targeting about
 five tail draws, clipped to 2,000–20,000, and each level trimmed only its own
 leading rows of a shared cloud. Realized depths sat below the target: 3–5 at
 $\alpha=.05$ for $n_0$ from 150 to 5,000, and about 5 at $\alpha=.2$,
-$n_0=5{,}000$. A $j$-th extreme of $M$ draws cuts a tail probability whose
-relative standard deviation is about $j^{-1/2}$ at each column, 45–55% there.
+$n_0=5{,}000$. For a fixed $j$ and continuous marginal law, the lower-tail
+probability at the $j$-th order statistic has a Beta$(j,M+1-j)$ law, giving
+relative standard deviation about $j^{-1/2}$ when $j\ll M$. The resulting
+45–55% scale is only a heuristic for the adaptive depths here.
 In the band this showed up as pointwise edge noise of 3–4.5% of the half-width
 and a seed-to-seed standard deviation of mean width of .9–1.6%. Coverage was
 not measurably affected (.948 against .950 at 50/50).
@@ -1638,6 +1863,114 @@ to obtain coverage at least $1-\alpha$. Dependence of $\rho$ on fixed
 class sizes is allowed; choosing it from observed ranks is not justified
 by this product argument alone.
 
+**Explicit form. [Exact]** Order each class by descending score, write
+$A=1-F$, $B=1-G$, and let $b^\pm_{c,i}$ be the bounds on the ascending
+uniform order statistics $A(X_{[i]})$ and $B(Y_{[j]})$, with sentinels
+$b^-_{1,0}=0$, $b^+_{1,n_1+1}=1$. Let $p_i$ count positives ranked above
+$X_{[i]}$, $p_0=0$. The envelope above is
+$$
+ \begin{aligned}
+ U(t)&=b^+_{1,\,p_{i_U(t)}+1},& i_U(t)&=\min\{i\ge1:b^-_{0,i}\ge t\}
+       \quad(U=1\text{ if none}),\\
+ L(t)&=b^-_{1,\,p_{i_L(t)}},& i_L(t)&=\#\{i:b^+_{0,i}<t\}.
+ \end{aligned}                                              \tag{12.1d}
+$$
+Both edges are index gathers on precomputed arrays. The proof is two chains
+of monotone inequalities. If $A(X_{[i]})\ge b^-_{0,i}\ge t$ then
+$Q_F(1-t)\ge X_{[i]}$, so
+$R(t)\le B(X_{[i]})\le B(Y_{[p_i+1]})\le b^+_{1,p_i+1}$. If
+$A(X_{[i]})\le b^+_{0,i}<t$ then $Q_F(1-t)\le X_{[i]}$, so
+$R(t)\ge B(X_{[i]})\ge B(Y_{[p_i]})\ge b^-_{1,p_i}$. The one delicate case,
+$A(X_{[i]})=t$ with $Q_F(1-t)<X_{[i]}$, needs a sample point at the right end
+of an interval of zero $F$-mass and has probability zero simultaneously over
+$t$. The full proof is Lemma 1 of [`ell_band.md`](ell_band.md). It holds at
+every real $t$, uses no continuity of $R$, and covers $R(0)>0$.
+
+The chains show which events each edge uses. With
+$E_c^-=\{\text{all lower bounds of class }c\text{ hold}\}$ and $E_c^+$ the
+upper-bound event,
+$$
+ \{R\le U\ \forall t\}\supseteq E_0^-\cap E_1^+,\qquad
+ \{R\ge L\ \forall t\}\supseteq E_0^+\cap E_1^-.            \tag{12.1e}
+$$
+The intersection of the two right sides is $E_0\cap E_1$, which gives (12.1)
+again, and (12.1e) is the event-level form of the corner pairing in §12.1a.
+
+**Proposition 12i (each direction separately). [Exact]** For M3 built from
+ELL class bands at class levels $\alpha_0,\alpha_1$ with
+$(1-\alpha_0)(1-\alpha_1)=1-\alpha$, and every continuous $F,G$,
+$$
+ \boxed{\quad
+ P_R\{V^+(B_{\rm M3})\}\le1-\sqrt{1-\alpha},\qquad
+ P_R\{V^-(B_{\rm M3})\}\le1-\sqrt{1-\alpha}.
+ \quad}                                                     \tag{12.1f}
+$$
+*Proof.* Uniform order statistics are nondecreasing functions of independent
+variables and so are associated (Esary–Proschan–Walkup 1967). $E_c^-$ is an
+increasing event and $E_c^+$ a decreasing one, so
+$P(E_c)\le P(E_c^-)P(E_c^+)$. The reflection $u\mapsto1-u$ maps $U_{(i)}$ to
+$1-U_{(n+1-i)}$ and ELL bounds satisfy $b^+_i=1-b^-_{n+1-i}$, so
+$P(E_c^-)=P(E_c^+)\ge\sqrt{1-\alpha_c}$. By (12.1e) and class independence,
+$P(V^+)\le1-P(E_0^-)P(E_1^+)\le1-\sqrt{(1-\alpha_0)(1-\alpha_1)}$. The lower
+edge is symmetric. $\square$
+
+This is the finite-sample, distribution-free counterpart of (6.5): the same
+association argument, applied to the pivots instead of the limiting Gaussian
+process, gives the same upper bound $1-\sqrt{1-a}$ on each direction. It does
+not make the two directions equal, and it has no lower-bound half; measured
+directional rates are far below it (the main suite has above-band misses about
+twice as frequent as below-band misses at $\alpha=.5$ under imbalance). The
+proof uses the symmetry $b^+_i=1-b^-_{n+1-i}$, so it holds for ELL and KS
+class bands and fails for an asymmetric boundary family unless
+$P(E_c^-)$ and $P(E_c^+)$ are computed separately.
+
+**Corollary 12j (one-sided bands). [Exact; not implemented]** Let
+$P_n^-(\gamma)=P\{U_{(i)}\ge b^-_i(\gamma)\ \forall i\}$, a one-sided
+non-crossing probability that the same recursion computes with the upper
+bounds set to one. Choose $\gamma'_c$ with
+$P^-_{n_c}(\gamma'_c)\ge1-\alpha_c$. Then the upper edge of (12.1d) built from
+$b^-_0(\gamma'_0)$ and $b^+_1(\gamma'_1)$ satisfies
+$P_R\{R\le U\ \forall t\}\ge1-\alpha$, and the mirrored lower edge satisfies
+the same statement for $R\ge L$. Only (12.1e) and independence are used.
+Because the one-sided calibration protects half as many constraints,
+$\gamma'_c>\gamma_c$, and a one-sided band at level $\alpha$ is strictly
+inside the corresponding edge of the two-sided band. This is the right object
+for claims of the form "TPR is at least $L(t)$ at every FPR," and by
+Proposition 12i the two-sided band at level $\alpha$ already delivers each
+such claim at level $1-\sqrt{1-\alpha}$.
+
+**Calibration is a certificate, not an estimate. [Exact]** The theorem needs
+only that the level used satisfies $P_{n_c}(\gamma_c)\ge1-\alpha_c$ for the
+bound arrays actually used. How a candidate level was proposed is irrelevant.
+Three consequences:
+
+- A level taken from a table, an interpolant, an asymptotic formula, or
+  another implementation is valid once one exact evaluation of $P_n$ with the
+  local quantile routine passes. Shading a predicted level down by $e^{-s}$
+  widens each class bound by about $s/z_\gamma^2$ in relative terms
+  ($dz/d\log\gamma\approx-1/z$), under 0.1% at $s=.01$, $\alpha=.05$. A
+  shipped table must never be used without that check, since a different
+  Beta-quantile routine changes the arrays.
+- Every term of the recursion is nonnegative, so dropping terms (truncating
+  binomial transitions whose remaining mass is negligible) yields a certified
+  lower bound on $P_n$. A level that passes the truncated check passes the
+  exact one. This reduces the cost per evaluation from about $n\,w^2$ to about
+  $n\,w$ times the retained increment range, with $w\asymp\sqrt n$ the live
+  window.
+- Roundoff is the only uncertified step. The relative error of a sum of
+  nonnegative products grows with the depth of the operation chain, roughly
+  $2n(w+c)\epsilon_{\rm mach}$, about $10^{-9}$ to $10^{-8}$ at $n=10^4$,
+  which is the size of the fixed $10^{-9}$ target margin. A margin that scales
+  with that bound closes the gap at no measurable width cost.
+
+The calibrated level decays like $\alpha_c/(\log n\log\log n)$, not
+$\alpha_c/n$: $\gamma^*\log n\log\log n/\alpha_c$ is .146, .140, .128, .12 at
+$n=30$, 100, 1,000, 10,000 for $\alpha=.05$ and .23 at $\alpha=.5$. This is
+the normalization of the minimum-$p$-value local-level asymptotics of
+Gontscharuk, Landwehr and Finner (2016, *Bernoulli*); the citation and its
+constant should be checked against the source before use, and the measured
+ratio is still far from any limit at these sizes.
+
 Numerical calibration must preserve the target crossing probability
 within a conservative numerical tolerance; the theorem is about the
 calibrated pivot event, not unchecked floating-point exactness.
@@ -1662,7 +1995,7 @@ An honest one-sample construction that allows atoms then gives an honest
 ROC band directly. This is a useful stronger-guarantee special case,
 not a justification for treating an estimated $F$ as known.
 
-### 12.1a M3 as a bracket hull over a set fixed in advance, and the ceiling on curved class regions
+### 12.1a M3 as a bracket hull and width bounds for a specified region family
 
 **Proposition 12g (auxiliary-set form). [Exact; derived here]** Let
 $\mathcal A$ be any measurable set of spacing pairs chosen without reference
@@ -1682,13 +2015,15 @@ $\square$
 M3 is the case in which $\mathcal A$ is a product of two order-statistic
 rectangles: "all monotone completions consistent with the class bounds" is
 exactly the hull of brackets over anchors inside the rectangle. This puts the
-two methods on one axis. Both report a hull over a set of auxiliary spacings
-that has probability $1-\alpha$. M3 fixes the set before the labels are seen
-and uses brackets. The production fiducial tube lets the labels choose the set
-(the draws that are deep *in ROC space, given this rank path*) and uses one
-completion per draw. The first difference is what removes the guarantee
-(§12.5); the second is the completion issue of §3.1. Any improvement of M3
-that keeps its theorem is a better choice of the fixed set.
+two methods on one axis. M3 fixes an auxiliary set of probability at least
+$1-\alpha$ before the labels are seen and takes a bracket hull. The production
+fiducial method instead selects a depth using completed curves in ROC space
+conditional on the observed rank path, then reports a pointwise rank tube.
+Its in-sample content statement is only on the trim columns (§5), and the
+tube is not generally the retained curves' envelope. Label-dependent selection
+prevents the fixed-set guarantee (§12.5); choosing one completion per draw
+adds the issue of §3.1. Within the fixed auxiliary-set framework, changing
+that set offers one way to improve M3 while retaining the coverage argument.
 
 **One-sided statistics and the pairing that matters.** Write
 $A_{c,i}$ for class $c$'s true anchors in ROC coordinates and $\beta_{c,i}$ for
@@ -1728,7 +2063,10 @@ $\mathcal D$. For a staircase $\mathcal D=\bigcup_k[0,x_k]\times[0,y_k]$ the
 band is the hull of finitely many M3 compositions, and the right side of
 (12.1b) is a signed sum of products of two-sided non-crossing probabilities
 with unequal one-sided levels, which the existing exact dynamic program
-evaluates. M3 is $\mathcal D=[0,c]^2$.
+evaluates. M3 corresponds to the rectangle
+$\mathcal D=[0,z_{\gamma_0}]\times[0,z_{\gamma_1}]$, where
+$z_\gamma=\Phi^{-1}(1-\gamma)$; it is the square $[0,c]^2$ when the two
+calibrated cutoffs agree.
 
 *Proof.* On the event in (12.1b), the true anchors satisfy the one-sided bounds
 of some $(x,y)\in\mathcal D$ for the upper edge and of some
@@ -1741,28 +2079,34 @@ region replaces that single choice by an envelope over allocations, so the
 allocation adapts to the local ratio of the two sampling errors at each $t$
 without reading the data.
 
-**Gaussian width of a region, and a ceiling. [Asymptotic heuristic; computed]**
+**Gaussian width of a region and a necessary bound. [Width approximation; computed]**
 In the regular interior, with $a_t,b_t$ as in (11.2) and
 $(\cos\varphi_t,\sin\varphi_t)\propto(b_t,a_t)$, the half-width of
-$B_{\mathcal D}$ at $t$ is, to first order, $h_{\mathcal D}(\varphi_t)\sqrt{a_t^2+b_t^2}$
+$B_{\mathcal D}$ at $t$ is approximated by $h_{\mathcal D}(\varphi_t)\sqrt{a_t^2+b_t^2}$
 with the support function
 $h_{\mathcal D}(\varphi)=\sup_{\mathcal D}(x\cos\varphi+y\sin\varphi)$.
 The square has $h(\varphi)=c(\cos\varphi+\sin\varphi)$, which is (11.2)'s
-$a+b$; a quarter disc has constant $h=c$, the direct ROC geometry. Every region
-with content $1-\alpha$ lies in a half-plane, so for each $\varphi$
+$a+b$; a quarter disc has constant $h=c$, matching the local quadrature
+geometry but not necessarily the direct ROC cutoff. If the joint event in
+(12.1b) has probability at least $1-\alpha$, so does membership of its first
+excursion pair in $\mathcal D$. Since $\mathcal D$ lies in the half-plane
+$x\cos\varphi+y\sin\varphi\le h_{\mathcal D}(\varphi)$, necessarily
 $$
  h_{\mathcal D}(\varphi)\ \ge\
  Q_{1-\alpha}\{\cos\varphi\,T^L_{0+}+\sin\varphi\,T^U_{1+}\}.       \tag{12.1c}
 $$
-This bound does not vanish relative to the square, because each one-sided
-maximum is concentrated well above zero: both classes' typical excursions are
-paid whether or not they occur at matching places on the curve.
+This is a necessary support-function bound for the region family in
+Proposition 12h. It uses only one of the two excursion pairs, so it does not
+establish an attainable optimum satisfying the joint two-edge requirement.
+Its interpretation as a half-width bound uses the Gaussian approximation
+above; it is not a finite-sample width theorem for every composition of CDF
+bands.
 
 Calibrated multipliers (400,000 simulated order-statistic vectors per class;
 both edge pairs jointly; half-width at $a_t=b_t$ in units of
 $\sqrt{a_t^2+b_t^2}$):
 
-| $n_0=n_1$, $\alpha$ | Square (M3) | $\ell_4$ region | Quarter disc | Ceiling (12.1c) | Fiducial tube |
+| $n_0=n_1$, $\alpha$ | Square (M3) | $\ell_4$ region | Quarter disc | Lower bound for this region family (12.1c) | Fiducial tube |
 |---|---:|---:|---:|---:|---:|
 | 50, .05 | 4.53 | 3.92 | 3.68 | 3.57 | 2.90 |
 | 500, .05 | 4.86 | 4.25 | 4.05 | 3.96 | 3.16 |
@@ -1772,14 +2116,16 @@ The fiducial column is the normal score of the realized local level. Where one
 class dominates ($\varphi=0$ or $\pi/2$) the disc is 15–22% wider than the
 square and the $\ell_4$ region 3–7% wider.
 
-Three conclusions follow.
+The calculations support three limited comparisons.
 
-- No choice of region can make a composition band more than about 16–21%
-  narrower than M3 where the two sampling errors are equal, and the fiducial
-  tube is a further 20–27% below that ceiling. The remaining gap is not a
-  rectangle artifact. It is the price of calibrating on two class maxima that
-  do not know which negative rank faces which positive rank. Closing it needs
-  the pairing, which only the candidate curve supplies: test inversion (§12.2).
+- At these three settings, the estimated support-function bound permits at
+  most about 16–21% narrowing relative to the square within this region
+  family, under the Gaussian width approximation. The fiducial multipliers
+  are a further 20–27% below that bound. This suggests a cost from using
+  class maxima without ROC pairing information; it is not universal
+  optimality over separately protected CDF constructions. Direct ROC
+  inference, including test inversion (§12.2), is a possible route beyond
+  this family.
 - The gain is local to where the classes contribute comparably. On paired
   bands (300 replicates per cell, staircase with 24 steps) the $\ell_4$ region
   has area .92–.96 of M3 on the diagonal and binormal AUC .8 at balanced sizes,
@@ -1788,8 +2134,10 @@ Three conclusions follow.
   500/500 and 1.16–1.21 on the shifted $t_2$ pair. This reproduces the mixed
   screen of the Fisher-product region with a better exchange rate, because only
   the two harmful corners are rounded.
-- For the hybrid, the floor acts where one class dominates. The square is the
-  right floor there, and a rounded region would widen it.
+- Where one class dominates, the tested rounded regions were wider than the
+  square. This supports retaining the current floor over those alternatives;
+  it does not establish optimality of the square among all regions or class
+  allocations.
 
 ### 12.2 Direct test inversion: exactness without two-CDF rectangles
 
@@ -2291,17 +2639,17 @@ distinguish those results from a guarantee for the existing trim.
    proof-completion project, but it would not settle unrestricted
    full-curve coverage.
 
-6. **The interior surplus as a design quantity.** Section 6.6 identifies the
-   raw tube's interior over-coverage and shows a depth rule that removes it.
+6. **The interior surplus as a design quantity.** Section 6.6 proposes a
+   smoothing explanation for the raw tube's interior over-coverage and a
+   depth rule with promising measured calibration on a few cells.
    Three things are missing. First, a proof of (6.7)–(6.9) with explicit
-   remainder, including the $n^{-1/4}$ constant in the cutoff shift. Second,
+   bias and remainder control, and a derivation of the proposed $n^{-1/4}$
+   cutoff shift and its coefficient. Second,
    the behaviour of the smooth-truth depth under imbalance, at small $n$
    where $h_t$ spans a large share of the grid, and at $n_0\ge5{,}000$.
-   Third, and decisive for the hybrid: the surplus currently pays for part of
-   the unbounded exterior term, so removing it converts a conservative band
-   with unexplained slack into a calibrated band with an explicit exposure.
-   That exchange should be measured on the red-team cells before it is
-   adopted anywhere.
+   Third, and decisive for the hybrid: reducing interior conservatism could
+   expose failures from the unbounded exterior term. That exchange should
+   be measured on the red-team cells before the rule is adopted anywhere.
 
 **Research judgment.** Resolve full-bracket calibration first, then
 joint tail/interior risk; postpone fine-tuning the router wedge.
@@ -2400,6 +2748,9 @@ protection that cannot be removed.
   supplies the likelihood-ratio validity principle behind (12.13).
   The bracket identity, path-prefix relaxation, and cell bounds are
   derived here; that paper does not establish their efficiency.
+- Esary, Proschan and Walkup (1967), *Association of random variables, with
+  applications*, Ann. Math. Statist. 38, supplies association of
+  nondecreasing functions of independent variables, used in Proposition 12i.
 - Empirical claims come from the
   boundary follow-up and Stage F studies as consolidated in the
   [research record](research_record.md), and their archived results,

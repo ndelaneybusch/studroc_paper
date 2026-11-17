@@ -350,7 +350,7 @@ nominal, out of 126 (42 cells × 3 levels).
 |---|---|---|---|---|---|---|---|
 | 50% | Fiducial + ELL floor | 0.982 | 0.910 | 0.723 | 0.969 | 0 | 0.59 |
 | 50% | Fiducial, no floor | 0.982 | 0.916 | 0.736 | 0.961 | 0 | 0.51 |
-| 50% | ELL band | 1.000 | 0.998 | 0.986 | 0.999 | 0 | 0.79 |
+| 50% | ELL band | 1.000 | 0.998 | 0.987 | 0.999 | 0 | 0.78 |
 | 50% | KS | 1.000 | 0.999 | 0.990 | 1.000 | 0 | 1.00 |
 | 50% | Working–Hotelling | 0.619 | 0.495 | 0.298 | 0.011 | 85 | 0.31 |
 | 30% | Fiducial + ELL floor | 0.981 | 0.907 | 0.717 | 0.969 | 0 | 0.61 |
@@ -383,10 +383,10 @@ The full account is in
   empirical ROC process (Hsieh & Turnbull 1996), and the trim becomes a
   studentized simultaneous band. This is a proof outline, not a finite-sample
   theorem.
-- **The band over-covers at second order.** The band is centered on a smoothed
-  version of the empirical ROC, so the true curve sits more comfortably inside
-  the cloud than a typical draw. This is why coverage is 0.97–0.99 at the 95%
-  level and well above nominal at the 50% level.
+- **Smoothing may explain interior over-coverage.** A second-order heuristic
+  approximates the cloud's center by a smoothed empirical ROC, with smoothing
+  bias and remainder terms. Experiments support this mechanism on the tested
+  interiors, but its proposed rate and coverage effect are not proved generally.
 - **The corners are a different problem.** At the ends, uncertainty is set by a
   few extreme order statistics, not by a Gaussian limit. Linear gap-filling is
   wrong there when the ROC is convex. No fiducial calibration fixes this.

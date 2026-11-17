@@ -2,7 +2,7 @@
 
 ## Abstract
 
-We present a distribution-free simultaneous confidence band (SCB) for the **true population** ROC curve with a finite-sample coverage theorem. For each class, the true survival probabilities at the class's own order statistics are distributed exactly as uniform order statistics, whatever the score distribution. The method bounds every order statistic by the $`\gamma`$ and $`1-\gamma`$ quantiles of its own Beta law, using one local level $`\gamma`$ for all order statistics of a class (equal local levels, ELL). It calibrates $`\gamma`$ by an exact non-crossing probability computed by dynamic programming, with no Monte Carlo. It then composes the two class bands into an ROC band through monotonicity and the observed merged ranks. For every pair of continuous score distributions and every pair of sample sizes, the band contains the entire true ROC with probability at least $`1-\alpha`$, and each one-sided miss has probability at most $`1-\sqrt{1-\alpha}`$. The band is deterministic given the ranks and costs one sort and $`O(N)`$ index gathers per dataset after a cached calibration. It tightens in the class tails, where the constant margin of the Kolmogorov–Smirnov (KS) band is most wasteful. In a simulation suite over seven score families its mean area is 0.63–0.99 times the KS area in every cell. Its price is conservatism, which grows with $`\alpha`$: its 50% band covers 0.95–0.99.
+We present a distribution-free simultaneous confidence band (SCB) for the **true population** ROC curve with a finite-sample coverage theorem. For each class, the true survival probabilities at the class's own order statistics are distributed exactly as uniform order statistics, whatever the score distribution. The method bounds every order statistic by the $`\gamma`$ and $`1-\gamma`$ quantiles of its own Beta law, using one local level $`\gamma`$ for all order statistics of a class (equal local levels, ELL). It calibrates $`\gamma`$ by an exact non-crossing probability computed by dynamic programming, with no Monte Carlo. It then composes the two class bands into an ROC band through monotonicity and the observed merged ranks. For every pair of continuous score distributions and every pair of sample sizes, the band contains the entire true ROC with probability at least $`1-\alpha`$, and each one-sided miss has probability at most $`1-\sqrt{1-\alpha}`$. The band is deterministic given the ranks and costs one sort and $`O(N)`$ index gathers per dataset after a cached calibration. It tightens in the class tails, where the constant margin of the Kolmogorov–Smirnov (KS) band is most wasteful. In a simulation suite over seven score families its mean area is 0.63–0.99 times the KS area in every cell. Its price is conservatism, which grows with $`\alpha`$: its 50% band covers 0.95–0.99 on average, and 0.93 in its least conservative cell.
 
 The ELL band is the exact reference method of this project and the corner floor of the fiducial hybrid. The code calls it `m3`. The fiducial band it floors is specified in [`fiducial_band.md`](fiducial_band.md). Proofs and related constructions are in [`fiducial_band_theory.md`](fiducial_band_theory.md) (cited below as "theory"), especially §§9 and 12.
 
@@ -34,6 +34,8 @@ $`R`$ is nondecreasing with $`R(1) = 1`$. It can jump, and $`R(0) > 0`$ when pos
 P\left(\forall t \in [0,1]: R(t) \in \mathcal{B}_\alpha(t)\right) \geq 1 - \alpha
 ```
 
+**Input contract.** The implementation rejects, with an error: $`\alpha \notin (0,1)`$; an empty class; a split ratio that is neither a number in $`(0,1)`$ nor the name `"sample_size"`; an output grid size $`K < 2`$; and an unknown tie-breaking rule.
+
 ---
 
 ## 2. Algorithm
@@ -55,6 +57,14 @@ and likewise for $`B(Y_{[j]})`$ with $`n_1`$. This holds exactly at every sample
 The edge formulas of §2.6 are defined at every $`t \in [0,1]`$. The implementation evaluates them on the native grid $`\mathcal{T} = \{k/n_0 : k = 0, \ldots, n_0\}`$. Both edges are nondecreasing step functions whose jumps occur at Beta quantiles of the negative class, so they generally fall between grid points. The grid band extends to the continuum without loss of coverage by holding $`L`$ from the grid point on the left and $`U`$ from the grid point on the right (theory §1). The exact theorem is stated for the continuum edges, and a grid evaluation with this extension contains them.
 
 If a coarser output grid $`\text{linspace}(0,1,K)`$ is requested, the edges are resampled by the same rule (lower from $`\lfloor t n_0 \rfloor`$, upper from $`\lceil t n_0 \rceil`$).
+
+The area of the conservative native-grid extension is
+
+```math
+W_{\mathrm{step}} = \sum_{k=0}^{n_0-1}(t_{k+1}-t_k)\big[U(t_{k+1})-L(t_k)\big].
+```
+
+The same formula applies to any returned grid using its successive points. This area can exceed that of the continuum composition because grid sampling widens the band. The simulation tables use a third quantity, trapezoidal integration of the grid widths (§3.7). Plotting and integration must identify which representation they use.
 
 ### 2.3 One-Sample ELL Bounds
 
@@ -88,7 +98,7 @@ Every intermediate quantity is a probability in $`[0,1]`$ formed from nonnegativ
 \gamma_{\text{lo}} = \frac{\alpha_c}{2n}, \qquad \gamma_{\text{hi}} = \frac{\alpha_c}{2}.
 ```
 
-$`\gamma_{\text{lo}}`$ is valid by the union bound. Any $`\gamma > \gamma_{\text{hi}}`$ fails at a single order statistic, since $`P_n(\gamma) \le 1 - 2\gamma`$. The target is $`1 - \alpha_c + 10^{-9}`$; the margin absorbs floating-point roundoff. Bisection stops when $`\gamma_{\text{hi}}/\gamma_{\text{lo}} < 1 + 10^{-4}`$ and returns the **conservative endpoint** $`\gamma_{\text{lo}}`$, so the computed coverage of each class band is at least its target. If even the Bonferroni level misses the margin-raised target (possible only when the union bound is tight, e.g. $`n = 1`$), the Bonferroni level is returned; its validity needs no numerics. Results are cached per $`(n, \alpha_c)`$.
+$`\gamma_{\text{lo}}`$ is valid by the union bound. Any $`\gamma > \gamma_{\text{hi}}`$ fails at a single order statistic, since $`P_n(\gamma) \le 1 - 2\gamma`$. The target is $`1 - \alpha_c + 10^{-9}`$; the margin absorbs floating-point roundoff. Bisection stops when $`\gamma_{\text{hi}}/\gamma_{\text{lo}} < 1 + 10^{-4}`$ and returns the **conservative endpoint** $`\gamma_{\text{lo}}`$, so the computed coverage of each class band is at least its target. If even the Bonferroni level misses the margin-raised target (possible only when the union bound is tight, e.g. $`n = 1`$), the Bonferroni level is returned; its validity needs no numerics. Results are cached per $`(n, \alpha_c)`$, with $`\alpha_c`$ rounded to 12 decimal places in the key.
 
 Calibrated levels for balanced classes ($`\alpha_c = 1 - \sqrt{1-\alpha}`$):
 
@@ -102,7 +112,7 @@ Calibrated levels for balanced classes ($`\alpha_c = 1 - \sqrt{1-\alpha}`$):
 | 0.5 | 1,000 | $`5.0 \times 10^{-3}`$ | 2.58 | 34 |
 | 0.5 | 10,000 | $`3.2 \times 10^{-3}`$ | 2.73 | 217 |
 
-The last column is the gain over Bonferroni, which the dependence among order statistics makes large. The local level decays slowly in $`n`$, roughly like $`\alpha_c / \log n`$ rather than $`\alpha_c / n`$.
+The last column is the gain over Bonferroni, which the dependence among order statistics makes large. The local level decays slowly in $`n`$, roughly like $`\alpha_c / (\log n \cdot \log\log n)`$ rather than $`\alpha_c / n`$ (§4.4 gives the constants).
 
 ### 2.5 Class Split
 
@@ -146,13 +156,13 @@ In words: $`i_U(t)`$ is the highest-ranked negative whose true FPR is certified 
 - $`L(0) = 0`$
 - $`U(1) = L(1) = 1`$, valid because $`R(1) = 1`$ for every continuous pair
 
-The upper edge at $`t = 0`$ is **not** pinned. It is the composition's own value $`U(0) = b^+_{1,\, p_1 + 1}`$, which is positive and allows $`R(0) > 0`$. Pinning $`U(0) = 0`$ is invalid without a support assumption (theory Cor. 9b). A user who can assert $`R(0) = 0`$ may opt into the pin (`assume_r0_zero=True`); the theorem then holds under that additional assumption only.
+The upper edge at $`t = 0`$ is **not** pinned. It is the composition's own value $`U(0) = b^+_{1,\, p_1 + 1}`$, which is positive and allows $`R(0) > 0`$. Pinning $`U(0) = 0`$ is invalid without a support assumption: on the separated path an honest band needs $`U(0) = 1`$ (theory Cor. 9a, eq. 9.3). A user who can assert $`R(0) = 0`$ may opt into the pin (`assume_r0_zero=True`); the theorem then holds under that additional assumption only.
 
 No clipping is needed: every edge value is a Beta quantile or a sentinel in $`[0,1]`$.
 
 ### 2.8 Ties
 
-The default breaks tied scores uniformly at random, independently of class, which is equivalent to attaching an independent continuous uniform to every observation and ordering lexicographically. The augmented class distributions are continuous, so the theorem applies exactly. Its estimand is the ROC of the threshold rule that randomizes within tied scores: linear tie segments and AUC $`P(Y > X) + \tfrac{1}{2} P(Y = X)`$ (theory Prop. 2a). The deterministic alternative (`"even"`) spreads each class evenly within tied blocks and has no theorem. Breaking ties by class changes the estimand and is not offered. The tie-breaking draws are the band's only randomness.
+The default breaks tied scores uniformly at random, independently of class, which is equivalent to attaching an independent continuous uniform to every observation and ordering lexicographically. The augmented class distributions are continuous, so the theorem applies exactly. Its estimand is the ROC of the threshold rule that randomizes within tied scores: linear tie segments and AUC $`P(Y > X) + \tfrac{1}{2} P(Y = X)`$ (theory Prop. 2a). The deterministic alternative (`"even"`) spreads each class evenly within tied blocks: within a block of tied scores, the $`i`$-th of a class's $`c`$ members receives the key $`(i - \tfrac12)/c`$, and the block is ordered by key. It has no theorem. Breaking ties by class changes the estimand and is not offered. The tie-breaking draws are the band's only randomness.
 
 ---
 
@@ -165,7 +175,7 @@ The default breaks tied scores uniformly at random, independently of class, whic
 P\left(\forall t: R(t) \in [L(t), U(t)]\right)
 ```
 
-**Note on Future Samples:** This method constructs a *confidence band* for $`R`$. It is **not** a *prediction band* for a future empirical ROC $`\hat{R}_{\text{new}}`$. A fresh empirical curve adds its own sampling error, approximately doubling the covariance, so its coverage is far below $`(1-\alpha)`$.
+**Note on Future Samples:** This method constructs a *confidence band* for $`R`$. It is **not** a *prediction band* for a future empirical ROC $`\hat{R}_{\text{new}}`$. A fresh empirical curve carries its own independent sampling error, so its difference from the observed curve has about twice the variance of $`\hat{R} - R`$. The band is conservative enough that this may not show at every level, but nothing in the theorem covers it.
 
 ---
 
@@ -191,7 +201,7 @@ P\left(\forall t \in [0,1]: L(t) \le R(t) \le U(t)\right) \;\ge\; P_{n_0}(\gamma
 
 Nothing in the argument is asymptotic or simulated. It needs no density, slope, variance estimate, or smoothness of $`R`$. The pivot laws do not depend on $`F`$ or $`G`$, so the bound is uniform over the entire continuous class.
 
-**Remark (numerical exactness).** The theorem concerns the bounds actually used. The calibration and the band compute the bound arrays by the same deterministic double-precision Beta-quantile routine, and the dynamic program evaluates the crossing probability of exactly those arrays. The only numerical error is roundoff inside the DP, which sums and multiplies nonnegative terms. Its worst-case relative error grows like the operation count times machine epsilon, about $`10^{-8}`$ at $`n = 10^4`$. The $`10^{-9}`$ margin covers typical accumulation, and any residual shortfall in the class coverage is far below $`10^{-7}`$. Tie-breaking (§2.8) is the only randomness in the band.
+**Remark (numerical exactness).** The theorem concerns the bounds actually used. The calibration and the band compute the bound arrays by the same deterministic double-precision Beta-quantile routine, and the dynamic program evaluates the crossing probability of exactly those arrays. The only numerical error is roundoff inside the DP, which sums and multiplies nonnegative terms. Its worst-case relative error grows like the operation count times machine epsilon: about $`10^{-9}`$ to $`10^{-8}`$ at $`n = 10^4`$, which is the size of the fixed $`10^{-9}`$ margin or larger. The margin therefore covers typical accumulation, where errors largely cancel, but not the worst case at the largest sizes; any residual shortfall in the class coverage is below $`10^{-7}`$. A margin that grows with the operation count (proportional to $`n^2`$ times machine epsilon) would make the guarantee unconditional on roundoff, at a width cost far below the bisection tolerance. A production implementation should use one. Tie-breaking (§2.8) is the only randomness in the band.
 
 ---
 
@@ -211,21 +221,25 @@ The theorem therefore does more than bound total error. Neither edge can absorb 
 
 ### 3.2 Conservatism
 
-The band's realized coverage is well above nominal, and more so at large $`\alpha`$. In the main suite the 95% band covers 0.999–1.000 and the 50% band 0.95–0.99 (§3.7). The nominal level at which the band realizes coverage 0.95 is 0.50–0.85 across 14 smooth cells (`research_record.md` Q5; Šidák split, measured with an earlier Monte Carlo calibration of $`\gamma`$). There are three sources, and none of them is Monte Carlo error or loose calibration: the class events are calibrated exactly.
+The band's realized coverage is well above nominal, and more so at large $`\alpha`$. In the main suite the 95% band's mean coverage is 0.999–1.000 across prevalences and the 50% band's is 0.95–0.99; the least conservative cells are 0.997 and 0.929 (§3.7). The nominal level at which the band realizes coverage 0.95 is 0.50–0.85 across 14 smooth cells (`research_record.md` Q5; Šidák split, measured with an earlier Monte Carlo calibration of $`\gamma`$). There are three sources, and none of them is Monte Carlo error or loose calibration: the class events are calibrated exactly.
 
 1. **Projection.** Covering both class CDFs is sufficient but not necessary for covering their ROC composition. A class-band failure at an order statistic far from where the other class's uncertainty matters causes no ROC miss. Where the curve is steep, the negative class dominates and the positive class's error budget is largely unused; where it is flat, the reverse.
 2. **Unpaired corners.** The upper edge reads only $`(E_0^-, E_1^+)`$ and the lower edge only $`(E_0^+, E_1^-)`$ (Lemma 1). The two other combinations move both CDFs the same way, and their effects on the ROC largely cancel. The rectangle $`E_0 \cap E_1`$ still spends probability on them (theory §12.1a).
 3. **Level insensitivity.** The class calibration must protect $`n`$ order statistics jointly, so $`\gamma`$ responds weakly to $`\alpha`$. At $`n = 1{,}000`$ the normal score of $`\gamma`$ is 3.49 at $`\alpha = .05`$ and 2.58 at $`\alpha = .5`$, so the 50% band is only about 26% narrower than the 95% band in the interior. Sources 1 and 2 then add coverage at every level.
 
-**Limits on recovering it inside a theorem.** M3 is the square $`[0, c]^2`$ in the plane of the two one-sided class excursion statistics. Replacing the square by any lower set of the same probability preserves the theorem (theory Prop. 12h). In the Gaussian interior the half-width of such a band at a point where the two classes contribute equally cannot fall below a computable ceiling (theory eq. 12.1c). In units of the local standard deviation:
+**Width bounds within a specified region family. [Gaussian approximation; numerical comparison.]** When the two classes have the same calibrated normal-score cutoff, M3 corresponds to the square $`[0,c]^2`$ in the plane of one-sided class excursion statistics; unequal cutoffs give a rectangle. Theory Prop. 12h generalizes this construction to lower sets chosen before observing the ranks. Its coverage bound requires the *joint* event that both harmful excursion pairs lie in the set to have probability at least $`1-\alpha`$.
 
-| $`n_0 = n_1`$, $`\alpha`$ | ELL (square) | Best possible region | Fiducial tube |
+Within this family, theory eq. 12.1c gives a necessary lower bound on the region's support function. Using the Gaussian interior width approximation, the following comparison evaluates it where the two classes contribute equally. The region calculations use 400,000 simulated order-statistic vectors per class, and the fiducial column uses the normal score of the realized local level. Values are in units of the local standard deviation. The lower bound is not an established attainable optimum for a region satisfying the joint two-edge requirement.
+
+| $`n_0 = n_1`$, $`\alpha`$ | ELL (square) | Lower bound for the specified region family | Fiducial tube |
 |---|---|---|---|
 | 50, .05 | 4.53 | 3.57 | 2.90 |
 | 500, .05 | 4.86 | 3.96 | 3.16 |
 | 500, .5 | 3.56 | 2.98 | 2.18 |
 
-No composition of two separately protected class CDFs can be more than about 16–21% narrower than ELL there, and the fiducial tube lies 20–27% below that ceiling. Where one class dominates, the square is already the best region. The remaining gap is the price of calibrating on two class maxima that do not know which negative rank faces which positive rank. Closing it requires inference on the ROC directly, by test inversion (theory §12.2). Within deterministic boundary families (ELL–KS interpolations, tail modifiers, class-split exponents), each calibrated exactly, no member beat ELL on every training shape without widening a tail (`research_record.md` Q5).
+In this approximation and at these three settings, the computed lower bound permits at most about 16–21% narrowing relative to the square within the specified family. The fiducial multipliers lie a further 20–27% below that bound. These numbers are not a finite-sample optimality theorem for all compositions of separately protected CDFs. Where one class dominated, the tested rounded regions were wider than the square; this does not establish that the square is optimal among all allocations. The comparison suggests a cost from using class maxima without the pairing information in the ROC. Direct ROC inference, including test inversion, is a possible route beyond this construction (theory §12.2).
+
+Within a separate screen of 27 deterministic boundaries (ELL–KS interpolations, tail modifiers, class-split exponents), each calibrated exactly, no member beat the Šidák-split ELL band on every training shape without widening a tail (`research_record.md` Q5). The closest member was the sample-size split, which is now the default of §2.5.
 
 ### 3.3 Width and Tail Adaptivity
 
@@ -238,13 +252,17 @@ The KS band (Campbell 1994) is the same composition with a constant class margin
 
 At the median the ELL bound is 1.08–1.22 times the KS margin for $`n = 100`$–$`10{,}000`$ at $`\alpha = .05`$, and 1.17–1.39 times at $`\alpha = .5`$. ELL therefore has no universal width dominance over KS. Its advantage is largest at high AUC, where the ROC's uncertainty is concentrated in the class tails, and smallest near the diagonal and at small $`n`$. In the main suite its mean area is 0.63–0.99 times KS's in every cell, but it is wider than KS on 2.4%, 2.1%, and 0.1% of individual datasets at 50%, 30%, and 10% prevalence ($`\alpha = .05`$).
 
-**Proposition 3 (Separated sample).** *[Exact; derived here.]* On the perfectly separated rank path, where every positive outranks every negative,
+These are finite-sample comparisons over the tested shapes and sizes. They do not imply asymptotic dominance at high AUC. At fixed class significance, the calibrated ELL local level decreases with sample size, so $`z_\gamma=\Phi^{-1}(1-\gamma)`$ grows, whereas the DKW/KS multiplier stays constant. At a fixed regular interior point, this prevents a general asymptotic width advantage; the comparison also depends on which region of the ROC is measured. The local-level asymptotics are reviewed by Weine, McPeek and Abney (2023, §2.4).
+
+**Proposition 3 (Separated sample, continuum composition).** *[Exact; derived here.]* On the perfectly separated rank path, where every positive outranks every negative, the continuum composition before grid sampling has
 
 ```math
 U(t) = 1 \ \ \forall t, \qquad L(t) = \begin{cases} 0, & t \le 1 - \gamma_0^{1/n_0}, \\ \gamma_1^{1/n_1}, & 1 - \gamma_0^{1/n_0} < t < 1, \end{cases} \qquad \int_0^1 (U - L)\,dt = 1 - \gamma_0^{1/n_0}\gamma_1^{1/n_1}.
 ```
 
 *Proof.* Here $`p_i = n_1`$ for all $`i \ge 1`$, so $`U(t) = b^+_{1,n_1+1} = 1`$. For $`L`$, $`i_L(t) = 0`$ iff $`t \le b^+_{0,1} = 1 - \gamma_0^{1/n_0}`$, and otherwise $`L(t) = b^-_{1,n_1} = \gamma_1^{1/n_1}`$, the $`\text{Beta}(n_1, 1)`$ quantile. $`\square`$
+
+The displayed integral is the area of this continuum composition. The conservative extension of the sampled grid uses $`W_{\mathrm{step}}`$ in §2.2, and the simulation tables use trapezoidal grid area. Neither is generally equal to the displayed integral.
 
 Every deterministic rank-only band honest over all continuous distributions must satisfy $`U = 1`$, $`L(t) \le \alpha^{1/n_1}`$ for $`t < 1`$, and $`L(t) = 0`$ for $`t < 1 - \alpha^{1/n_0}`$ on this path, so its area is at least $`1 - \alpha^{1/n_0 + 1/n_1}`$ (theory Cor. 9a–9b). ELL meets all three conditions, since $`\gamma_c < \alpha`$. For balanced classes, its area exceeds the lower bound by a factor approaching $`\log(1/\gamma)/\log(1/\alpha)`$: 2.1–2.9 at $`\alpha = .05`$ for $`n = 10`$–$`5{,}000`$ per class. At 100 per class the area is 0.141 against the bound of 0.058. The unfloored fiducial band violates the third condition (`fiducial_band.md` Prop. 2).
 
@@ -271,15 +289,15 @@ Proposition 2 caps each direction at $`1 - \sqrt{1-\alpha}`$, but the realized r
 | One-sided miss probability | ✓ $`\le 1-\sqrt{1-\alpha}`$ each (Prop. 2) | ✓ |
 | Jumps in $`R`$, $`R(0) > 0`$, support gaps | ✓ covered by the same theorem | ✓ |
 | Ties | ✓ for the randomized (trapezoidal) ROC | ✓ |
-| Calibration | ✗ Conservative; 0.95–0.99 at nominal 0.50 | ✗ Conservative (projection and unpaired corners persist) |
+| Calibration | ✗ Conservative; mean coverage 0.95–0.99 at nominal 0.50 (least conservative cell 0.93) | ✗ Conservative (projection and unpaired corners persist) |
 | Width adapts to local variance | Partly: tails adapt through the Beta laws; the interior pays both classes' errors additively | Half-width $`\approx z_{\gamma_1} a_t + z_{\gamma_0} b_t`$, with $`a_t`$, $`b_t`$ the vertical and horizontal standard errors and $`z_\gamma = \Phi^{-1}(1-\gamma)`$, against $`c_\alpha\sqrt{a_t^2 + b_t^2}`$ for the direct ROC process |
-| Narrower than KS | Usually, not uniformly (§3.3) | ✓ at high AUC |
+| Narrower than KS | Usually in the tested cells, not uniformly (§3.3) | No general dominance; depends on the ROC and the region being compared |
 | Monte Carlo error | None (deterministic given ranks) | None |
-| Future-curve coverage | $`\ll 1-\alpha`$ (not covered) | $`\ll 1-\alpha`$ |
+| Future-curve coverage | No guarantee (not the target) | No guarantee |
 
 ### 3.7 Simulation Evidence
 
-The main suite ([`simulation_spec.md`](simulation_spec.md)) draws 6,000 Latin-hypercube parameter points per family for seven score families (binormal, heteroscedastic Gaussian, logit-normal, opposing-skew Beta, Student-$`t`$, bimodal negatives, Weibull), with AUC uniform on the probit scale over $`[0.55, 0.99]`$. One dataset is drawn per point at each total sample size $`n \in \{10, 30, 100, 300, 1{,}000, 3{,}000, 10{,}000\}`$, at 50%, 30%, and 10% prevalence ($`n = 10`$ at 50% only), and bands are computed at $`\alpha \in \{.05, .2, .5\}`$. A cell is one family at one $`n`$ (about 6,000 datasets). Coverage is checked on the native grid excluding the pinned endpoints $`t = 0, 1`$. Area is relative to the KS band on the same datasets. These are confirmations of an exact theorem, not evidence for it; their use is to measure conservatism and width. All rows use $`n \ge 30`$ (42 cells).
+The main suite ([`simulation_spec.md`](simulation_spec.md)) draws 6,000 Latin-hypercube parameter points per family for seven score families (binormal, heteroscedastic Gaussian, logit-normal, opposing-skew Beta, Student-$`t`$, bimodal negatives, Weibull), with AUC uniform on the probit scale over $`[0.55, 0.99]`$. One dataset is drawn per point at each total sample size $`n \in \{10, 30, 100, 300, 1{,}000, 3{,}000, 10{,}000\}`$, at 50%, 30%, and 10% prevalence ($`n = 10`$ at 50% only), and bands are computed at $`\alpha \in \{.05, .2, .5\}`$. A cell is one family at one $`n`$ (6,000 datasets; 5,995 for Student-$`t`$). The three prevalences are separate runs of the suite with its prevalence override; the suite's default design is balanced. Coverage is checked on the native grid excluding both endpoints $`t = 0, 1`$, with a violation counted only when the TPR exceedance is greater than $`10^{-6}`$. These diagnostics do not check strict full-curve coverage at zero tolerance. Reported band areas use trapezoidal integration of the native-grid widths, not the conservative step-extension area of §2.2 or the continuum composition area of Proposition 3. Area ratios compare that metric with the KS band on the same datasets. These simulations measure conservatism and width; the finite-sample guarantee comes from the proof. All rows use $`n \ge 30`$ (42 cells).
 
 | Prevalence | Level | Mean coverage | Worst cell | Miss below | Miss above | Area ÷ KS |
 |---|---|---|---|---|---|---|
@@ -300,7 +318,7 @@ Against $`n`$ at 50% prevalence, mean over the seven families:
 | Coverage, 50% band | 0.998 | 0.994 | 0.993 | 0.989 | 0.984 | 0.981 | 0.978 |
 | Area ÷ KS, 95% band | 0.91 | 0.98 | 0.88 | 0.79 | 0.73 | 0.69 | 0.66 |
 
-At $`n \ge 30`$ and 50% prevalence the ELL band has about 1.56 times the mean area of the unfloored fiducial band at $`\alpha = .05`$ (0.280 against 0.179). The ratio is largest at small $`n`$, where the ELL band is close to KS, and falls with $`n`$. Below about 50 per class the fiducial hybrid's floor region covers essentially the whole grid, and the hybrid coincides with the ELL band (`research_record.md` Q3).
+At $`n \ge 30`$ and 50% prevalence the ELL band has about 1.56 times the mean area of the unfloored fiducial band at $`\alpha = .05`$ (0.280 against 0.179). The ratio is largest at small $`n`$, where the ELL band is close to KS, and falls with $`n`$. At small samples the fiducial hybrid's floor region covers most of the grid. The hybrid coincides with the ELL band at up to about 15 per class and stays close to it at 50, where about 16% of the grid is unfloored and the hybrid's area is 0.97 times the ELL band's (`research_record.md` Q3, measured with an earlier closure rule).
 
 ---
 
@@ -318,7 +336,7 @@ At $`n \ge 30`$ and 50% prevalence the ELL band has about 1.56 times the mean ar
 
 **Total per dataset after calibration:** $`O(N \log N)`$.
 
-Calibration depends only on $`(n_c, \alpha_c)`$ and is cached in-process; a parent process can calibrate once and pass the cache to workers. Measured calibration time per class size and level is about 0.01–0.02 s at $`n \le 100`$, 0.3–0.6 s at $`n = 1{,}000`$, and 30–50 s at $`n = 10{,}000`$. A calibrated band on 10,000 observations takes about 2.5 ms, and the median time per dataset in the main suite was at most 4 ms at every size.
+Calibration depends only on $`(n_c, \alpha_c)`$ and is cached in-process; a parent process can calibrate once and pass the cache to workers. Measured calibration time per class size and level is about 0.01–0.02 s at $`n \le 100`$, 0.3–0.6 s at $`n = 1{,}000`$, and 30–50 s at $`n = 10{,}000`$. A calibrated band on 10,000 observations takes about 2.5 ms, and the median time per dataset in the main suite was at most 4 ms at every size. All of these timings are indicative and hardware-dependent.
 
 At large $`n`$ the calibration dominates the first call. §4.4 describes how a precomputed table of levels reduces it to about one crossing-probability evaluation.
 
@@ -331,6 +349,8 @@ $`O(n_0 + n_1)`$: two bound vectors per class and the positive-count vector. The
 - $`\alpha`$: significance level.
 - $`\rho`$: class split (default `"sample_size"`; any value fixed by the class sizes preserves the theorem).
 - `assume_r0_zero`: optional pin $`U(0) = 0`$, valid only under the stated support assumption.
+- Tie-breaking rule (default `"random"`, §2.8) and its seed.
+- $`K`$: optional output grid size (default: the native grid, §2.2).
 
 There are no Monte Carlo budgets, smoothing parameters, or shape parameters.
 
@@ -518,3 +538,4 @@ FUNCTION ell_scb(labels, scores, alpha, split="sample_size"):
 - Moscovich, A. and Nadler, B. (2017). Fast calculation of boundary crossing probabilities for Poisson processes. *Statistics & Probability Letters* 123, 177–182.
 - Noé, M. (1972). The calculation of distributions of two-sided Kolmogorov–Smirnov type statistics. *Annals of Mathematical Statistics* 43, 58–64.
 - Owen, A. B. (1995). Nonparametric likelihood confidence bands for a distribution function. *Journal of the American Statistical Association* 90, 516–521.
+- Weine, E., McPeek, M. S. and Abney, M. (2023). [Application of equal local levels to improve Q-Q plot testing bands with R package qqconf](https://doi.org/10.18637/jss.v106.i10). *Journal of Statistical Software* 106(10), 1–31.

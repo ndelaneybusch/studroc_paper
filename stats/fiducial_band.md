@@ -2,7 +2,7 @@
 
 ## Abstract
 
-We present a nonparametric method for constructing simultaneous confidence bands (SCB) for the **true population** ROC curve from the rank structure of the two-sample problem. Under the transform $`s \mapsto 1 - F(s)`$, with $`F`$ the negative-class CDF, the negatives become uniform and the positives acquire CDF exactly $`R`$, so the merged class labels in score order carry everything the data say about the ROC. Each class's CDF evaluated at its own order statistics has the exact law of uniform order statistics, $`\text{Dirichlet}(1, \ldots, 1)`$ spacings, at every sample size. The method draws a cloud of fiducial ROC curves from independent spacing vectors for the two classes, trims it by minimum pointwise rank depth so that every grid point carries the same local tail level, returns the pointwise order-statistic tube at that depth, and widens the two degenerate corners with binomial allowances. The band is rank-invariant, adapts to local variance, needs no bootstrap, density, or slope estimate, and has one tuning input, the Monte Carlo budget. On a regular interior it is asymptotically calibrated. It has **no finite-sample coverage guarantee**: we give an exact construction on which its coverage stays near $`1 - e^{-1}`$ at every sample size and level, and we locate the mechanism in the completion of the two end gaps. In the paper's main simulation suite (seven score families, 6,000 parameter draws each, $`n`$ = 10 to 10,000, three levels) it covers above nominal in every cell at balanced prevalence, at about half the area of the Kolmogorov–Smirnov band; under class imbalance a few heteroscedastic cells fall below nominal.
+We present a nonparametric method for constructing simultaneous confidence bands (SCB) for the **true population** ROC curve from the rank structure of the two-sample problem. Under the transform $`s \mapsto 1 - F(s)`$, with $`F`$ the negative-class CDF, the negatives become uniform and the positives acquire CDF exactly $`R`$, so the merged class labels in score order carry everything the data say about the ROC. Each class's CDF evaluated at its own order statistics has the exact law of uniform order statistics, $`\text{Dirichlet}(1, \ldots, 1)`$ spacings, at every sample size. The method draws a cloud of fiducial ROC curves from independent spacing vectors for the two classes, trims it by minimum pointwise rank depth so that every grid point uses the same nominal local rank level, returns the pointwise order-statistic tube at that depth, and widens the two degenerate corners with binomial allowances. The band is rank-invariant, adapts to local variance, needs no bootstrap, density, or slope estimate, and has one tuning input, the Monte Carlo budget. A regular-interior version is asymptotically calibrated under the conditions of Theorem 1. It has **no unrestricted finite-sample coverage guarantee**: a left-corner construction bounds the infimum of coverage by $`1 - (1 - 1/n_0)^{n_0}`$ for $`n_0 \ge 2`$, tending to $`1 - e^{-1}`$. A right-corner construction gives another exact coverage inequality and much smaller measured coverage for tiny TPR misses; a zero-coverage asymptotic limit is not established here. We locate the mechanism in the completion of the two end gaps. In the paper's main simulation suite (seven score families, 6,000 parameter draws each, $`n`$ = 10 to 10,000, three levels) it covers above nominal in every cell at balanced prevalence, at about half the area of the Kolmogorov–Smirnov band; under class imbalance a few heteroscedastic cells fall below nominal.
 
 This document specifies the unfloored band. The exact composition band that serves as its corner floor is specified in [`ell_band.md`](ell_band.md). Proofs and the full mechanism analysis are in [`fiducial_band_theory.md`](fiducial_band_theory.md) (cited below as "theory"); measurements outside the main suite are in [`research_record.md`](research_record.md).
 
@@ -34,6 +34,8 @@ P\left(\forall t \in [0,1]: R(t) \in \mathcal{B}_\alpha(t)\right) \geq 1 - \alph
 
 The probability includes the band's own Monte Carlo randomization. Section 3 states which parts of this target the method attains, and in what sense.
 
+**Input contract.** The implementation rejects, with an error: $`\alpha \notin (0,1)`$; an empty class ($`n_0 = 0`$ or $`n_1 = 0`$); $`M < 100`$; a trim exponent $`C \le 0`$; an output grid size $`K < 2`$; and an unknown tie-breaking rule. Several levels may be requested at once and are served from one cloud (Prop. 1.3).
+
 ---
 
 ## 2. Algorithm
@@ -55,6 +57,14 @@ The band is computed on the native grid
 Every empirical ROC has its FPR jumps on $`\mathcal{T}`$. A band on $`\mathcal{T}`$ extends to the continuum without loss of coverage by holding the lower edge from the grid point on the left and the upper edge from the grid point on the right: for $`t \in (t_k, t_{k+1})`$, $`L(t) = L(t_k)`$ and $`U(t) = U(t_{k+1})`$. For a monotone truth, coverage at every grid point then implies coverage everywhere, including when $`R`$ has jumps (theory §1). Linear interpolation of the edges does not have this property.
 
 If a coarser output grid $`\text{linspace}(0,1,K)`$ is requested, the edges are resampled by the same conservative rule (lower edge from $`\lfloor t n_0 \rfloor`$, upper edge from $`\lceil t n_0 \rceil`$).
+
+The area of the conservative native-grid extension is
+
+```math
+W_{\mathrm{step}} = \sum_{k=0}^{n_0-1}(t_{k+1}-t_k)\big[U(t_{k+1})-L(t_k)\big].
+```
+
+The same formula applies to any returned grid using its successive points. Plotting and integrating this band require the opposite-side step conventions above. The simulation tables instead report trapezoidal integration of the grid widths (§3.7).
 
 ### 2.3 Fiducial Cloud
 
@@ -93,7 +103,7 @@ Let $`a = \alpha_{\text{eff}} = 1 - (1-\alpha)^C`$ with trim exponent $`C = 1`$ 
 j = \max\Big\{1,\; \min\big\{D_{(\lfloor aM \rfloor + 1)},\; \lfloor M/2 \rfloor\big\}\Big\}, \qquad \ell = \frac{j}{M+1}.
 ```
 
-$`\ell`$ is the realized **local level**: the one-sided tail probability, on the cloud's rank scale, that the band leaves at every grid point. It is selected from the data and the cloud jointly.
+$`\ell`$ is the realized **nominal local rank level**, selected from the data and the cloud jointly and used at every column of the raw tube. It is not an exact tail probability for a fresh cloud draw at the adaptive edge. At an untied column the lower edge has exactly $`j-1`$ cloud values strictly below it; ties can reduce that count (§4.3).
 
 **Lemma (rank–tube equivalence; theory Lemma 5).** A draw lies inside the tube of §2.6 at every trim column iff $`D_b \ge j`$. Consequently at most $`\lfloor aM \rfloor`$ draws leave the tube on $`\mathcal{J}`$, so its in-sample cloud content is at least $`1 - a`$ (theory Prop. 6). This is a statement about the cloud, not about the population ROC.
 
@@ -107,7 +117,7 @@ At every grid column, including columns omitted from $`\mathcal{J}`$,
 L_{\text{raw}}(t_k) = c_{(j)}(t_k), \qquad U_{\text{raw}}(t_k) = c_{(M-j+1)}(t_k),
 ```
 
-the $`j`$-th smallest and $`j`$-th largest cloud values. The tube is pointwise, not the envelope of a retained set of whole curves; it contains the envelope of the curves with $`D_b \ge j`$, and the reverse inclusion fails in general (theory §5).
+the $`j`$-th smallest and $`j`$-th largest cloud values. On the trim columns $`\mathcal{J}`$, the tube contains the pointwise envelope of curves satisfying $`D_b \ge j`$; the reverse inclusion need not hold. At columns omitted from $`\mathcal{J}`$, retained curves need not lie inside the tube. Taking the envelope of retained whole curves would therefore define a different band (theory §5).
 
 ### 2.7 Corner Allowances
 
@@ -133,11 +143,11 @@ Both operations only widen the tube. Neither is an independent Clopper–Pearson
 - $`L(0) = 0`$
 - $`U(1) = 1`$
 
-The upper edge at $`t = 0`$ is **not** pinned to 0: separated supports give $`R(0) > 0`$ (theory §1, Cor. 9b).
+The upper edge at $`t = 0`$ is **not** pinned to 0: separated supports give $`R(0) > 0`$, and on the separated path an honest band needs $`U(0) = 1`$ (theory §1; Cor. 9a, eq. 9.3).
 
 ### 2.9 Ties
 
-The default breaks tied scores uniformly at random, independently of class. Equivalently, attach an independent continuous uniform to every observation and order lexicographically. The augmented scores are continuous, so every statement in §3 applies, and the estimand becomes the ROC of the threshold rule that randomizes within tied scores: linear tie segments and AUC $`P(Y > X) + \tfrac{1}{2} P(Y = X)`$ (theory Prop. 2a). A deterministic alternative (`"even"`) spreads each class evenly within tied blocks; it has no theorem. Breaking ties by class changes the estimand and is not offered. At 20 and 100 score levels, randomized tie-breaking was indistinguishable from continuous scores (`research_record.md` Q1).
+The default breaks tied scores uniformly at random, independently of class. Equivalently, attach an independent continuous uniform to every observation and order lexicographically. The augmented scores are continuous, so every statement in §3 applies, and the estimand becomes the ROC of the threshold rule that randomizes within tied scores: linear tie segments and AUC $`P(Y > X) + \tfrac{1}{2} P(Y = X)`$ (theory Prop. 2a). A deterministic alternative (`"even"`) spreads each class evenly within tied blocks: within a block of tied scores, the $`i`$-th of a class's $`c`$ members receives the key $`(i - \tfrac12)/c`$, and the block is ordered by key. It has no theorem. Breaking ties by class changes the estimand and is not offered. At 20 and 100 score levels, randomized tie-breaking was indistinguishable from continuous scores (`research_record.md` Q1).
 
 ---
 
@@ -150,7 +160,7 @@ The default breaks tied scores uniformly at random, independently of class. Equi
 P\left(\forall t: R(t) \in [L(t), U(t)]\right)
 ```
 
-**Note on Future Samples:** This method constructs a *confidence band* for $`R`$. It is **not** a *prediction band* for a future empirical ROC $`\hat{R}_{\text{new}}`$. A fresh empirical curve adds its own sampling error, approximately doubling the covariance (theory §6.5), so its coverage is far below $`(1-\alpha)`$.
+**Note on Future Samples:** This method constructs a *confidence band* for $`R`$. It is **not** a *prediction band* for a future empirical ROC $`\hat{R}_{\text{new}}`$. A fresh empirical curve carries its own independent sampling error with the same limiting covariance as $`\hat{R} - R`$ (Thm. 1), so $`\hat{R}_{\text{new}} - \hat{R}`$ has about twice the variance and its coverage is far below $`(1-\alpha)`$.
 
 **Proposition 1 (Exact properties).** For every $`\lambda`$, $`\alpha`$, and cloud:
 1. *Rank invariance.* The band depends on the scores only through $`\lambda`$ (and the tie-breaking draws). Its coverage depends on the data-generating process only through $`(R, n_0, n_1)`$.
@@ -160,7 +170,7 @@ P\left(\forall t: R(t) \in [L(t), U(t)]\right)
 
 ---
 
-**Theorem 1 (Asymptotic Interior Calibration; theory Thm. 7).** Fix $`I = [\varepsilon, 1-\varepsilon]`$. Suppose $`R`$ is continuously differentiable on a neighborhood of $`I`$ with $`0 < R' < \infty`$ there, and $`n_1/n_0 \to \lambda \in (0,\infty)`$. Then in $`\ell^\infty(I)`$,
+**Theorem 1 (Asymptotic Interior Calibration; theory Thm. 7).** Fix $`I = [\varepsilon, 1-\varepsilon]`$. Suppose $`R`$ is continuously differentiable on a neighborhood of $`I`$ with $`0 < R' < \infty`$ there, and $`n_1/n_0 \to \kappa \in (0,\infty)`$ (the theory document writes this limit as $`\lambda`$, which here denotes the label sequence). Then in $`\ell^\infty(I)`$,
 
 ```math
 \sqrt{n_1}\,(\hat{R} - R) \Rightarrow Z, \qquad \mathcal{L}_*\big\{\sqrt{n_1}\,(c_b - \hat{R})\big\} \Rightarrow_P \mathcal{L}(Z),
@@ -169,7 +179,7 @@ P\left(\forall t: R(t) \in [L(t), U(t)]\right)
 where, for independent standard Brownian bridges $`B_0, B_1`$,
 
 ```math
-Z(t) = B_1\big(R(t)\big) - \sqrt{\lambda}\, R'(t)\, B_0(t), \qquad \mathrm{Var}\, Z(t) = \sigma^2(t) = R(t)\{1-R(t)\} + \lambda R'(t)^2\, t(1-t).
+Z(t) = B_1\big(R(t)\big) - \sqrt{\kappa}\, R'(t)\, B_0(t), \qquad \mathrm{Var}\, Z(t) = \sigma^2(t) = R(t)\{1-R(t)\} + \kappa R'(t)^2\, t(1-t).
 ```
 
 If, in addition, the tube is trimmed on $`I`$ alone, the trim mesh tends to zero, $`M_n / \log K_n \to \infty`$ (with $`K_n`$ the number of trim columns), and the limiting depth cutoff is a continuity and local strict-increase point, then
@@ -194,17 +204,41 @@ The steps are verified at the level of a proof outline. A full appendix would sp
 
 ---
 
-**Proposition 2 (The band is not honest at any level).** *[Exact.]* Fix $`n_0 \ge 1`$, $`n_1 \ge 1`$, $`\alpha \in (0,1)`$, $`M`$, and $`C`$. For every $`\epsilon \in (1/n_0, 1)`$ there is a pair of continuous score distributions under which the band's coverage is at most $`1 - (1-\epsilon)^{n_0}`$. Hence
+**Proposition 2 (Missing-mass counterexamples and worst-case coverage bounds).** *[Exact bounds for the mathematical construction; scaling and checks below are empirical. Theory Prop. 9c.]* Fix $`n_0 \ge 2`$, $`n_1 \ge 1`$, $`\alpha \in (0,1)`$, $`M \ge 100`$, and $`C > 0`$.
+
+*(a) Left corner.* For every $`\epsilon \in (1/n_0, 1)`$ there is a pair of continuous score distributions under which the band's coverage is at most $`1 - (1-\epsilon)^{n_0}`$. Hence
 
 ```math
 \inf_{F,\,G} P\left(\forall t: R(t) \in \mathcal{B}_\alpha(t)\right) \;\le\; 1 - \left(1 - \frac{1}{n_0}\right)^{n_0} \;\le\; 0.652 \quad (n_0 \ge 10), \qquad \to 1 - e^{-1} \approx 0.632.
 ```
 
-*Proof.* Let positives be $`\text{Unif}[2,3]`$ and negatives the mixture $`(1-\epsilon)\,\text{Unif}[0,1] + \epsilon\,\text{Unif}[4,5]`$. Then $`R(t) = 0`$ for $`t < \epsilon`$, in particular at $`t_1 = 1/n_0`$. With probability $`(1-\epsilon)^{n_0}`$ no negative falls in $`[4,5]`$, and the label path is perfectly separated: every positive outranks every negative. On that path $`\hat{k}_k = n_1 > 0`$ for every $`k`$, so the lower allowance never applies. Every fiducial polyline rises from $`(0,0)`$ through positive points with strictly positive coordinates, so $`c_b(t_1) > 0`$ almost surely for every draw, and $`L(t_1) = c_{(j)}(t_1) > 0 = R(t_1)`$. $`\square`$
+*(b) Right corner.* Let $`\Delta = 1 - L(t_{n_0-1})`$ on the perfectly separated label path; its law depends only on $`(n_0, n_1, \alpha, M, C)`$. For every $`\pi \in (0,1)`$ there is a pair of continuous score distributions under which the band's coverage is at most
 
-The bound does not depend on $`\alpha`$, $`M`$, or $`C`$: no choice of level or budget repairs it. This is the left-corner instance of the missing-mass lower bounds (theory Cor. 9b), which require any deterministic honest rank band to have $`L(t) = 0`$ for $`t < 1 - \alpha^{1/n_0}`$ on the separated path. The fiducial lower edge at $`t_1`$ is instead about $`\hat{k}_0 / \{n_1 \log(1/\ell)\}`$ (theory eq. 7.2), roughly $`0.14`$ at $`\ell = 10^{-3}`$. In 300 replicates of this construction with $`\epsilon = 1.05/n_0`$ and $`n_0 = n_1 \in \{20, 100, 1000\}`$, the 95% band covered .17–.20. Every separated replicate missed, and the band also missed in most replicates where a high-scoring negative was observed, because the truth jumps from 0 to 1 within the first few grid points. The exact band of [`ell_band.md`](ell_band.md) covered every replicate.
+```math
+1 - (1-\pi)^{n_1}\, P_*\{\Delta < \pi\}.
+```
 
-The construction is an extreme case of a general one. Positive or negative mass at the $`1/n`$ scale goes unobserved with probability bounded away from zero, and on that event the data law is exactly the law without it (theory §9, §12.3). Any honest band must leave room for such mass; sorted-uniform completion does not. Constructed slivers of this kind at AUC .60–.95 and $`n`$ up to 2,000 per class reduced coverage to .505–.613, and a step ROC to .108–.238, worsening with $`n`$ (`research_record.md` Q2). No summary of AUC and class counts identifies these cases from the data (theory §12.3).
+*Proof.* (a) Let positives be $`\text{Unif}[2,3]`$ and negatives the mixture $`(1-\epsilon)\,\text{Unif}[0,1] + \epsilon\,\text{Unif}[4,5]`$. Then $`R(t) = 0`$ for $`t < \epsilon`$, in particular at $`t_1 = 1/n_0`$. With probability $`(1-\epsilon)^{n_0}`$ no negative falls in $`[4,5]`$, and the label path is perfectly separated: every positive outranks every negative. On that path $`\hat{k}_k = n_1 > 0`$ for every $`k`$, so the lower allowance never applies. Every fiducial polyline rises from $`(0,0)`$ through positive points with strictly positive coordinates, so $`c_b(t_1) > 0`$ almost surely for every draw, and $`L(t_1) = c_{(j)}(t_1) > 0 = R(t_1)`$.
+
+(b) Let negatives be $`\text{Unif}[0,1]`$ and positives the mixture $`(1-\pi)\,\text{Unif}[2,3] + \pi\,\text{Unif}[-2,-1]`$. Then $`R(t) = 1 - \pi`$ for every $`t < 1`$, in particular at $`t_{n_0-1}`$. With probability $`(1-\pi)^{n_1}`$ no positive falls in $`[-2,-1]`$ and the label path is perfectly separated. The cloud is drawn independently of the scores given the path, so on that event the band misses whenever $`L(t_{n_0-1}) > 1 - \pi`$, that is, $`\Delta < \pi`$. $`\square`$
+
+Part (a) does not involve $`\alpha`$, $`M`$, or $`C`$. It rules out uniform nominal coverage whenever $`\alpha < (1-1/n_0)^{n_0}`$; it does not prove failure at every significance level for each fixed sample size. The infimum bound follows by taking $`\epsilon \downarrow 1/n_0`$ and need not be attained by one fixed construction. The requirement $`n_0 \ge 2`$ makes this range nonempty and puts $`t_1`$ in the interior. Mass below $`1/n_0`$ cannot be used in (a), because $`L = 0`$ on $`[0, t_1)`$ by the pin and the left-extension of §2.2. Part (b) depends on the level and budget through the law of $`\Delta`$.
+
+**Right-corner scaling and its limits. [Empirical.]** At $`\alpha = .05`$ and $`M = 20{,}000`$, 20 clouds at each size gave $`n_0 n_1\Delta`$ in 12.5–14.1 at 100 per class and 12.6–13.6 at 1,000 per class. These measurements suggest a $`1/(n_0 n_1)`$ deficit scale over the tested range. With $`\pi=c/(n_0 n_1)`$, the unseen-feature probability is approximately $`e^{-c/n_0}`$, but a zero limit for the coverage bound also requires $`P_*(n_0n_1\Delta<c)\to1`$. The measured ranges do not establish that convergence for fixed $`c`$, or uniformity over levels and budgets. Theory Prop. 9c distinguishes the exact inequality from a possible asymptotic proof route. Floating-point quantization and the simulation tolerance must also be distinguished from strict mathematical coverage for vanishing misses.
+
+The two misses differ by orders of magnitude in size. In (a) the band claims a TPR of .17–.21 at $`t_1`$ where the truth is zero (measured at $`\alpha = .05`$; the approximation $`\hat{k}_0 / \{n_1 \log(1/\ell)\}`$ of theory eq. 7.2 gives $`0.14`$ at $`\ell = 10^{-3}`$). In the measured case (b) at 1,000 per class, the sliver mass is $`\pi = 4 \times 10^{-5}`$; on the separated path the lower-edge exceedance at $`t_{n_0-1}`$ is $`(\pi-\Delta)_+`$. Part (a) is the left-corner instance of the missing-mass lower bounds (theory Cor. 9b). Part (b) is the randomized-band version of the companion upper bound on $`L(t)`$ on the separated path (theory Lemma 9 and Cor. 9a).
+
+Checks at $`\alpha = .05`$ (300 replicates per cell, 150 at 1,000 per class in (b); theory Prop. 9c). The exact band of [`ell_band.md`](ell_band.md) covered every replicate in every cell.
+
+| Construction | $`n_0 = n_1`$ | Parameter | $`P`$(feature unseen) | Coverage |
+|---|---|---|---|---|
+| (a) | 20 / 100 / 1,000 | $`\epsilon = 1.05/n_0`$ | .34–.35 | .17 / .22 / .25 |
+| (b) | 100 | $`\pi = 40/(n_0 n_1)`$ | .670 | .360 |
+| (b) | 1,000 | $`\pi = 40/(n_0 n_1)`$ | .961 | .040 |
+
+In (b) the band covered exactly when a rare positive was observed. In (a) every separated replicate missed, and the band also missed in most replicates where a high-scoring negative was observed, because the truth jumps from 0 to 1 within the first few grid points.
+
+The construction is an extreme case of a general one. Positive or negative mass at the $`1/n`$ scale goes unobserved with probability bounded away from zero, and on that event the data law is exactly the law without it (theory §9, §12.3). Any honest band must leave room for such mass; sorted-uniform completion does not. Constructed slivers of this kind at AUC .60–.95 and $`n`$ up to 2,000 per class reduced coverage to .505–.613. A step ROC (a jump at FPR .5) reduced it to .238, .184, .136, and .108 at 10, 20, 30, and 50 per class, worsening with $`n`$ (`research_record.md` Q2). No summary of AUC and class counts identifies these cases from the data (theory §12.3).
 
 ---
 
@@ -212,13 +246,16 @@ The construction is an extreme case of a general one. Positive or negative mass 
 
 Two departures from Theorem 1 act in opposite directions and in different places.
 
-**Interior over-coverage (second order).** Each draw reads the data's error process $`E = \hat{R} - R`$ at a randomly shifted FPR $`t + \beta_b(t)`$, with $`\beta_b(t)`$ approximately $`N(0, h_t^2)`$, $`h_t^2 = t(1-t)/(n_0+2)`$. To second order the cloud centre is a kernel smooth of the empirical ROC at bandwidth $`h_t \asymp n_0^{-1/2}`$ (theory §6.6):
+**Interior over-coverage (second-order heuristic).** Let $`N_b(t)`$ count the negative anchors of draw $`b`$ at or below $`t`$, and define $`\beta_b(t)=N_b(t)/n_0-t`$. Conditional on the labels, $`N_b(t)\sim\mathrm{Binomial}(n_0,t)`$ exactly, so $`\mathrm{Var}_*\beta_b(t)=h_t^2=t(1-t)/n_0`$. A Gaussian approximation on a fixed interior motivates viewing each draw as reading the error process $`E=\hat R-R`$ at a randomly shifted argument. For the cloud centre $`m(t)=E_*c_b(t)`$, the proposed smoothing expansion is
 
 ```math
-m(t) - R(t) = (\mathsf{K}_t E)(t), \qquad \mathsf{K}_t = \text{convolution with } N(0, h_t^2).
+m(t)-R(t) \approx (\mathsf K_t E)(t) + \big[(\mathsf K_tR)(t)-R(t)\big],
+\qquad (\mathsf K_tf)(t)=E_{Z\sim N(0,1)}f(t+h_tZ).
 ```
 
-The truth's deviation from the centre is therefore a *smoothed* error process, while the depth cutoff is calibrated on draws that are rough down to the grid. The cutoff exceeds what the truth needs by an amount of order $`n^{-1/4}`$ in normal-score units, the same at every interior FPR. *[Asymptotic; heuristic derivation, checked numerically.]* The consequence is uniform interior over-coverage that decays slowly. On binormal AUC .8 and the diagonal at 500 per class, trimmed and checked on FPR $`(0.1, 0.9)`$ only, the band missed at .020–.022, .090–.110, and .273–.285 for $`\alpha = .05, .2, .5`$. On binormal AUC .8 at 5,000 per class it still covered .963, .883, and .667. A depth computed from kernel-smoothed draws returned interior misses to nominal at 8–24% less width; it is a research arm, not part of the method (theory §6.6).
+This is a local interior approximation, with finite-sample, completion, and Gaussian-approximation remainders omitted; it is not an exact identity. The second term is smoothing bias. A bounded second derivative on a neighborhood of the interior gives bias $`O(h_t^2)=O(n_0^{-1})`$, smaller than the proposed $`n^{-3/4}`$ unstandardized roughness scale when the class-size ratio stays bounded away from zero and infinity. Theorem 1's $`C^1`$ assumptions alone do not supply that second-order conclusion. For the Gaussian operator, a bounded extension outside the neighborhood has exponentially small influence on a fixed interior.
+
+Neglecting these terms suggests that the truth's deviation from the centre is smoother than the draws used to calibrate depth. The proposed cutoff surplus is of order $`n^{-1/4}`$ in normal-score units at regular interior points; its coefficient depends on location and ROC shape. This is a heuristic explanation of slow-decaying interior over-coverage, not a proved universal rate or sign. On binormal AUC .8 and the diagonal at 500 per class, trimmed and checked on FPR $`(0.1, 0.9)`$ only, the band missed at .020–.022, .090–.110, and .273–.285 for $`\alpha = .05, .2, .5`$. On binormal AUC .8 at 5,000 per class it still covered .963, .883, and .667. A depth computed from kernel-smoothed draws produced interior miss rates consistent with nominal within Monte Carlo uncertainty at 8–24% less width on the tested cells; it is a research arm, not part of the method (theory §6.6).
 
 **Corner under-coverage (first order, local).** At the two ends of the grid the uncertainty is set by a few extreme order statistics. For fixed $`k`$, $`n_0 U_{(k)} \Rightarrow \text{Gamma}(k,1)`$, and end spacings are exponential on the $`1/n`$ scale. Sorted-uniform completion spreads the first negative gap, and the run of $`K`$ negatives below the smallest positive, linearly. If the truth is convex there, it sags below the chord the cloud draws, and the lower edge claims a TPR deficit of order $`\log(1/\ell)/(n_1 K)`$ where the truth's is order $`1/n_1`$ (theory §7.4). Heavy tails make the ROC convex at both ends. Positives more dispersed than negatives make it convex near FPR 1. Scarce positives lengthen the saturated run $`K`$: its median at $`n = 1{,}000`$ is 38, 69, and 170 negatives at 50%, 30%, and 10% prevalence. Every main-suite cell below nominal (§3.7) is heteroscedastic Gaussian at 30% or 10% prevalence, the configuration in which misses concentrate on the TPR plateau and fall below the band (§3.3). Proposition 2 is the limiting case of the mechanism.
 
@@ -232,7 +269,7 @@ The truth's deviation from the centre is therefore a *smoothed* error process, w
 
 *Proof.* Gaussian sign symmetry equalizes the two directions, and $`a = 2p - b`$. The covariance of $`Z`$ is nonnegative, so by Pitt's theorem increasing and decreasing events are negatively correlated in the sense $`b \le p^2`$. $`\square`$
 
-At $`a = .05`$ each directional probability lies in $`[.0250, .0254]`$. Systematic directional imbalance is therefore not a first-order interior phenomenon; it points to the corners, to completion, or to the corner allowances. Pooled over the main suite the misses are close to balanced, with a slight upper tilt: at 50% prevalence and $`\alpha = .05`$, 0.84% of datasets miss below and 0.99% above. In the stress strata the corner mechanism makes them strongly one-sided. For Student-$`t`$ with df $`< 4`$ and the heteroscedastic Gaussian with $`\sigma_+/\sigma_- > 2`$, at AUC $`> 0.9`$ and $`n = 100`$–$`3{,}000`$, the truth fell below the 95% band in 5.6%, 9.3%, and 18.4% of datasets at 50%, 30%, and 10% prevalence, and above it in 1.1–1.3% (README §5).
+At $`a = .05`$ each directional probability lies in $`[.0250, .0254]`$. Systematic directional imbalance is therefore not a first-order interior phenomenon; it points to the corners, to completion, or to the corner allowances. Pooled over the main suite the misses are close to balanced, with a slight upper tilt: at 50% prevalence and $`\alpha = .05`$, 0.84% of datasets miss below and 0.99% above. In the stress strata the corner mechanism makes them strongly one-sided. For Student-$`t`$ with df $`< 4`$ and the heteroscedastic Gaussian with $`\sigma_+/\sigma_- > 2`$, at AUC $`> 0.9`$ and $`n = 100`$–$`3{,}000`$, the truth fell below the 95% band in 5.6%, 9.3%, and 18.4% of datasets at 50%, 30%, and 10% prevalence, and above it in 1.1–1.3% (README §§5 and 7; the strata are defined in README §7).
 
 ### 3.4 Asymmetry and Heteroscedasticity Adaptation
 
@@ -248,7 +285,7 @@ with $`\sigma^2(t)\,/\,n_1 = R(1-R)/n_1 + R'^2\, t(1-t)/n_0`$ (theory eq. 11.1).
 
 ### 3.5 Step-Function Structure
 
-On the native grid the edges are evaluated at the jump points of $`\hat{R}`$, and the conservative continuum extension of §2.2 makes $`L`$ and $`U`$ step functions. Unlike the empirical staircase, the raw edges are pointwise order statistics of continuous piecewise-linear curves, so they are continuous in $`t`$ and change gradually from one grid point to the next. Discontinuities arise only where an allowance switches on or off: at the end of the zeroed lower prefix, and where the Clopper–Pearson upper bound overtakes the raw edge.
+Before grid sampling, pointwise order statistics of the continuous fiducial polylines define continuous raw edges. The implementation evaluates those edges on the native grid and applies the corner allowances there. The reported continuum band uses the conservative step extension of §2.2, so either edge can jump at grid points wherever successive values differ. The allowances can introduce additional changes in those grid values; they are not the only source of jumps in the reported extension.
 
 ---
 
@@ -256,9 +293,9 @@ On the native grid the edges are evaluated at the jump points of $`\hat{R}`$, an
 
 | Property | Finite Sample | Asymptotic |
 |----------|---------------|------------|
-| Population coverage, unrestricted continuous class | ✗. Infimum $`\le 1 - (1-1/n_0)^{n_0} \approx 0.63`$ at every $`n`$ and $`\alpha`$ (Prop. 2) | ✗ at the moving boundary points $`t = k/n_0`$, $`k`$ fixed |
+| Population coverage, unrestricted continuous class | No unrestricted guarantee. For $`n_0\ge2`$, infimum $`\le 1-(1-1/n_0)^{n_0}`$; the right-corner inequality gives smaller measured coverage in the tested cells (Prop. 2) | No uniform full-curve calibration from the interior theorem; the left-corner infimum bound tends to $`1-e^{-1}`$. A zero-coverage right-corner limit is not established |
 | Population coverage, main simulation suite | $`\ge`$ nominal in every cell at 50% prevalence; 1 of 126 cell–level combinations below nominal at 30% and 5 at 10% (§3.7) | — |
-| Interior calibration | Conservative; surplus of order $`n^{-1/4}`$ in the cutoff (§3.2) | $`\to 1 - \alpha`$ on a regular interior under interior trimming and growing $`M`$ (Thm. 1) |
+| Interior calibration | Conservative on the tested interiors; a cutoff surplus of order $`n^{-1/4}`$ is a second-order heuristic (§3.2) | $`\to 1 - \alpha`$ on a regular interior under interior trimming and growing $`M`$ (Thm. 1) |
 | Directional balance | Balanced on benign shapes; lower-edge misses dominate on convex corners | Near-balanced, sharp bounds (Prop. 3) |
 | Rank invariance | ✓ exact | ✓ |
 | Width adapts to local variance | ✓ through the rank depth | ✓ Half-width $`c_a \sigma(t)/\sqrt{n_1}`$ |
@@ -268,7 +305,7 @@ On the native grid the edges are evaluated at the jump points of $`\hat{R}`$, an
 
 ### 3.7 Simulation Evidence
 
-The main suite ([`simulation_spec.md`](simulation_spec.md)) draws 6,000 Latin-hypercube parameter points per family for seven score families (binormal, heteroscedastic Gaussian, logit-normal, opposing-skew Beta, Student-$`t`$, bimodal negatives, Weibull), with AUC sampled uniformly on the probit scale over $`[0.55, 0.99]`$. One dataset is drawn per point at each total sample size $`n \in \{10, 30, 100, 300, 1{,}000, 3{,}000, 10{,}000\}`$, at 50%, 30%, and 10% prevalence ($`n = 10`$ at 50% only), and bands are computed at $`\alpha \in \{.05, .2, .5\}`$ with $`M = 20{,}000`$. A cell is one family at one $`n`$ (about 6,000 datasets). Coverage is checked on the native grid excluding the pinned endpoints $`t = 0, 1`$. "Cells below" counts cells whose 95% Wilson interval lies entirely below nominal. Area is relative to the KS band (Campbell 1994) on the same datasets. All rows use $`n \ge 30`$ (42 cells).
+The main suite ([`simulation_spec.md`](simulation_spec.md)) draws 6,000 Latin-hypercube parameter points per family for seven score families (binormal, heteroscedastic Gaussian, logit-normal, opposing-skew Beta, Student-$`t`$, bimodal negatives, Weibull), with AUC sampled uniformly on the probit scale over $`[0.55, 0.99]`$. One dataset is drawn per point at each total sample size $`n \in \{10, 30, 100, 300, 1{,}000, 3{,}000, 10{,}000\}`$, at 50%, 30%, and 10% prevalence ($`n = 10`$ at 50% only), and bands are computed at $`\alpha \in \{.05, .2, .5\}`$ with $`M = 20{,}000`$. A cell is one family at one $`n`$ (6,000 datasets; 5,995 for Student-$`t`$). The three prevalences are separate runs of the suite with its prevalence override; the suite's default design is balanced. Coverage is checked on the native grid excluding both endpoints $`t = 0, 1`$, with a violation counted only when the TPR exceedance is greater than $`10^{-6}`$. These diagnostics do not check strict full-curve coverage at zero tolerance. "Cells below" counts cells whose 95% Wilson interval lies entirely below nominal. Reported band areas use trapezoidal integration of the native-grid widths, not the conservative step-extension area of §2.2. Area ratios compare that metric with the KS band (Campbell 1994) on the same datasets. All rows use $`n \ge 30`$ (42 cells).
 
 | Prevalence | Level | Mean coverage | Worst cell | Cells below | Miss below | Miss above | Area ÷ KS |
 |---|---|---|---|---|---|---|---|
@@ -311,21 +348,27 @@ The worst cell at 50% prevalence is the heteroscedastic Gaussian at $`n = 300`$ 
 
 **Total:** $`O(M N + G_J\, M \log M)`$, where $`G = n_0 + 1`$ is the grid size and $`G_J = |\mathcal{J}| \le \min(G, \approx 1{,}100)`$ the trim-grid size.
 
-The Monte Carlo core runs in Rust (`fiducial_core`), parallel over draws, with a per-draw RNG stream that is a pure function of (seed, draw index); output is bit-identical across thread counts. Median time per dataset in the main suite, on one core under the suite's concurrent load, was 0.02 s at $`n = 10`$, 0.16 s at $`n = 100`$, 1.3 s at $`n = 1{,}000`$, and 9.6 s at $`n = 10{,}000`$.
+The Monte Carlo core runs in Rust (`fiducial_core`), parallel over draws, with a per-draw RNG stream that is a pure function of (seed, draw index); output is bit-identical across thread counts. Median time per dataset in the main suite, on one core under the suite's concurrent load, was 0.02 s at $`n = 10`$, 0.16 s at $`n = 100`$, 1.3 s at $`n = 1{,}000`$, and 9.6 s at $`n = 10{,}000`$. These are times for the suite's joint call, which builds the unfloored band and the hybrid from one cloud at three levels; the unfloored band alone is no slower. They are indicative and hardware-dependent.
 
 ### 4.2 Memory
 
-Primary storage: the $`M \times G`$ cloud, held in float32 (the order-statistic resolution $`1/M \ge 5 \times 10^{-5}`$ is three orders of magnitude above float32 granularity). Memory $`= 4MG`$ bytes: 80 MB at $`n_0 = 1{,}000`$ and 800 MB at $`n_0 = 10{,}000`$ for $`M = 20{,}000`$. All levels are trimmed from the same stored cloud.
+Primary storage: the $`M \times G`$ cloud, held in float32. Memory $`= 4MG`$ bytes: 80 MB at $`n_0 = 1{,}000`$ and 800 MB at $`n_0 = 10{,}000`$ for $`M = 20{,}000`$. All levels are trimmed from the same stored cloud. When the cloud is shared across levels or with the hybrid, the per-column depths $`d_{bk}`$ on the trim grid are cached as 32-bit integers, a further $`4 M G_J`$ bytes. That doubles the footprint while the trim grid is the full grid ($`G \le 2001`$) and adds about 88 MB above it.
+
+The rank increment $`1/M`$ is on the probability scale; float32 spacing is on the TPR-value scale. Comparing them does not establish numerical accuracy. Quantization can create cloud ties and change depths near concentrated marginals. An accuracy assessment should compare the same generated cloud before and after float32 conversion, measuring changes in ties, trim depths, and edges against float64 over the supported sample sizes and levels.
 
 ### 4.3 Monte Carlo Budget
 
-$`M`$ controls resolution, not validity in any proved sense. At a fixed column and a continuous-law tail probability $`\ell`$, the number of draws beyond the edge is $`\text{Binomial}(M, \ell)`$, so $`M\ell`$ governs tail resolution. The realized local level falls as the grid grows, approximately $`\ell \approx 9.7 \times 10^{-4} (\alpha/.05)^{1.2} (K/500)^{-0.27}`$ (round-two fit, `research_record.md` Q1), so a fixed $`M`$ yields a shrinking depth. At $`M = 20{,}000`$ and $`\alpha = .05`$ the depth is 21–23 at $`n_0 = 150`$, 13–15 at 500, 9–11 at 1,500, and 8–9 at 5,000. The seed-to-seed standard deviation of mean width is 0.45–0.66% (theory §11.2).
+$`M`$ controls resolution, not validity in any proved sense. Conditional on the data, at a fixed column and a fixed population quantile of the cloud law with tail probability $`p`$, the number of draws beyond that threshold is $`\mathrm{Binomial}(M,p)`$. At an untied column, the selected $`j`$-th order statistic instead has exactly $`j-1`$ cloud values below it. Since $`j`$ is selected using the cloud, $`M\ell`$ is a tail-resolution heuristic, not an exact binomial description of the adaptive edge.
+
+The realized local level falls as the grid grows in the reported experiments, so a fixed $`M`$ yields a shrinking depth there. At $`M = 20{,}000`$ and $`\alpha = .05`$ the depth is 21–23 at $`n_0 = 150`$, 13–15 at 500, 9–11 at 1,500, and 8–9 at 5,000: local levels of about $`1.1 \times 10^{-3}`$, $`7 \times 10^{-4}`$, $`5 \times 10^{-4}`$, and $`4 \times 10^{-4}`$. An earlier fit, $`\ell \approx 9.7 \times 10^{-4} (\alpha/.05)^{1.2} (K/500)^{-0.27}`$ (`research_record.md` Q1), came from one shape at $`M \le 8{,}000`$ and overstates these levels by 20–45%. It gives the direction of the dependence on $`\alpha`$ and the grid size $`K`$, and should not be used to size $`M`$. The seed-to-seed standard deviation of mean width is 0.45–0.66% (theory §11.2).
 
 Two effects remain tied to $`j`$. Integer depths make the realized trimmed fraction fall short of $`a`$, which is conservative. A tube built from the same draws that calibrate it has fresh-draw content below its in-sample content, by more when $`j`$ is small. The implementation warns when $`j < 3`$. At that point the band approaches the full cloud envelope and nearby levels become indistinguishable.
 
 **Parameters:**
 - $`M`$: number of fiducial draws (default 20,000).
 - $`C`$: trim exponent (default 1; values above 1 are anti-conservative, §2.5).
+- Tie-breaking rule (default `"random"`, §2.9) and a seed for the tie-breaking and cloud draws.
+- $`K`$: optional output grid size (default: the native grid, §2.2).
 
 ---
 
