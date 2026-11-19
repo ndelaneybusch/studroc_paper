@@ -368,19 +368,24 @@ def main() -> None:
         for arm in ("hybrid_ell", "hybrid_opt_all", "hybrid_opt_high",
                     "exact_ell", "exact_opt_all", "exact_opt_high"):  # fmt: skip
             base = "hybrid_ell" if arm.startswith("hybrid") else "exact_ell"
+            area = [np.log(r[arm]["area"] / r[base]["area"]) for r in subset]
+            region = [
+                np.log(r[arm]["region_width"] / r[base]["region_width"]) for r in subset
+            ]
             out[arm] = {
                 "coverage": float(np.mean([r[arm]["covers"] for r in subset])),
-                "area_ratio": float(
-                    np.exp(np.mean([np.log(r[arm]["area"] / r[base]["area"]) for r in subset]))
-                ),
-                "region_width_ratio": float(
-                    np.exp(
-                        np.nanmean(
-                            [np.log(r[arm]["region_width"] / r[base]["region_width"]) for r in subset]
-                        )
-                    )
-                ),
-            }  # fmt: skip
+                "area_ratio": float(np.exp(np.mean(area))),
+                "region_width_ratio": float(np.exp(np.nanmean(region))),
+            }
+        for arm in ("hybrid_opt_all", "hybrid_opt_high"):
+            base = np.array([r["hybrid_ell"]["covers"] for r in subset], dtype=bool)
+            new = np.array([r[arm]["covers"] for r in subset], dtype=bool)
+            out[arm]["paired_coverage"] = {
+                "both_cover": int((base & new).sum()),
+                "only_default_covers": int((base & ~new).sum()),
+                "only_optimized_covers": int((~base & new).sum()),
+                "both_miss": int((~base & ~new).sum()),
+            }
         return out
 
     summary = {
@@ -397,6 +402,7 @@ def main() -> None:
     path = Path(__file__).with_name(
         f"res_frey_floor_probe_n{args.n}_p{round(100 * args.prev)}.json"
     )
+    summary["datasets"] = rows
     path.write_text(json.dumps(summary, indent=1))
     print(json.dumps(summary["all"], indent=1))
     print(f"wrote {path}")

@@ -9,7 +9,7 @@ the composed band's structural invariants and measured coverage.
 import numpy as np
 import pytest
 from scipy.stats import beta as beta_dist
-from scipy.stats import norm
+from scipy.stats import binom, kstwo, norm
 
 pytest.importorskip("fiducial_core")
 
@@ -57,6 +57,82 @@ def test_crossing_probability_matches_monte_carlo():
     mc = float(np.mean(np.all((u >= lower) & (u <= upper), axis=1)))
     se = np.sqrt(mc * (1.0 - mc) / reps)
     assert abs(p - mc) < 5.0 * se + 1e-9, f"dp {p} vs mc {mc}"
+
+
+def _released_bounds(*, n: int, kind: str, rank: int, cut: float):
+    """Bounds whose non-crossing probability is a binomial quantity at ``cut``.
+
+    ``"at_least"`` holds the first ``rank`` upper bounds at ``cut``, so the
+    event is ``N(cut) >= rank``. ``"at_most"`` holds every lower bound above
+    rank ``rank`` at ``cut``, so the event is ``N(cut) <= rank``. ``"exactly"``
+    applies both, so the event is ``N(cut) == rank``.
+    """
+    lower, upper = np.zeros(n), np.ones(n)
+    if kind in ("at_least", "exactly"):
+        upper[:rank] = cut
+    if kind in ("at_most", "exactly"):
+        lower[rank:] = cut
+    return lower, upper
+
+
+@pytest.mark.parametrize(
+    ("n", "kind", "rank", "cut"),
+    [
+        pytest.param(2000, "at_least", 960, 0.5, id="reviewer-underflow-case"),
+        pytest.param(1200, "at_least", 580, 0.5, id="first-size-that-underflowed"),
+        pytest.param(3000, "at_most", 950, 0.3, id="released-lower-bounds"),
+        pytest.param(5000, "exactly", 2500, 0.5, id="every-bound-repeated"),
+        pytest.param(20000, "exactly", 40, 0.002, id="rare-count-large-n"),
+        pytest.param(4000, "at_most", 3, 0.004, id="small-tail-probability"),
+        pytest.param(10000, "at_least", 9990, 0.9995, id="mass-near-one"),
+        pytest.param(7, "exactly", 3, 0.4, id="tiny-sample"),
+    ],
+)
+def test_crossing_probability_survives_large_gaps(n, kind, rank, cut):
+    """A gap holding hundreds of expected observations must not lose the mass.
+
+    Evaluating a binomial transition from its zero-success term underflows
+    when the gap is long, and the result collapses to zero. These bounds have
+    closed-form answers, so any lost mass shows up as a relative error.
+    """
+    lower, upper = _released_bounds(n=n, kind=kind, rank=rank, cut=cut)
+    expected = {
+        "at_least": binom.sf(rank - 1, n, cut),
+        "at_most": binom.cdf(rank, n, cut),
+        "exactly": binom.pmf(rank, n, cut),
+    }[kind]
+    got = fiducial_core.ell_crossing_probability(lower, upper)
+    assert got == pytest.approx(expected, rel=1e-10)
+
+
+@pytest.mark.parametrize(
+    ("n", "tolerance"),
+    [
+        pytest.param(1, 1e-12, id="n1"),
+        pytest.param(2, 1e-12, id="n2"),
+        pytest.param(5, 1e-12, id="n5"),
+        pytest.param(37, 1e-12, id="n37"),
+        pytest.param(100, 1e-12, id="n100"),
+        pytest.param(400, 5e-7, id="n400-scipy-approximate"),
+        pytest.param(5000, 5e-7, id="n5000-scipy-approximate"),
+    ],
+)
+def test_crossing_probability_of_ks_band_matches_kolmogorov_law(n, tolerance):
+    """Constant-margin bounds reproduce the two-sided Kolmogorov distribution.
+
+    ``sup |F_n - F| <= d`` is the event ``i/n - d <= U_(i) <= (i-1)/n + d``,
+    so the kernel on those bounds must return SciPy's Kolmogorov probability
+    at ``d``, which comes from an unrelated algorithm. SciPy is exact to
+    roundoff at small ``n`` and switches to an approximation good to a few
+    parts in ten million at larger ``n``, hence the two tolerances.
+    """
+    i = np.arange(1, n + 1, dtype=float)
+    for level in (0.5, 0.9, 0.99):
+        margin = kstwo.ppf(level, n)
+        lower = np.clip(i / n - margin, 0.0, 1.0)
+        upper = np.clip((i - 1) / n + margin, 0.0, 1.0)
+        got = fiducial_core.ell_crossing_probability(lower, upper)
+        assert got == pytest.approx(kstwo.cdf(margin, n), abs=tolerance)
 
 
 def test_calibrated_gamma_hits_target_conservatively():

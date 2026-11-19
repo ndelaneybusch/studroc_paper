@@ -74,7 +74,7 @@ By §1.2 this is a convex program. Its first-order conditions are, for a constan
 \Big|\frac{\partial H}{\partial l_i}\Big| = C\, w^-_i, \qquad \frac{\partial H}{\partial h_i} = C\, w^+_i ,
 ```
 
-and they are sufficient. Frey's problem is the case $`w^-_i = w_i`$, $`w^+_i = w_{i-1}`$ (one weight per interval of the CDF). Nothing in the convexity argument uses that tie between the weights, so the lower and upper bounds may be weighted separately. That freedom is what the ROC objective needs (§2).
+and they are sufficient. These equalities are the conditions at bounds where no other constraint binds. Where a monotonicity constraint ($`l_i \le l_{i+1}`$, $`h_i \le h_{i+1}`$), an ordering constraint ($`l_i \le h_i`$), or a box constraint is active, the full conditions carry a nonnegative multiplier for it, and the gradient ratios of the tied bounds need not be equal. Frey shows the monotonicity constraints are strict at his optimum, but that relies on strictly positive weights; with zero weights or released bounds, as in §§2 and 8, active constraints are the normal case and a solver or check must include them. Frey's problem is the case $`w^-_i = w_i`$, $`w^+_i = w_{i-1}`$ (one weight per interval of the CDF). Nothing in the convexity argument uses that tie between the weights, so the lower and upper bounds may be weighted separately. That freedom is what the ROC objective needs (§2).
 
 ### 1.5 Every exact band is optimal for its own gradient
 
@@ -142,9 +142,9 @@ All are nonnegative. For a reference with high AUC many of them are essentially 
 \min_{l^0, h^0, l^1, h^1}\ E_{R^*}[A] \qquad \text{subject to}\qquad \log H_0(l^0, h^0) + \log H_1(l^1, h^1) \ge \log(1-\alpha), \quad \text{monotone bounds in } [0,1].
 ```
 
-- **The constraint is jointly convex**, since each $`\log H_c`$ is concave (§1.2). The class split of [`ell_band.md` §2.5](ell_band.md#25-class-split) need not be fixed in advance; it is part of the solution.
+- **The constraint is jointly convex**, since each $`\log H_c`$ is concave (§1.2). The class split of [`ell_band.md` §2.5](ell_band.md#25-class-split) is therefore a variable of the joint problem. Plain alternation does not optimize it: with one class held fixed and the product constraint active, the other class cannot lower its own coverage, so no budget moves between classes. Both probes fixed the class targets. Optimizing the split needs an outer search over it with the class problems inside, or a joint update.
 - **The objective is bilinear, not convex.** With one class fixed, the other class's problem is exactly §1.4 and has a global solution. Alternating between the classes decreases the objective monotonically and stops at a point that neither class can improve alone. That point need not be the joint global minimum.
-- **Other objectives.** Area on $`[0, \tau]`$ or a weighted area $`\int \omega(t)(U - L)\,dt`$ stays linear in the positive-class bounds but is not linear in the negative-class bounds (they enter through $`\Omega(l^0_i)`$ with $`\Omega' = \omega`$). It is still a smooth problem on a convex set, without the global guarantee for the negative-class step.
+- **Other objectives.** Area on $`[0, \tau]`$ or a weighted area $`\int \omega(t)(U - L)\,dt`$ stays linear in the positive-class bounds but is not linear in the negative-class bounds (they enter through $`\Omega(l^0_i)`$ with $`\Omega' = \omega`$). The feasible set is still convex, but the negative-class step loses its global guarantee, and the objective can be nonsmooth (a weight function with jumps, or a sum over grid points, has kinks where a bound crosses a breakpoint).
 
 ### 2.5 Validity
 
@@ -155,7 +155,7 @@ Theorem 1 of `ell_band.md` requires only bound sequences fixed before the ranks 
 
 The optimizer is then outside the proof, like the bisection in the ELL calibration: a poor solution costs width, not coverage. **Choosing the reference from the evaluation ranks, for example from the empirical AUC, breaks condition 1 and voids the theorem.**
 
-Proposition 2 of `ell_band.md` (each one-sided miss at most $`1 - \sqrt{1-\alpha}`$) uses the reflection symmetry $`h_i = 1 - l_{n+1-i}`$ of the ELL bounds and does **not** carry over. An optimized band has total miss probability at most $`\alpha`$ with no separate cap per direction, unless one is imposed (§8.4).
+Proposition 2 of `ell_band.md` (each one-sided miss at most $`1 - \sqrt{1-\alpha}`$) uses the reflection symmetry $`h_i = 1 - l_{n+1-i}`$ of the ELL bounds and does **not** carry over. An optimized band has total miss probability at most $`\alpha`$ with no separate cap per direction, unless one is imposed. Imposing one keeps the problem convex (§8.4).
 
 ---
 
@@ -256,7 +256,7 @@ Three facts make this the right place to apply §2:
 
 1. **The objective is narrow.** Only the grid points in the floor region count, so the weights of §2.3 vanish for most bounds and the optimizer can release them.
 2. **The slice is where optimization pays.** §3.2 showed gains growing with AUC, and the routed datasets are the high-AUC, small-minority ones.
-3. **The reference is not a free choice.** For a given $`(n_0, n_1)`$ the routed AUC range follows from the admission rule, so the reference mix is determined by the rule and the shape library (§8.2). No table indexed by AUC is needed.
+3. **The reference is not a free choice.** For a given $`(n_0, n_1)`$ the routed AUC range follows from the admission rule, so the routed distribution is determined by the rule and the shape library (§8.2). No table indexed by AUC is needed.
 
 ### 5.2 Validity under routing
 
@@ -297,11 +297,11 @@ Area of the hybrid with the optimized floor divided by the default hybrid's:
 | 300 (10%) | 270/30 | 50% | 0.917 | 0.984 | 0.938 | 0.844 | 0.913 |
 
 - **Width inside the floor region** fell by 8–13% overall in every design. The area gain shrinks with $`n`$ because the floored share shrinks.
-- **Coverage** of the hybrid was identical with either floor in every row (0.972–0.997 by design): no dataset was covered by one and missed by the other. The optimized exact band alone covered 0.997–1.000, as did ELL.
+- **Coverage, paired.** Of the 2,160 datasets, 2,135 were covered by both hybrids and 25 missed by both; none was covered by one and missed by the other (per-dataset outcomes are saved in the result files). With no harmful discordance, the one-sided 95% upper bound on the coverage lost is 0.83 points within a design of 360 and 0.14 points pooled, so this probe does not by itself meet the 0.5-point per-design criterion of §9.2. Coverage by design was 0.972–0.997. The optimized exact band alone covered 0.997–1.000, as did ELL.
 - **A floor optimized on references with AUC at least 0.8** gained a further 2–4 points at AUC above 0.95 in the two larger imbalanced designs and cost up to 2% of floor-region width below 0.8. Overall area was about the same.
 - **Never wider on average**: the full-range floor was at or below the default hybrid's area in every AUC band of every design.
 
-Limits: 360 datasets per design (a standard error of 0.5–0.9 points on coverage); one level; the routed slice approximated by AUC bands because the rule is not fitted; miss direction not recorded.
+Limits: 360 datasets per design (a standard error of 0.5–0.9 points on coverage); one level; the routed slice approximated by AUC bands because the rule is not fitted; miss direction not recorded. The floor was optimized for a surrogate (the window objective of §8.1), and the table reports geometric means of trapezoidal-area ratios, not the ratio of mean step-extension areas that §9.3 makes primary.
 
 ---
 
@@ -341,7 +341,7 @@ The boundaries below are provisional and will be redrawn from the fitted rule. "
 ### 7.3 How the optimization differs across $`n_0`$, $`n_1`$, AUC, and $`\alpha`$
 
 - **By $`(n_0, n_1)`$: a separate floor for each pair.** Both the weights (through the rank-count law and the floor region) and the feasible set depend on the pair.
-- **By AUC: through the reference weights only, never through separate floors.** For each pair the reference mix is the shape library weighted by the probability of being routed (§8.2). At small sizes that is the whole AUC range; at larger sizes it concentrates on high AUC. This is where "optimize differently by AUC" happens, and it is fixed before any data are seen. The probe supports it: the full-range floor never lost, and the high-AUC floor gained most exactly where routing would send the data.
+- **By AUC: through the reference weights only, never through separate floors.** For each pair the training distribution is the shape library as filtered by the dispatcher (§8.2). At small sizes that is the whole AUC range; at larger sizes it concentrates on high AUC. This is where "optimize differently by AUC" happens, and it is fixed before any data are seen. The probe supports it: the full-range floor never lost, and the high-AUC floor gained most exactly where routing would send the data.
 - **By imbalance: the split is part of the solution.** The sample-size split is the starting point; whether freeing it helps is a derivation question (§8.4).
 - **By $`\alpha`$: a separate floor for each level**, since the floor region depends on the trim depth and the feasible set on the level. The sweep is $`\alpha \in \{.05, .1, .2, .5\}`$, and nesting across levels has to be checked or imposed (§8.5).
 
@@ -353,36 +353,68 @@ What has to be worked out before a floor can ship, in order.
 
 ### 8.1 Objective
 
-The target is the expected width the floor contributes to the hybrid:
+**Primary objective: the area of the hybrid itself.** The floor is a means to a narrower hybrid, so candidates are judged by
 
 ```math
-J = E\Big[\sum_{k \in A} \big\{U_M(t_k) - L_M(t_k)\big\}\Big],
+J(\theta) = E\big[\operatorname{Area}\{B_H(\theta)\} \mid \text{routed to the hybrid}\big],
 ```
 
-over routed datasets, with $`A`$ the floor region. Two versions:
-
-- **Window approximation (used in §6).** Replace the random region by its inclusion probability $`\omega(t) = P(t \in A)`$ and minimize the expected $`\omega`$-weighted area. This ignores the dependence between the region and the ranks, and treats the grid sum as an integral. It is linear in the positive-class bounds; the negative-class step linearizes $`\omega`$ at the current bounds.
-- **Joint version.** Estimate $`E[\mathbf{1}\{k \in A\}\,\mathbf{1}\{p_i = j\}]`$ from training draws, so that the weights account for the right region being long exactly when many negatives rank below every positive. Still linear in the positive-class bounds.
-
-To do: derive the joint weights; compare the two on the six probe designs; keep the window version unless the joint one is at least 1% better.
-
-### 8.2 Reference mix from the admission rule
-
-For a pair $`(n_0, n_1)`$ and a library of ROC shapes $`R`$ with prior weights $`\pi(R)`$, the reference weights are
+where $`\theta`$ is the floor's bounds and $`B_H(\theta)`$ is the band the production construction returns: the hull of the recalibrated fiducial parent with the floor on the region, followed by the tightening closure ([`hybrid_band.md` §§2.5–2.7](hybrid_band.md#25-complement-trimming)). Area is that of the band as claimed, the conservative step extension
 
 ```math
-\pi(R \mid \text{routed}) \propto \pi(R)\, P_R\big(\text{rule rejects} \mid n_0, n_1\big),
+\operatorname{Area}(B) = \sum_k (t_{k+1} - t_k)\{U(t_{k+1}) - L(t_k)\},
 ```
 
-where the routing probability is that of the empirical AUC falling above the rule's threshold, computed from the Mann–Whitney law under $`R`$ or by simulation. The rank-count laws $`M`$ and the inclusion probabilities $`\omega`$ are averaged with these weights.
+not the grid-width sum or the trapezoidal area. For a fixed dataset and cloud the parent and the region do not depend on $`\theta`$, so minimizing $`J`$ is the same as minimizing the area the floor adds to the parent.
 
-To do: fix the library (the seven suite families over their LHS ranges, with some families held out for §9.3); compute the routing probabilities once the rule is fitted; until then use AUC-band weights as in §6.
+Narrowing the exact band is not the same as narrowing the hybrid:
+
+- Where the parent's edge already lies outside the floor's, the hull is the parent and the floor's width there is irrelevant.
+- The closure carries edge values across grid points, so which bounds matter depends on the whole edge, not on the region alone.
+
+**Surrogates, for generating candidates only.** $`J`$ is evaluated through the full construction and is not a linear function of the bounds, so the convex machinery of §§1–2 does not apply to it directly. Candidates come from objectives that are linear in each class's bounds:
+
+- **Window surrogate (used in §6).** The expected $`\omega`$-weighted area of the exact band, with $`\omega(t) = P(t \in A)`$. It ignores the parent, the closure, and the dependence between the region and the ranks.
+- **Joint-weight surrogate.** Weights estimated from training draws as $`E[\mathbf{1}\{k \in A\}\,\mathbf{1}\{p_i = j\}]`$, so that the right region is long exactly when many negatives rank below every positive.
+- **Hinge surrogate.** The expected area by which the floor exceeds the parent on the region, $`E[\sum_{k \in A} \{(U_M - U_F)_+ + (L_F - L_M)_+\}(t_k)]`$, before closure. It is convex in the positive-class bounds for fixed negative-class bounds, and it stops rewarding the floor for tightening where the parent already decides the hull.
+
+**Selection.** Every candidate (each surrogate, several starts, ELL itself) is scored on $`J`$ with one shared set of training datasets and clouds, so the comparison is paired. The winner is then scored once on separate validation draws that played no part in generating or choosing it. A surrogate's own improvement is never reported as the hybrid's improvement.
+
+To do: implement $`J`$ on stored training tuples (labels, cloud, region, parent); derive the joint and hinge weights; rank the three surrogates by the $`J`$ of what they produce on the six probe designs.
+
+### 8.2 The routed distribution
+
+Conditioning on routing changes two things, and both must enter the objective.
+
+- **Which curves are routed.** A reference ROC with a higher AUC is routed more often.
+- **Which samples are routed, given the curve.** The router acts on the empirical AUC, so under one fixed ROC it selects the rank sequences that happen to look favourable. The rank law that matters is
+
+```math
+P(p_i = j \mid D) = \frac{\sum_R \pi(R)\, P_R(p_i = j,\ D)}{\sum_R \pi(R)\, P_R(D)},
+```
+
+with $`D`$ the event of being routed to the hybrid. Averaging the unconditional laws $`M^R`$ with weights $`\pi(R \mid D)`$ gets the first effect and misses the second, and is generally a different law.
+
+**Procedure.** Estimate the objective from training datasets that have passed through the frozen dispatcher:
+
+1. Draw curves from the shape library and datasets from each, at the pair $`(n_0, n_1)`$.
+2. Run the dispatcher. Keep the routed datasets, each with its label sequence, fiducial cloud, floor region, and recalibrated parent.
+3. Evaluate $`J`$ of §8.1, and the surrogate weights, as averages over the kept tuples.
+
+This handles the routing selection and the dependence between the region and the ranks together, with no closed-form rank law needed.
+
+Consequences:
+
+- **The floor cannot be finalized before the admission rule is frozen.** A change to the rule changes $`D`$ and requires retraining. Until then the AUC-band approximation of §6 is exploratory.
+- **The library fixes the shape prior $`\pi`$.** It is the seven suite families over their ranges, with some families held out for §9.3.
+- **Training and validation draws are separate** (§8.1), and neither is reused as confirmatory data.
 
 ### 8.3 Constraint and solver
 
-- Constraint: exact joint coverage at $`\alpha_M = \alpha`$, as in the current default. A floor at a declared smaller level is the fallback if §9.2 finds the hybrid's slack eroded.
-- Solver: the alternation of §2.4, keeping the best iterate. To do: several starting points (ELL, exact KS, Frey's uniform band) to gauge the local-optimum problem; the one-class cutting-plane bound of §10 as a certificate for each half-step.
-- Final check: every floor is re-evaluated by the exact kernel with a roundoff margin and widened minimally if short.
+- **Coverage constraint.** Exact joint coverage at $`\alpha_M = \alpha`$, as in the current default. A floor at a declared smaller level is the fallback if §9.2 finds the hybrid's slack eroded.
+- **Class split.** An outer one-dimensional search over the split $`\rho`$, with the two class problems solved inside at targets $`(1-\alpha)^\rho`$ and $`(1-\alpha)^{1-\rho}`$, started at the sample-size rule. Several starting splits help but do not certify a joint optimum.
+- **Solver.** The alternation of §2.4 inside the split search, keeping the best iterate, from several starting bands (ELL, exact KS, Frey's uniform band). The solver must treat monotonicity, ordering, and box constraints as possibly active (§1.4). The one-class cutting-plane bound of §10 is a certificate for each half-step only.
+- **Final check.** Every floor is re-evaluated by the exact kernel and widened minimally if short.
 
 ### 8.4 Structural requirements
 
@@ -390,12 +422,23 @@ To verify analytically, then by test:
 
 1. Monotone bounds give monotone, ordered ROC edges, so the tightening closure of the hybrid applies unchanged.
 2. On the perfectly separated path the floor is the whole grid and the hybrid is the hull with the floor. The floor's upper edge is 1 there by the sentinel, and its lower edge obeys the necessary conditions of [`ell_band.md` §3.3](ell_band.md#33-width-and-tail-adaptivity) because it is exact. So the corner constructions of [`fiducial_band.md` Prop. 2](fiducial_band.md#31-coverage-guarantees) remain covered whenever the floor covers.
-3. Whether to free the class split or keep the sample-size rule.
-4. Whether a per-direction coverage constraint is wanted, and whether it keeps the feasible set convex (open, §12).
+3. **Directional constraints are available and convex.** The lower edge reads only $`(h^0, l^1)`$ and the upper edge only $`(l^0, h^1)`$ (§2.1), so
+
+```math
+H_0(0, h^0)\, H_1(l^1, 1) \ge 1 - \eta_L, \qquad H_0(l^0, 1)\, H_1(0, h^1) \ge 1 - \eta_U
+```
+
+bound the probability that the truth falls below the band by $`\eta_L`$ and above it by $`\eta_U`$. Each factor is a coverage with the other side's bounds released, so each logarithm is concave by §1.2 and each constraint is convex. These are sufficient conditions, bounds on the directional miss probabilities and not their exact values.
+4. **A second certificate.** By the union bound the two directional constraints with $`\eta_L + \eta_U = \alpha`$ also give total coverage $`1-\alpha`$, without the two-sided product constraint. Neither certificate implies the other. To do: compare the floors each yields; $`\eta_L = \eta_U = \alpha/2`$ would give the optimized floor a per-direction cap of $`\alpha/2`$, close to the $`1 - \sqrt{1-\alpha}`$ of ELL's Proposition 2.
 
 ### 8.5 Levels and nesting
 
-Floors optimized separately at each level need not nest, and users expect a 90% band inside the 95% band. Options: optimize the smallest $`\alpha`$ first and constrain each larger level's bounds to lie inside the previous one (linear constraints, so convexity is kept); or accept non-nesting and document it. To do: measure how often separately optimized floors fail to nest and what the constraint costs.
+Two different properties, not to be confused:
+
+- **Nesting of the floors.** Floors optimized separately at each level need not nest. Options: optimize the smallest $`\alpha`$ first and constrain each larger level's bounds to lie inside the previous one (linear constraints, so convexity is kept); or accept non-nesting and document it.
+- **Nesting of the hybrid.** Nested floors do not make the hybrid nested. Its floor region and its recalibrated parent both change with the level, and [`hybrid_band.md` §3.3](hybrid_band.md#33-recalibration-and-nesting) already states that shared-cloud nesting across levels is not established for the adaptive hybrid. This is measured on the complete hybrid (§9.7), whatever is done about the floors.
+
+To do: measure how often separately optimized floors fail to nest, what the constraint costs, and how often the complete hybrid fails to nest with either floor.
 
 ### 8.6 From tables to something shippable
 
@@ -404,7 +447,7 @@ A floor is $`2(n_0 + n_1)`$ numbers per $`(n_0, n_1, \alpha)`$. With totals up t
 1. Optimize on a lattice of $`(n_{\min}, \text{ratio})`$ covering Z0 and Z1.
 2. Express each optimum as four local-level profiles (one per bound set) against rank fraction. §3.3 suggests a simple structure: a plateau on the ranks the edge reads and a taper to zero at the far end.
 3. Fit a low-dimensional family to those profiles and a smooth surface for its parameters over $`(\log n_0, \log n_1, \log \alpha)`$.
-4. At run time, read the shape from the surface and set the overall level by one exact check, as in [`ell_band.md` §4.4](ell_band.md#44-warm-started-calibration-from-a-table-of-levels-proposed). The shape needs no certification; only the level does. An error in the surface costs width, never coverage.
+4. At run time, read the shape from the surface and find the overall level by a certified search, as in [`ell_band.md` §4.4](ell_band.md#44-warm-started-calibration-from-a-table-of-levels-proposed). One exact coverage evaluation can accept a proposed level; it cannot find the calibrated one. The procedure is therefore: a predicted level shaded conservatively; acceptance only if its exact coverage meets the target; otherwise a bracketed bisection on the level; and, if the search fails or the pair is outside the surface's domain, a deterministic fallback to the ELL floor, which needs no surface. The shape needs no certification; only the level does. An error in the surface costs width, never coverage.
 
 To do: choose the profile family from the lattice optima; measure the width lost by the profile and by interpolation against the full optimum (target: under one point of the gain).
 
@@ -418,17 +461,22 @@ For every shipped $`(n_0, n_1, \alpha)`$: joint coverage from the exact kernel a
 
 ### 9.2 Coverage of the hybrid with the new floor
 
-The question is whether the hybrid loses coverage when its floor is tightened (§5.3).
+The question is whether the hybrid loses coverage when its floor is tightened (§5.3). Two criteria, both required.
 
-- **Design.** Totals 30, 100, 300 at 50%, 30%, and 10% prevalence; the seven suite families; $`\alpha \in \{.05, .1, .2, .5\}`$. Both hybrids on one fiducial cloud per dataset.
-- **Primary test, paired.** Count datasets covered by the default hybrid and missed by the new one, and the reverse. The pairing makes this far more sensitive than comparing two coverage rates: the probe had no discordant pair in 2,160. Criterion: the upper 95% confidence limit for the net loss is below 0.5 points in every design.
-- **Secondary, per cell.** No family-by-design cell below nominal by the Wilson criterion used in the main suite. By the power table of [`sota_plan.md` §4.4](sota_plan.md#44-power), 3,000 datasets per cell detect a two-point shortfall at the 95% level.
+- **Paired loss.** Both hybrids on one fiducial cloud per dataset. Count datasets covered by the default hybrid and missed by the new one, and the reverse. Criterion: the one-sided 95% upper confidence limit for the net coverage lost is below 0.5 points in every stratum.
+- **Absolute coverage.** Passing the paired test against the current hybrid does not show adequate coverage; both could fail on the same shapes. Criterion: the one-sided 95% lower confidence limit for the new hybrid's coverage is at least nominal minus one point in every stratum, with that shortfall fixed before the run.
+
+Design:
+
+- **Through the actual dispatcher.** Datasets are generated, routed by the frozen rule, and analysed in the branch they reach. Coverage is reported conditional on the hybrid branch and unconditionally for `auto` as a whole (§9.6).
+- **Strata, fixed in advance.** Totals 30, 100, 300 at 50%, 30%, and 10% prevalence, each crossed with: the four AUC bands of the shape study; and a difficult-shape stratum (Student-$`t`$ with df below 4, heteroscedastic Gaussian with $`\sigma_+/\sigma_-`$ above 2 or below 0.5). Levels $`\alpha \in \{.05, .1, .2, .5\}`$. Results are not pooled across AUC bands, since the optimized floor acts mostly at high AUC.
+- **Size.** Set by the number of routed datasets and the expected discordance, not by the number generated. With no harmful discordance the upper limit is about $`3/N`$, so the 0.5-point criterion needs at least 600 routed datasets per stratum, and more if any discordance is expected (about 1,300 at a true rate of 0.1 points). The absolute criterion needs about 3,000 per stratum to separate nominal from one point below it at the 95% level ([`sota_plan.md` §4.4](sota_plan.md#44-power)). Plan for 3,000 routed datasets per stratum.
 - **Decomposition.** Misses inside and outside the floor region, and by direction, for both hybrids.
-- **Size.** 3,000 datasets per family per design, 21,000 per design, matching the main suite's per-cell precision at half its replication.
+- **Saved.** Per-dataset outcomes for both hybrids, so that every paired table can be recomputed.
 
 ### 9.3 Width
 
-- Paired area ratio and floor-region width ratio, by design and by AUC band (the four bands of the shape study).
+- Area of the complete hybrid as claimed (the step-extension area of §8.1), as the mean paired difference and the ratio of mean areas, by design and by AUC band (the four bands of the shape study). Geometric-mean ratios and floor-region width are secondary.
 - **Adoption rule.** Adopt in a zone if the new hybrid is (i) not wider than the default by more than 1% in any AUC band of any design, and (ii) at least 5% narrower on average over the routed slice.
 - **Held-out shapes.** Families that supplied no reference curves are reported separately and must meet (i) on their own.
 - **Reference sensitivity.** Repeat with the reference library and the held-out set swapped.
@@ -443,11 +491,11 @@ The floor exists to protect the corners, so the hybrid with the new floor is run
 
 ### 9.6 End to end
 
-Once the admission rule is fitted, `auto` is evaluated as one method: overall coverage, coverage by branch, and width, on the main suite and the adversarial curves. This is the only test in which the reference mix of §8.2 and the actual routing meet.
+Once the admission rule is fitted, `auto` is evaluated as one method: overall coverage, coverage by branch, and width, on the main suite and the adversarial curves. It is the only test of the complete procedure on data that played no part in training the floor.
 
 ### 9.7 Shipping form
 
-The profile-and-surface floors of §8.6 are re-run through §§9.1–9.3 on sizes off the lattice. The exactness check of §9.1 applies to every size a user can request, since it is performed at run time.
+The profile-and-surface floors of §8.6 are re-run through §§9.1–9.3 on sizes off the lattice, including the search and its fallback. The exactness check of §9.1 applies to every size a user can request, since it is performed at run time. Nesting of the complete hybrid across levels (§8.5) is measured here for both floors.
 
 ---
 
@@ -482,15 +530,16 @@ Independent of the floor work, and kept.
 
 **Implementation.**
 
+- **Kernel.** The crossing-probability kernel returned zero for bounds with a long gap between breakpoints (for example 2,000 observations with the first 960 upper bounds at 0.5), because each binomial transition started from its zero-success term, which underflowed. It now starts from the largest in-window term. Values for ELL and constant-margin bounds are unchanged to about $`10^{-15}`$, and closed-form binomial cases at sizes up to 20,000 are in the test suite. The probes of §§3 and 6 ran on the earlier kernel at sizes of 300 or fewer per class, below the sizes where the failure was reproduced.
 - **Gradient cost.** §1.3 needs two shorter crossing-probability evaluations per bound. A forward–backward version of the recursion should give every derivative from two sweeps, since each derivative is a density times a forward and a backward non-crossing probability. That needs to be derived and checked against §1.3.
 - **Swapping the floor.** The probe replaces the exact band inside the hybrid by patching the function that builds it. A production version needs the floor's bound source to be a parameter of `M3Floor`, in the boundary-family abstraction of [`sota_plan.md` §5.2](sota_plan.md#52-rust-boundary-families-and-calibration).
 - **Cost so far.** All six designs of §6, optimization and testing, ran in under ten minutes on six processes. The three designs of §3.2 took about 14 minutes on 11 cores.
 
 **Open.**
 
-1. The admission rule is not fitted, so the slice and the reference mix are provisional.
-2. Alternation was started only from ELL.
-3. The convexity of a per-direction coverage constraint has not been examined, and miss direction was not recorded in §6.
-4. The window approximation of §8.1 ignores the dependence between the floor region and the ranks.
+1. The admission rule is not fitted, so the routed distribution of §8.2 cannot be sampled yet and the floors of §6 are exploratory.
+2. Alternation was started only from ELL, at fixed class targets.
+3. Miss direction was not recorded in §6, and the width cost of the directional constraints of §8.4 is unknown.
+4. No candidate has yet been scored on the primary objective of §8.1; the probe scored a surrogate's output on a secondary area metric.
 5. Nothing is measured at levels other than .05, at 30% prevalence, or in zone Z2.
 6. Frey's theorems were taken from an agent's reading of his preprint and thesis. §1.2 is proved here independently and §3.1 reproduces his band, but his theorem numbering and any differences in the published version have not been checked by us.
