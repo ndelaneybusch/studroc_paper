@@ -87,7 +87,7 @@ import multiprocessing
 import os
 import time
 import warnings
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, Future, ProcessPoolExecutor, wait
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -343,6 +343,26 @@ def load_rounds(out_dir: Path) -> pd.DataFrame:
         Draws in :data:`DRAW_COLUMNS` plus the per-draw diagnostics.
     """
     parts = [pd.read_feather(p) for p in sorted(out_dir.glob("draws_round*.feather"))]
+    if not parts:
+        return pd.DataFrame(columns=DRAW_COLUMNS)
+    return pd.concat(parts, ignore_index=True)
+
+
+def load_draws(*, hot_start: list[Path], out_dir: Path) -> pd.DataFrame:
+    """Read every draw available to the study: earlier results and own rounds.
+
+    Args:
+        hot_start: Result directories of earlier studies.
+        out_dir: Output directory of this study.
+
+    Returns:
+        Draws in :data:`DRAW_COLUMNS`.
+    """
+    parts = [
+        frame[DRAW_COLUMNS]
+        for frame in (load_hot_start(hot_start), load_rounds(out_dir))
+        if not frame.empty
+    ]
     if not parts:
         return pd.DataFrame(columns=DRAW_COLUMNS)
     return pd.concat(parts, ignore_index=True)
@@ -815,6 +835,21 @@ WORKER_THREAD_ENV = {
 CHUNK_DRAWS = 64
 CHUNK_SECONDS = 20.0
 CHECKPOINT_SECONDS = 120
+# Peak memory of one unfloored band beyond the worker's baseline, per negative:
+# the fiducial cloud holds 20,000 float32 draws at every grid point
+BAND_BYTES_PER_NEGATIVE = 8.2e4
+
+
+def band_memory_gb(frame: pd.DataFrame) -> NDArray:
+    """Peak memory of each draw's band, beyond the worker's baseline.
+
+    Args:
+        frame: Draws with ``n_neg``.
+
+    Returns:
+        Estimated gigabytes per draw.
+    """
+    return BAND_BYTES_PER_NEGATIVE * (frame["n_neg"].to_numpy(float) + 1) / 1e9
 
 
 def simulate_draw(*, row: dict, seed: int, round_index: int) -> dict | None:
@@ -931,9 +966,20 @@ def run_chunk(*, rows: list[dict], seed: int, round_index: int) -> list[dict]:
 
 
 def run_round(
-    *, design: pd.DataFrame, round_index: int, out_dir: Path, seed: int, workers: int
+    *,
+    design: pd.DataFrame,
+    round_index: int,
+    out_dir: Path,
+    seed: int,
+    workers: int,
+    memory_gb: float,
 ) -> None:
     """Run a round's remaining draws, checkpointing as chunks finish.
+
+    Chunks start in design order, except that a chunk whose band would take
+    the running chunks' estimated memory past ``memory_gb`` waits, and the
+    next chunk that fits starts in its place. A chunk larger than the whole
+    budget runs alone.
 
     Args:
         design: The round's design.
@@ -941,9 +987,14 @@ def run_round(
         out_dir: Output directory.
         seed: Root seed of the study.
         workers: Worker processes.
+        memory_gb: Budget for the bands of the running chunks, beyond the
+            workers' baseline memory.
     """
     partial = out_dir / "partial" / f"round{round_index}"
     partial.mkdir(parents=True, exist_ok=True)
+    # A temporary left by an interrupted write holds draws that are rerun
+    for stale in partial.glob("part_*.tmp"):
+        stale.unlink()
     done = {
         int(draw)
         for path in partial.glob("part_*.feather")
@@ -970,6 +1021,13 @@ def run_round(
             tmp.replace(tmp.with_suffix(".feather"))
             buffer.clear()
 
+    # Draws of a chunk run one after another, so its peak is its largest band
+    pending = [
+        (chunk, float(band_memory_gb(pd.DataFrame(chunk)).max()))
+        for chunk in chunks
+        if chunk
+    ]
+    running: dict[Future, float] = {}
     os.environ.update(WORKER_THREAD_ENV)
     last = time.monotonic()
     progress = tqdm(total=len(design), initial=len(done), desc=f"Round {round_index}")
@@ -977,14 +1035,26 @@ def run_round(
         with ProcessPoolExecutor(
             max_workers=workers, mp_context=multiprocessing.get_context("spawn")
         ) as pool:
-            futures = [
-                pool.submit(run_chunk, rows=chunk, seed=seed, round_index=round_index)
-                for chunk in chunks
-            ]
-            for future in as_completed(futures):
-                records = future.result()
-                buffer.extend(records)
-                progress.update(len(records))
+            while pending or running:
+                in_use = sum(running.values())
+                index = 0
+                while index < len(pending) and len(running) < workers:
+                    chunk, memory = pending[index]
+                    if running and in_use + memory > memory_gb:
+                        index += 1
+                        continue
+                    future = pool.submit(
+                        run_chunk, rows=chunk, seed=seed, round_index=round_index
+                    )
+                    running[future] = memory
+                    in_use += memory
+                    pending.pop(index)
+                finished, _ = wait(running, return_when=FIRST_COMPLETED)
+                for future in finished:
+                    del running[future]
+                    records = future.result()
+                    buffer.extend(records)
+                    progress.update(len(records))
                 if time.monotonic() - last >= CHECKPOINT_SECONDS:
                     flush()
                     last = time.monotonic()
@@ -1013,17 +1083,28 @@ def command_run(args: argparse.Namespace) -> None:
         p.stem.removeprefix("draws_") for p in out_dir.glob("draws_round*.feather")
     }
     unfinished = [p for p in designs if p.stem.removeprefix("design_") not in finished]
-    if unfinished and not args.dry_run:
+    if unfinished:
         round_index = int(unfinished[0].stem.removeprefix("design_round"))
-        print(f"Resuming round {round_index}")
         design = pd.read_feather(unfinished[0])
+        partial = out_dir / "partial" / f"round{round_index}"
+        done = {
+            int(draw)
+            for path in partial.glob("part_*.feather")
+            for draw in pd.read_feather(path, columns=["draw"])["draw"]
+        }
+        remaining = design[~design["draw"].isin(done)]
+        cost = cost_seconds(remaining)
+        print(
+            f"Resuming round {round_index}: {len(remaining):,} of {len(design):,} "
+            f"draws left, about {cost.sum() / 3600:.1f} CPU-hours, "
+            f"{cost.sum() / 3600 / args.workers:.1f} h on {args.workers} workers"
+        )
+        if args.dry_run:
+            return
     else:
         round_index = len(designs)
         existing = in_design_space(
-            frame=pd.concat(
-                [load_hot_start(args.hot_start), load_rounds(out_dir)],
-                ignore_index=True,
-            )[DRAW_COLUMNS]
+            frame=load_draws(hot_start=args.hot_start, out_dir=out_dir)
         )
         by_source = existing.groupby(["source", "family"]).size()
         print(f"Existing draws in the design space: {len(existing):,}")
@@ -1063,6 +1144,7 @@ def command_run(args: argparse.Namespace) -> None:
         out_dir=out_dir,
         seed=args.seed,
         workers=args.workers,
+        memory_gb=args.memory_gb,
     )
     print(f"Saved {out_dir / f'draws_round{round_index}.feather'}")
 
@@ -1507,11 +1589,7 @@ def plot_surface(*, grid: pd.DataFrame, rules: dict[str, Rule], path: Path) -> N
 def command_fit(args: argparse.Namespace) -> None:
     """Fit the surfaces, derive the rules and write the report."""
     out_dir: Path = args.out_dir
-    draws = in_design_space(
-        frame=pd.concat(
-            [load_hot_start(args.hot_start), load_rounds(out_dir)], ignore_index=True
-        )[DRAW_COLUMNS]
-    )
+    draws = in_design_space(frame=load_draws(hot_start=args.hot_start, out_dir=out_dir))
     draws["miss"] = draws["miss"].astype(bool)
     surfaces = fit_surfaces(draws=draws, seed=args.seed)
     grid = worst_case_grid(surfaces=surfaces)
@@ -1596,34 +1674,46 @@ def command_fit(args: argparse.Namespace) -> None:
         ]
 
     plot_surface(grid=grid, rules=rules, path=out_dir / "surface.png")
-    (out_dir / "report.md").write_text("\n".join(lines))
+    (out_dir / "report.md").write_text("\n".join(lines), encoding="utf-8")
     (out_dir / "rules.json").write_text(
-        json.dumps({k: asdict(r) for k, r in rules.items()}, indent=2)
+        json.dumps({k: asdict(r) for k, r in rules.items()}, indent=2), encoding="utf-8"
     )
     print("\n".join(lines))
 
 
 def main() -> None:
     """Parse arguments and dispatch to a subcommand."""
-    parser = argparse.ArgumentParser(
-        description=__doc__.splitlines()[0],
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-    parser.add_argument("--out-dir", type=Path, default=Path("data/results/auto_rule"))
-    parser.add_argument(
+    formatter = argparse.ArgumentDefaultsHelpFormatter
+    shared = argparse.ArgumentParser(add_help=False)
+    shared.add_argument("--out-dir", type=Path, default=Path("data/results/auto_rule"))
+    shared.add_argument(
         "--hot-start",
         type=Path,
         nargs="*",
         default=[
             Path("data/results") / name
-            for name in ("shape_auc_study", "nov11", "nov11_p10", "nov11_p30")
+            for name in (
+                "shape_auc_study",
+                "shape_auc_study_p10",
+                "nov11",
+                "nov11_p10",
+                "nov11_p30",
+            )
         ],
         help="Directories of earlier trial-level results",
     )
-    parser.add_argument("--seed", type=int, default=20261117)
+    shared.add_argument("--seed", type=int, default=20261117)
+    parser = argparse.ArgumentParser(
+        description=__doc__.splitlines()[0], formatter_class=formatter
+    )
     commands = parser.add_subparsers(dest="command", required=True)
 
-    run = commands.add_parser("run", help="Design and run the next round")
+    run = commands.add_parser(
+        "run",
+        parents=[shared],
+        formatter_class=formatter,
+        help="Design and run the next round",
+    )
     run.add_argument("--batch", type=int, default=40_000, help="Draws in a new round")
     run.add_argument(
         "--cost-power",
@@ -1638,11 +1728,23 @@ def main() -> None:
     )
     run.add_argument("--workers", type=int, default=os.cpu_count())
     run.add_argument(
+        "--memory-gb",
+        type=float,
+        default=30.0,
+        help="Memory budget for the running bands, beyond each worker's ~0.7 GB "
+        "baseline; a 100,000-negative band takes about 8 GB",
+    )
+    run.add_argument(
         "--dry-run", action="store_true", help="Print the next design's size and cost"
     )
     run.set_defaults(handler=command_run)
 
-    fit = commands.add_parser("fit", help="Fit the surfaces and derive the rule")
+    fit = commands.add_parser(
+        "fit",
+        parents=[shared],
+        formatter_class=formatter,
+        help="Fit the surfaces and derive the rule",
+    )
     fit.add_argument("--folds", type=int, default=5)
     fit.set_defaults(handler=command_fit)
 
