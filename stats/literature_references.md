@@ -782,9 +782,36 @@ each can be calibrated by the same crossing-probability recursion (B.13):
 > Dufour, J.-M. and Diouf (2026). CIRANO Working Paper 2026s-15. **[verify
 > title and first name; summary only read]**
 
-Frey gives bands that are optimal under narrowness or area criteria (no
-public code found) and is the likeliest to be narrower than ELL in the middle
-of the ROC. Dümbgen & Wellner (above) tabulate critical values in their
+**Frey's method (read from the open preprint and thesis by a search agent,
+20 November 2026; the published version was not seen).** The preprint is
+Technical Report 2 on Frey's Villanova page
+(https://homepage.villanova.edu/jesse.frey/TechReports/tech_report_2.pdf),
+dated 7 December 2007; the same material is Chapter 3 of Frey, J. C. (2005),
+*Inference Procedures Based on Order Statistics*, PhD dissertation, Ohio
+State University. Over all bands a_i ≤ F ≤ b_i on [X_(i), X_(i+1)), which in
+this project's notation are bounds l_i = a_i ≤ U_(i) ≤ h_i = b_{i−1} on the
+uniform order statistics, Frey minimizes a weighted sum of widths
+Σ w_i (b_i − a_i) subject to exact coverage, for user-chosen positive weights.
+Uniform weights minimize expected enclosed area when F is uniform. Because
+the acceptance region is a section of a convex body, the Brunn–Minkowski
+inequality makes the coverage constraint convex, so his first-order
+conditions (every interior bound has the same coverage gradient per unit
+weight) are sufficient as well as necessary and any local optimum is global.
+Coverage is computed by Noé's recursion; the algorithm starts from Owen's
+band and repeatedly relaxes the bound with the largest gradient-to-weight
+ratio or tightens the one with the smallest. There are no numeric tables; the
+agent digitized the vector figures for n = 20 and n = 40 at 95%. This
+project's probe (`stats/experiments/frey_roc_probe.py`) reproduces the n = 20
+uniform-weight band from the exact crossing-probability kernel: total width
+Σ(h_i − l_i) = 8.994 against 9.322 for the exact KS band, within 1.0e-4 of
+the digitized bounds. No public code for the optimal bands was found; Frey's
+page has R code for his finite-population band only (Frey 2009,
+*Computational Statistics & Data Analysis* 53, 4126–4132). Xu, Ding and Zhao's
+"quasi-minimum average width" bands address the same goal by a MATLAB
+algorithm and, per their abstract, only conjecture minimality; Frey's theory
+settles it for his criterion. Frey's optimality is per class and in rank
+space; it says nothing about the composed ROC band, which is the subject of
+[`frey_ell_plan.md`](frey_ell_plan.md). Dümbgen & Wellner (above) tabulate critical values in their
 supplement and could be calibrated exactly, but no package was found. Dufour
 and Diouf study regularized Kolmogorov, Anderson–Darling, Eicker, and
 Berk–Jones families with finite-sample Monte Carlo calibration. Owen's band
@@ -878,6 +905,7 @@ bootstrap, the nearest resampling relative.
 | Priority for composing one-sample bands; conservativeness of the product level | Doksum 1974; Switzer 1976 (A.14) |
 | Exact two-sample bands on the score (Q-Q) scale | Switzer 1976; Doksum & Sievers 1976 (A.14) |
 | Alternative exact class bands for the composition | Frey 2008; Xu, Ding & Zhao 2009; Dümbgen & Wellner 2023 (B.12) |
+| Convexity of the exact-coverage constraint; minimum-width bands | Frey 2008 (B.12) |
 | Exact but pointwise operating-point bounds | Hilgers 1991; Schäfer 1994 (A.12); Tong, Feng & Li 2018 (A.18) |
 | Fiducial band: nearest resampling and fiducial antecedents | Gu, Ghosal & Roy 2008 (A.7); Cui & Hannig 2019; Myllymäki et al. 2017 (B.14) |
 | Shipped simultaneous ROC bands | nsROC (A.9–A.11); `EL` (A.16); Stata `rocplot, confband` (A.17) |
@@ -1016,6 +1044,11 @@ adjacent-estimand contemporary, not a benchmark competitor.
   ROC data is Yang & Zhao (2012), *Journal of Multivariate Analysis* 109,
   254–263; Macskassy & Provost 2004 is the workshop paper and the ICML 2005
   paper adds Rosset.
+- Frey 2008: the method is taken from the December 2007 preprint and the
+  2005 thesis. Check the published JSPI version for changes and for any
+  tables before citing equation or theorem numbers.
+- Not found, so do not cite without a source: a Frey & Zhang "optimal bands"
+  paper; "Wang, Cheng & Yang (2013)" as a minimum-width band paper.
 - Not found, so do not cite without a source: a kernel-smoothed simultaneous
   ROC band by Lijian Yang and coauthors; "Branscum, Johnson, Hanson &
   Gardner 2008, *Statistics in Medicine*"; a "Stepanova & Wang" band paper;

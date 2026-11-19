@@ -307,6 +307,64 @@ bit-identical on 72 randomized cases, including very small and imbalanced
 samples. Width comparisons are paired; per-cell coverage with 400
 replicates is still too imprecise to certify a 95% method.
 
+### 4.6 Frey optimization: choose the class bounds to minimize expected ROC area
+
+§4.2 proposed searching a small family of boundary shapes. Frey's (2008)
+result makes a much stronger version of that search well posed. The details,
+the derivations, and a numerical check are in
+[`frey_ell_plan.md`](frey_ell_plan.md); the probe is
+`experiments/frey_roc_probe.py`.
+
+**The idea.** For one class, the set of bound sequences
+$(l_i, h_i)$ with exact non-crossing probability at least $1-\alpha_c$ is
+convex (the acceptance region is a section of a convex body, so
+Brunn–Minkowski applies). Minimizing any linear function of the bounds over
+it is therefore a convex program with a global optimum. Three consequences:
+
+- **Every exactly calibrated band is optimal for some linear objective**, the
+  one whose weights are its coverage gradient. ELL's implied objective can be
+  computed and compared with the objective we care about.
+- **Expected ROC-band area under a reference ROC is linear in each class's
+  bounds when the other class's are fixed.** Alternating two convex programs
+  gives bounds tuned to ROC area, not to class-CDF width.
+- **The theorem is untouched.** The optimized bounds are fixed sequences
+  chosen from $(n_0, n_1, \alpha)$ and a reference declared in advance, and
+  their joint coverage is checked exactly. The M3 proof applies as in §4.2.
+
+**First numbers** (probe, $\alpha=.05$, exact expected continuum area under
+binormal references; ratios to ELL):
+
+| Classes | Band | AUC .5 | AUC .8 | AUC .95 |
+|---|---|---:|---:|---:|
+| 100/100 | Frey, uniform weights | .967 | .986 | 1.042 |
+| 100/100 | Optimized for an equal mix of the three references | .991 | .950 | .904 |
+| 100/100 | Optimized for AUC .95 | 1.200 | 1.002 | .846 |
+| 150/30 | Optimized for the mix | 1.000 | .941 | .866 |
+| 30/30 | Optimized for the mix | 1.010 | .942 | .863 |
+
+A band optimized for a mix of references is about as wide as ELL at the
+diagonal and 5–14% narrower at AUC .8–.95. A band optimized for one high AUC
+is 15–19% narrower there and 16–20% wider at the diagonal. ELL's implied
+objective puts nearly all its weight on the innermost bound at each end
+(the lower bound of the smallest order statistic and the upper bound of the
+largest), which carry almost no ROC area.
+
+**Where it is being applied.** The first target is the exact floor of the
+hybrid in the part of `auto` mode that routes to the hybrid, at totals up to
+about 300. There the floor's objective is confined to the corner regions, the
+reference mix follows from the admission rule, and one pre-fixed floor per
+$(n_0, n_1, \alpha)$ keeps the hybrid's bound intact whatever the router
+does. A first probe at totals of 30, 100, and 300 made the hybrid 6–12%
+narrower overall and 13–23% narrower at AUC above .95, with no paired change
+in coverage in 2,160 datasets. Replacing standalone ELL is set aside.
+
+**Limits.** The reference must not be chosen from the evaluation sample. The
+two-class problem is bilinear, so alternation finds a local optimum. Full
+optimization has $2(n_0+n_1)$ variables and was run only to 150 per class;
+larger sizes need a low-dimensional local-level profile. This remains a
+projection of two separately protected CDFs, so it does not address the
+slack that §5 targets.
+
 ## 5. Direct rank-test inversion: the main research candidate
 
 ### 5.1 The exact statistical object already exists

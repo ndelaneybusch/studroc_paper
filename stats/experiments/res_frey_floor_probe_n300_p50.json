@@ -1,0 +1,192 @@
+{
+ "n": 300,
+ "prev": 0.5,
+ "n0": 150,
+ "n1": 150,
+ "floors": {
+  "opt_all": {
+   "references": 30,
+   "mean_floored_fraction": 0.3196467991169978,
+   "joint_coverage": 0.9500000000000007,
+   "expected_window_area_ratio_to_ell": 0.9107280897454804
+  },
+  "opt_high": {
+   "references": 19,
+   "mean_floored_fraction": 0.4131230393865459,
+   "joint_coverage": 0.9500000000000013,
+   "expected_window_area_ratio_to_ell": 0.8486761081695323
+  }
+ },
+ "all": {
+  "datasets": 360,
+  "floored_fraction": 0.34105960264900664,
+  "hybrid_ell": {
+   "coverage": 0.9888888888888889,
+   "area_ratio": 1.0,
+   "region_width_ratio": 1.0
+  },
+  "hybrid_opt_all": {
+   "coverage": 0.9888888888888889,
+   "area_ratio": 0.9447508549767939,
+   "region_width_ratio": 0.8968560122844841
+  },
+  "hybrid_opt_high": {
+   "coverage": 0.9888888888888889,
+   "area_ratio": 0.941442390747307,
+   "region_width_ratio": 0.9005524636244976
+  },
+  "exact_ell": {
+   "coverage": 1.0,
+   "area_ratio": 1.0,
+   "region_width_ratio": 1.0
+  },
+  "exact_opt_all": {
+   "coverage": 1.0,
+   "area_ratio": 0.9499926645468311,
+   "region_width_ratio": 0.8845444051302758
+  },
+  "exact_opt_high": {
+   "coverage": 1.0,
+   "area_ratio": 0.9581318830204822,
+   "region_width_ratio": 0.896087077565231
+  }
+ },
+ "by_auc": {
+  "0.55-0.8": {
+   "datasets": 120,
+   "floored_fraction": 0.1543046357615894,
+   "hybrid_ell": {
+    "coverage": 0.9833333333333333,
+    "area_ratio": 1.0,
+    "region_width_ratio": 1.0
+   },
+   "hybrid_opt_all": {
+    "coverage": 0.9833333333333333,
+    "area_ratio": 0.995550139837601,
+    "region_width_ratio": 0.9789312184508784
+   },
+   "hybrid_opt_high": {
+    "coverage": 0.9833333333333333,
+    "area_ratio": 0.9975241972987461,
+    "region_width_ratio": 1.0021298019501106
+   },
+   "exact_ell": {
+    "coverage": 1.0,
+    "area_ratio": 1.0,
+    "region_width_ratio": 1.0
+   },
+   "exact_opt_all": {
+    "coverage": 1.0,
+    "area_ratio": 1.0104639724319542,
+    "region_width_ratio": 0.9779749421874597
+   },
+   "exact_opt_high": {
+    "coverage": 1.0,
+    "area_ratio": 1.0579340554189518,
+    "region_width_ratio": 1.0359596948060081
+   }
+  },
+  "0.8-0.95": {
+   "datasets": 136,
+   "floored_fraction": 0.2945072068562524,
+   "hybrid_ell": {
+    "coverage": 0.9852941176470589,
+    "area_ratio": 1.0,
+    "region_width_ratio": 1.0
+   },
+   "hybrid_opt_all": {
+    "coverage": 0.9852941176470589,
+    "area_ratio": 0.9632649579363514,
+    "region_width_ratio": 0.8966289584443264
+   },
+   "hybrid_opt_high": {
+    "coverage": 0.9852941176470589,
+    "area_ratio": 0.9631990673775578,
+    "region_width_ratio": 0.8996323749913364
+   },
+   "exact_ell": {
+    "coverage": 1.0,
+    "area_ratio": 1.0,
+    "region_width_ratio": 1.0
+   },
+   "exact_opt_all": {
+    "coverage": 1.0,
+    "area_ratio": 0.9631326828924905,
+    "region_width_ratio": 0.8800540118384469
+   },
+   "exact_opt_high": {
+    "coverage": 1.0,
+    "area_ratio": 0.9683943525788238,
+    "region_width_ratio": 0.8827760133678683
+   }
+  },
+  "0.95-0.99": {
+   "datasets": 104,
+   "floored_fraction": 0.6174223127865511,
+   "hybrid_ell": {
+    "coverage": 1.0,
+    "area_ratio": 1.0,
+    "region_width_ratio": 1.0
+   },
+   "hybrid_opt_all": {
+    "coverage": 1.0,
+    "area_ratio": 0.8670621855577911,
+    "region_width_ratio": 0.8109356279379952
+   },
+   "hybrid_opt_high": {
+    "coverage": 1.0,
+    "area_ratio": 0.8547175733855912,
+    "region_width_ratio": 0.7971385956377096
+   },
+   "exact_ell": {
+    "coverage": 1.0,
+    "area_ratio": 1.0,
+    "region_width_ratio": 1.0
+   },
+   "exact_opt_all": {
+    "coverage": 1.0,
+    "area_ratio": 0.8689503915859346,
+    "region_width_ratio": 0.7930362232087345
+   },
+   "exact_opt_high": {
+    "coverage": 1.0,
+    "area_ratio": 0.8427928516595999,
+    "region_width_ratio": 0.7729759626670237
+   }
+  }
+ },
+ "held_out_families": {
+  "datasets": 180,
+  "floored_fraction": 0.3673657100809419,
+  "hybrid_ell": {
+   "coverage": 0.9833333333333333,
+   "area_ratio": 1.0,
+   "region_width_ratio": 1.0
+  },
+  "hybrid_opt_all": {
+   "coverage": 0.9833333333333333,
+   "area_ratio": 0.9427871151194722,
+   "region_width_ratio": 0.9004193397933922
+  },
+  "hybrid_opt_high": {
+   "coverage": 0.9833333333333333,
+   "area_ratio": 0.9388765940276274,
+   "region_width_ratio": 0.903671596563749
+  },
+  "exact_ell": {
+   "coverage": 1.0,
+   "area_ratio": 1.0,
+   "region_width_ratio": 1.0
+  },
+  "exact_opt_all": {
+   "coverage": 1.0,
+   "area_ratio": 0.9508239238650115,
+   "region_width_ratio": 0.8885615338763398
+  },
+  "exact_opt_high": {
+   "coverage": 1.0,
+   "area_ratio": 0.9599306077335819,
+   "region_width_ratio": 0.9013758629330852
+  }
+ }
+}
