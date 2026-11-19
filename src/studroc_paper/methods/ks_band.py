@@ -13,6 +13,14 @@ def fixed_width_ks_band(
 ) -> tuple[NDArray, NDArray, NDArray]:
     """Compute Fixed-Width Simultaneous Confidence Bands (Campbell 1994).
 
+    Each class's empirical survival function gets a constant-margin band from
+    the Dvoretzky-Kiefer-Wolfowitz inequality with Massart's constant,
+    ``sqrt(log(2 / alpha_c) / (2 n))``, at the class level
+    ``alpha_c = 1 - sqrt(1 - alpha)`` (an equal Sidak split). The two bands
+    are composed into an ROC band by monotonicity. The margin is a
+    finite-sample bound, slightly wider than the exact Kolmogorov critical
+    value: about 7% wider at 5 per class, 2% at 50, and under 1% from 150.
+
     Args:
         y_true: Input binary labels (numpy array or torch tensor).
         y_score: Input prediction scores (numpy array or torch tensor).
@@ -62,10 +70,10 @@ def fixed_width_ks_band(
     emp_tpr = tps / tps[-1]
     emp_fpr = fps / fps[-1]
 
-    # Critical Values (Kolmogorov-Smirnov with Bonferroni correction)
+    # Class level from an equal Sidak split: (1 - alpha_adj)^2 = 1 - alpha
     alpha_adj = 1 - np.sqrt(1 - alpha)
 
-    # Smirnov approximation for critical value
+    # Dvoretzky-Kiefer-Wolfowitz margin with Massart's constant
     c_alpha = np.sqrt(-0.5 * np.log(alpha_adj / 2))
 
     d = c_alpha / np.sqrt(n1)  # Vertical margin

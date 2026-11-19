@@ -131,16 +131,33 @@ def hsieh_turnbull_band(
     and n₁ is the case sample size.
 
     **Calibration Method:**
-    By default (`n_bootstraps > 0`), this function uses **bootstrap calibration**
-    to determine the simultaneous critical value `z`. Instead of relying on strict
-    independence (Bonferroni) or asymptotic Gaussian process theory (Brownian Bridge),
-    it generates bootstrap replicates of the ROC process to empirically determine
-    the critical value that ensures 1-alpha simultaneous coverage:
+    By default (`n_bootstraps=0`) the simultaneous critical value is a
+    Bonferroni normal quantile over `max(sqrt(k), 10)` nominal comparisons.
+    This is a heuristic with no coverage theory, and it makes the band depend
+    on the grid size `k`.
 
-        z_cal = Quantile_{1-alpha} ( sup_t |(R*(t) - R(t)) / SE(t)| )
+    With `n_bootstraps > 0` the critical value is the bootstrap quantile
 
-    This provides a tighter band than Bonferroni while correctly accounting for
-    the correlation structure of the ROC curve.
+        z_cal = Quantile_{1-alpha} ( sup_t |(R*(t) - R_hat(t)) / SE(t)| )
+
+    from unsmoothed stratified resamples, studentized by the fixed plug-in
+    standard error. The supremum runs only over grid points whose empirical
+    TPR lies in `(5/n1, 1 - 5/n1)` and whose standard error is positive; the
+    band is still reported at every grid point.
+
+    Neither rule is the calibration of Jensen, Mueller and Schaefer (2000),
+    which simulates the Gaussian limit process of Hsieh and Turnbull on a
+    stated FPR region.
+
+    **Known failure of the variance estimate:**
+    The log-concave density estimate is zero outside the range of each class's
+    sample. Where the threshold lies below the smallest positive score, the
+    slope term vanishes, the empirical TPR is 1, and the estimated variance is
+    exactly zero, so the band has zero width there. On binormal data with 200
+    observations per class at AUC 0.80 the default band covered the true curve
+    on FPR in [0.05, 0.95] in 37% of replicates at a nominal 95%, and in none
+    at AUC 0.95. The reflected-KDE estimate instead overstates the variance at
+    high FPR and understates it at low FPR.
 
     **When This Approach Is Valid:**
     - The underlying score densities are approximately log-concave (includes
@@ -165,12 +182,9 @@ def hsieh_turnbull_band(
       density ratio estimation at extreme thresholds
 
     **Note on Logit Transform:**
-    When `use_logit_transform=True` (default), confidence intervals are
-    constructed on the logit(TPR) scale and back-transformed. This is
-    recommended because:
-    1. The logit scale has variance-stabilizing properties near boundaries
-    2. Back-transformation automatically respects [0, 1] constraints
-    3. It prevents the "pinching" artifact where bands collapse at corners
+    When `use_logit_transform=True`, confidence intervals are constructed on
+    the logit(TPR) scale and back-transformed, which respects the [0, 1]
+    constraints. The default is the probability scale.
 
     Args:
         y_true: Array of binary class labels (0/1) (numpy array or torch tensor).
@@ -179,20 +193,20 @@ def hsieh_turnbull_band(
         alpha: Significance level (e.g., 0.05 for 95% confidence). Defaults to 0.05.
         use_logit_transform: If True, construct intervals on the logit
             scale for stable boundary behavior. If False, use direct Gaussian
-            intervals on the probability scale. Defaults to True.
+            intervals on the probability scale. Defaults to False.
         density_method: Method for estimating score densities. Options:
             - "log_concave": Log-concave MLE via convex optimization. More
               robust to outliers and provides smooth derivative estimates.
             - "reflected_kde": Reflected kernel density estimation with ISJ
               bandwidth. May exhibit instability in tails.
             Defaults to "log_concave".
-        n_bootstraps: Number of bootstrap replicates to use for calibrating the
-            critical value. If > 0, uses bootstrap calibration
-            which provides tighter, more accurate bands than the Bonferroni
-            heuristic. If "auto", uses 4000 if the total sample size is > 300.
+        n_bootstraps: Number of bootstrap replicates used to calibrate the
+            critical value. If 0, uses the Bonferroni heuristic. If "auto",
+            uses 4000 when the total sample size exceeds 300 and 0 otherwise.
+            Defaults to 0.
         check_assumptions: If True, run heuristic checks for gross
             violations of log-concavity assumptions and issue warnings.
-            Defaults to True.
+            Defaults to False.
         use_wilson_variance_floor: If True, apply a Wilson score interval variance
             floor to stabilize bands when the estimated ROC slope is near 0. The
             Wilson variance provides a principled minimum uncertainty based on exact

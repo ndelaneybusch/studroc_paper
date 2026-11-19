@@ -50,8 +50,13 @@ built from Kolmogorov–Smirnov confidence bands on the two class CDFs, and one
 from bootstrapping. This is the canonical fixed-width distribution-free
 simultaneous band the paper benchmarks against — the method that "always
 achieves 100% coverage but is uninformatively wide" (`project_evaluation_report.md`
-C.1). Confirm exact page range (some sources list 499–508, others 191–197 for
-the related Ma & Hall paper — they are distinct; see A.6). **[verify pages]**
+C.1). Pages 499–508 and DOI 10.1002/sim.4780130513 are confirmed (191–197 is
+Ma & Hall, A.6). Macskassy & Provost (A.3) call the KS construction "SJR" and
+the bootstrap one "FWB". The idea of composing two one-sample bands predates
+Campbell: Doksum (1974) did it for the shift function, and Switzer (1976)
+showed how conservative the product-level guarantee is (A.14). The project's
+`ks` baseline uses the Dvoretzky–Kiefer–Wolfowitz margin with Massart's
+constant (B.5), not exact finite-sample Kolmogorov critical values.
 
 ### A.3 Macskassy, Provost & Rosset — ROC confidence bands, empirical evaluation
 
@@ -156,6 +161,22 @@ Bayesian counterpart to the frequentist resampling approach, and as another
 method that produces *credible* (not guaranteed-coverage simultaneous) bounds —
 useful contrast for the paper's emphasis on calibrated frequentist coverage.
 
+**Nearest prior art for the fiducial band.** The Bayesian bootstrap puts
+Dirichlet(1, …, 1) weights on each class's observations with the observed
+merged order held fixed, which is close to drawing uniform spacings per class
+conditional on the rank sequence. The companion theory paper is Gu, J. and
+Ghosal, S. (2008), "Strong approximations for resample quantile processes and
+application to ROC methodology," *Journal of Nonparametric Statistics* 20(3),
+229–240, which claims asymptotically accurate coverage for bands. Candidate
+differences of the fiducial band, to be checked against the full text: n + 1
+spacings per class including both end gaps, within-gap completion, a
+simultaneous trim by minimum pointwise rank depth, and the corner allowances.
+Whether Gu and Ghosal's bands are simultaneous is **[verify]**; the shipped
+implementation (`ROCnReg::pooledROC.BB`) returns a pointwise credible band,
+and MATLAB PRT's `prtScoreRocBayesianBootstrap` advertises an undefined
+"uniform credible band". A sup-calibrated Bayesian bootstrap band is a
+baseline a referee will expect next to the fiducial band.
+
 ### A.8 Zheng, Yang & Song (2024) — conformal ROC bands
 
 > Zheng, Z., Yang, B. and Song, P. X. K. (2024). "Quantifying Uncertainty in
@@ -186,7 +207,11 @@ established **per operating point (marginal)** and the band is formed by
 argument, so simultaneous coverage over the whole curve in the strong sense this
 paper guarantees is not shown. Cite to situate the studentized-envelope-plus-
 exact-floor approach against the conformal route, noting the estimand and
-simultaneity differences (see §E for the extensibility discussion).
+simultaneity differences (see §E for the extensibility discussion). As of
+November 2026 the arXiv entry is still v1 with no journal reference and no
+released code. A follow-up applies the idea to graph classifiers: Wu, Yang,
+Chen, Chen and Zheng, "Conditional Prediction ROC Bands for Graph
+Classification," arXiv:2410.15239 (abstract only read).
 
 ### A.9 nsROC — software reference for ROC bands
 
@@ -207,7 +232,7 @@ why a calibrated, assumption-free, density-estimation-free band fills a gap
 > Martínez-Camblor, P., Pérez-Fernández, S. and Corral, N. (2018). "Efficient
 > Nonparametric Confidence Bands for Receiver Operating-Characteristic Curves."
 > *Statistical Methods in Medical Research*, 27(6), 1892–1908 (online 2016).
-> **[verify volume/year — 2016 online-first vs 2018 print]**
+> https://doi.org/10.1177/0962280216672490
 
 The `PSN` band in nsROC and the most flexible existing nonparametric option: a
 smoothed-bootstrap approximation to the distribution of a pivotal sup-type
@@ -229,6 +254,22 @@ where the pivotal statistic's variance degenerates. It is the same corner
 instability this paper treats, handled by a non-adaptive hard cap rather than an
 exact floor.
 
+**Published simulation protocol and results (read from the preprint).**
+Controls and cases from normal, lognormal, gamma, and normal-mixture pairs in
+three scenarios; (n, m) ∈ {(50,50), (50,100), (100,100), (100,200)}; 2,000
+replicates at 95% with B = 500; coverage of the whole true curve on the nsROC
+grid; width as the area between the bands. PSN covered 94–99.6% at s = 1 and
+fell to 70.8% in one cell at s = 2. In the same study JMS (A.11) covered
+29–61% in the first scenario, DEK (A.5) 56–63% on a binormal case and near 0%
+off-model, and pointwise-joined bootstrap bands peaked at 78.9%. The DEK
+figures conflict with Demidenko's own 0.89–0.94, so the nsROC DEK
+implementation or the coverage check should be validated before DEK is used
+as a baseline. The paper's bandwidth is h = s·min(n, m)^{-1/5}·σ̂; the nsROC
+R Journal text omits the exponent, and the package source includes it. PSN
+picks its α split between the edges to minimise band area. This is the main
+published competitor for any "narrowest band that keeps nominal coverage"
+claim.
+
 ### A.11 Jensen, Müller & Schäfer (2000) — JMS Brownian-bridge band
 
 > Jensen, K., Müller, H.-H. and Schäfer, H. (2000). "Regional Confidence Bands
@@ -248,11 +289,30 @@ density ratio g(c)/f(c) (the Hsieh–Turnbull slope term), whose tail estimation
 is unstable — `project_evaluation_report.md` D.9 shows the slope term is exactly
 what no binomial yardstick recovers and what density estimation must supply.
 
+**Reference implementation (read from the nsROC source).**
+`nsROC::ROCbands(method="JMS")` works on the open region (a, b), by default
+(1/N, 1 − 1/N). It estimates both densities with R's default Gaussian kernel
+(`density()`), forms the Hsieh–Turnbull variance, simulates the limit process
+ψ(p) = λ^{-1/2}·(g/f)·B₁(1 − p) + (1 − λ)^{-1/2}·B₂(Ĝ(c_p)) from two
+independent Brownian bridges, and takes a quantile of sup|ψ|/√Var as the
+critical value. It centres the band on a midpoint-smoothed empirical ROC. Its
+authors say the code follows their reading of the paper and was not checked
+with Jensen et al. The source takes the 1 − α/2 quantile of the two-sided
+supremum, which looks conservative relative to the 1 − α quantile that
+two-sided coverage needs; compare with the original paper before treating
+either as the definition. This is the literature form of a "Hsieh–Turnbull
+band": the critical value comes from the estimated Gaussian limit, not from a
+bootstrap or a Bonferroni count.
+
 ### A.12 Hilgers (1991) — exact distribution-free ROC bounds at a chosen cut-off
 
 > Hilgers, R. A. (1991). "Distribution-free Confidence Bounds for ROC Curves."
 > *Methods of Information in Medicine*, 30(2), 96–101. PMID 1857255.
-> https://pubmed.ncbi.nlm.nih.gov/1857255/ **[verify first name, DOI]**
+> https://doi.org/10.1055/s-0038-1634822 **[verify first name]**
+>
+> Schäfer, H. (1994). "Efficient Confidence Bounds for ROC Curves."
+> *Statistics in Medicine*, 13(15), 1551–1561.
+> https://doi.org/10.1002/sim.4780131506
 
 The earliest exact, distribution-free ROC inference found, and the nearest
 ancestor of the exact composition band's *per-class* logic. Per the abstract,
@@ -265,7 +325,15 @@ but **pointwise**: the abstract claims nothing simultaneous over the curve.
 Cite as prior art for exact per-class bounds composed into an ROC statement,
 contrasting its single cut-off with the M3 band's sup-norm guarantee. Only the
 abstract was read; check the full text for any simultaneous variant before
-asserting there is none.
+asserting there is none. A second search (November 2026) could not reach the
+full text either; secondary sources describe pointwise rectangles only.
+MedCalc's "95% Confidence Bounds for the ROC curve" are Hilgers's. Schäfer
+(1994) shortens the intervals at a specified point of the curve by up to 40%
+using the Greenhouse–Mantel test; per its abstract it is also pointwise.
+Related exact single-point regions: Tilbury et al. (2000), *IEEE Transactions
+on Biomedical Engineering* 47, 952–963; Kerekes (2008), *IEEE Geoscience and
+Remote Sensing Letters* 5(2); and the Clopper–Pearson rectangles at level
+1 − √(1 − α) per axis drawn by R's `plotROC::geom_rocci`.
 
 ### A.13 Ledwina & Zagdański (2024) — ODC/ROC comparison curves (not a band)
 
@@ -283,6 +351,168 @@ per-class bands nor uses Beta order-statistic local levels, and it cites
 neither Campbell (A.2) nor any Berk–Jones or tail-sensitive band. Useful only
 for its pointers to the two-sample P-P literature (Aly, Csörgő & Horváth 1987;
 Doksum & Sievers 1976; Li, Tiwari & Wells 1996).
+
+### A.14 Doksum (1974), Switzer (1976), Doksum & Sievers (1976) — exact two-sample Q-Q bands
+
+> Doksum, K. (1974). "Empirical Probability Plots and Statistical Inference
+> for Nonlinear Models in the Two-Sample Case." *The Annals of Statistics*,
+> 2(2), 267–277. https://doi.org/10.1214/aos/1176342662
+>
+> Switzer, P. (1976). "Confidence Procedures for Two-Sample Problems."
+> *Biometrika*, 63(1), 13–25. https://doi.org/10.1093/biomet/63.1.13
+>
+> Doksum, K. A. and Sievers, G. L. (1976). "Plotting with Confidence:
+> Graphical Comparisons of Two Populations." *Biometrika*, 63(3), 421–434.
+> https://doi.org/10.2307/2335720
+
+The exact two-sample literature a referee of the exact composition band is
+most likely to raise. All three target the Q-Q (treatment or shift) function
+G⁻¹∘F on the score scale. Switzer's argument (full text read): transform one
+sample by a candidate function; at the true function the two samples are
+exchangeable, so inverting any two-sample rank test gives an exact
+distribution-free confidence set. Tests whose acceptance region is a box on
+the rank vector give bands whose edges are order statistics of the other
+sample, with coverage equal to the fraction of the C(m+n, m) rank
+arrangements inside the box. Inverting the Smirnov test gives the exact band
+that R's `stats::qqplot(conf.level=)` draws. Doksum (1974) built nearly the
+same band but set its level by combining two one-sample procedures, which is
+the composition idea Campbell (A.2) later applied to the ROC; Switzer's
+example at m = n = 40 has a guaranteed level of about 50% against a true
+level of about 94.5%. Doksum and Sievers add a variance-weighted "W-band",
+implemented with exact lattice-path levels in Wilcox's WRS functions `sband`,
+`wband`, and `kswsig` (paper not read; description from the code).
+
+**Relation to the ROC band.** These bands are stated on the score scale,
+where coverage does not depend on (F, G). A band for the ROC in (FPR, TPR)
+coordinates needs the true false-positive rate at each observed threshold,
+which the Q-Q band does not supply, and the composition band's coverage does
+depend on the ROC. The Q-Q bands are therefore related work and the source of
+the conservativeness argument, not drop-in competitors on ROC axes. This
+reading is the project's own and should be checked against Switzer's text
+before it is asserted in print. Cite Doksum for priority on composition and
+Switzer for the gap between the product-level guarantee and the exact level.
+
+### A.15 Horváth, Horváth & Zhou (2008) — bootstrap bands without density estimation
+
+> Horváth, L., Horváth, Z. and Zhou, W. (2008). "Confidence Bands for ROC
+> Curves." *Journal of Statistical Planning and Inference*, 138(6),
+> 1894–1904. **[verify issue; abstract not read]**
+
+Bootstrap bands for √n(R̂ − R) that avoid estimating the densities, with
+asymptotic validity proved for a smoothed bootstrap (as described by
+Martínez-Camblor et al., A.10). The bands are unstudentized and hence of
+constant width, which A.10 criticises as inefficient at the ends. No software
+found. Together with A.4 this is the "plain bootstrap sup-band" baseline.
+
+### A.16 Smoothed empirical-likelihood ROC intervals and bands
+
+> Claeskens, G., Jing, B.-Y., Peng, L. and Zhou, W. (2003). "Empirical
+> Likelihood Confidence Regions for Comparison Distributions and ROC Curves."
+> *The Canadian Journal of Statistics*, 31(2), 173–190.
+> https://doi.org/10.2307/3316066
+>
+> Valeinis, J. and Cers, E. "Extending the Two-Sample Empirical Likelihood
+> Method." Preprint; R package `EL`. **[no journal version confirmed]**
+
+Smoothed empirical likelihood with a Wilks limit gives pointwise ROC
+intervals; whether Claeskens et al. also give simultaneous bands is
+**[verify]**. `EL::EL.plot(method="roc", simultaneous=TRUE)` bootstraps a
+simultaneous critical value on 50 points of an interval trimmed by 5% at each
+end, so the corners are excluded. It needs a kernel bandwidth (default
+`bw.nrd0`). Apart from nsROC (A.9) it is the only shipped nonparametric
+simultaneous ROC band found. Pointwise only, and not band methods: Gong, Peng
+& Qi (2010), *Journal of Multivariate Analysis* 101(6), 1520–1531 (smoothed
+jackknife empirical likelihood); Hall, Hyndman & Fan (2004), *Biometrika*
+91(3), 743–750 (kernel ROC "intervals and bands" with undersmoothing).
+
+### A.17 Further parametric and semiparametric bands
+
+> Yin, J. and Tian, L. (2016). "Generalized Inference Confidence Band for
+> Binormal ROC Curve." *Statistics in Biopharmaceutical Research*, 8(1).
+> https://doi.org/10.1080/19466315.2015.1093957
+>
+> Sewak, A. and Hothorn, T. (2022). "Estimating Transformations for
+> Evaluating Diagnostic Tests with Covariate Adjustment." arXiv:2208.03679.
+> R package `tram`. **[verify final title and venue]**
+
+Yin and Tian build a binormal band from generalized pivotal quantities and
+report satisfactory small-sample coverage where Working–Hotelling (A.6) and
+the ellipse envelope (A.5) are liberal; it is the only "generalized
+inference" ROC band found and it is parametric. Sewak and Hothorn give
+score-inverted uniform bands in a transformation model, valid when the link
+is correctly specified. Their simulation (probit, logit, and cloglog links;
+AUC 0.5–0.95; 25–100 per class; 90% level) compares against pROC, ROCit, and
+the three nsROC bands and finds only the correctly specified model accurate,
+with PSN covering at the price of a much larger area. Both are home-turf
+foils for a "price of nonparametric inference" comparison. Stata's `rocfit`
+followed by `rocplot, confband` ships the Ma–Hall band (A.6).
+
+### A.18 Pointwise and single-operating-point methods from the ML literature
+
+> Tong, X., Feng, Y. and Li, J. J. (2018). "Neyman–Pearson Classification
+> Algorithms and NP Receiver Operating Characteristics." *Science Advances*,
+> 4(2), eaao1659. arXiv:1608.03109. Package `nproc`.
+>
+> Urlus, R., Baak, M., Collot, S. and Fridman Rojas, I. (2023). "Pointwise
+> Sampling Uncertainties on the Precision-Recall Curve." *AISTATS*, PMLR 206,
+> 8211–8232. https://proceedings.mlr.press/v206/urlus23a.html. Package `mmu`.
+>
+> Bates, S., Candès, E., Lei, L., Romano, Y. and Sesia, M. (2023). "Testing
+> for Outliers with Conformal p-values." *The Annals of Statistics*, 51(1),
+> 149–178. arXiv:2104.08279.
+>
+> Dugas, C. and Gadoury, D. (2010). "Pointwise Exact Bootstrap Distributions
+> of ROC Curves." *Machine Learning*, 78, 103–136.
+
+None of these is a simultaneous band for the population ROC. Tong et al.
+bound type I and type II error at each order-statistic threshold with exact
+binomial tails: finite-sample and distribution-free, but one classifier and
+one threshold at a time. It is the ML-side precedent for exact
+order-statistic bounds on operating points, so the exact band should say how
+it goes beyond it. Urlus et al. give asymptotic profile-likelihood regions
+per threshold for PR and ROC curves and a "curve uncertainty" union with no
+simultaneous guarantee; the method backs an open scikit-learn proposal (issue
+25856). Bates et al. give a finite-sample bound on the false-positive rate
+uniform over thresholds, which is the one-sample (negative-class) half of the
+problem. Dugas and Gadoury compute pointwise bootstrap laws exactly. Related
+practice: membership-inference and privacy-auditing papers report
+Clopper–Pearson intervals for the TPR at a fixed low FPR, ignoring that the
+threshold is estimated from the negatives (Carlini et al. 2022,
+arXiv:2112.03570, sets the low-FPR reporting norm); biometrics uses bootstrap
+intervals (Bolle, Ratha & Pankanti 2004, *Computer Vision and Image
+Understanding* 93, 1–33; Wu, Martin & Kacker 2011, *Journal of Research of
+NIST* 116(1)). The learning-theory bounds of Clémençon and Vayatis
+(TreeRank and related work) concern the gap between a learned scorer's ROC
+and the optimal ROC, not uncertainty about a fixed scorer's curve.
+
+### A.19 Shi, Wang & Ma (2026) — finite-sample bands for trade-off functions
+
+> Shi, Wang and Ma (2026). arXiv:2605.10774. **[verify title, author first
+> names; abstract only read]**
+
+Simultaneous bands for the trade-off (ROC) curve between two distributions by
+test inversion with non-asymptotic guarantees, under the restriction that
+rejection regions come from a class of finite VC dimension, together with a
+statement that uniform inference over unrestricted nonparametric classes is
+impossible and matching lower bounds under monotone likelihood ratio. This is
+the newest neighbour of the exact composition band and a possible source for
+an optimality-gap discussion. Read in full before the related-work section is
+written; its estimand and constants are not yet known to this project.
+
+### A.20 Goldman & Kaplan (2018) — two-sample Dirichlet bands for testing
+
+> Goldman, M. and Kaplan, D. M. (2018). "Comparing Distributions by Multiple
+> Testing across Quantiles or CDF Values." *Journal of Econometrics*, 206(1),
+> 143–166. https://doi.org/10.1016/j.jeconom.2018.04.003
+
+The closest published construction to an equal-local-levels two-sample band
+(full text read by the search). Each sample gets Beta-quantile bands at a
+common local level, but the level is calibrated under F = G for testing, and
+the authors state that the bands do not have 1 − α coverage. Stata `distcomp`
+implements the test. Also test-only: Buja and Rolke, "Calibration for
+Simultaneity" (unpublished manuscript; permutation null bands for Q-Q plots);
+Konstantinou, Mrkvička & Myllymäki (2025), *Computational Statistics* 40,
+2553–2582 (global envelope n-sample tests).
 
 ---
 
@@ -534,6 +764,36 @@ Monte Carlo rather than an exact recursion. None of these papers concerns ROC
 curves; the class band is therefore cited as established, and only its use
 inside an ROC composition is claimed as new (§D).
 
+**Other exact one-sample bands that could replace ELL in the composition.**
+These define the comparison class for a "narrowest exact band" claim, since
+each can be calibrated by the same crossing-probability recursion (B.13):
+
+> Frey, J. (2008). "Optimal Distribution-Free Confidence Bands for a
+> Distribution Function." *Journal of Statistical Planning and Inference*,
+> 138(10), 3086–3098. https://doi.org/10.1016/j.jspi.2007.12.001
+>
+> Xu, X., Ding, X. and Zhao, S. (2009). "The Reduction of the Average Width
+> of Confidence Bands for an Unknown Continuous Distribution Function."
+> *Journal of Statistical Computation and Simulation*, 79, 335–347; and "A
+> New Confidence Band for Continuous Cumulative Distribution Functions,"
+> *Australian & New Zealand Journal of Statistics*, 51, 305–318.
+> **[abstracts not read]**
+>
+> Dufour, J.-M. and Diouf (2026). CIRANO Working Paper 2026s-15. **[verify
+> title and first name; summary only read]**
+
+Frey gives bands that are optimal under narrowness or area criteria (no
+public code found) and is the likeliest to be narrower than ELL in the middle
+of the ROC. Dümbgen & Wellner (above) tabulate critical values in their
+supplement and could be calibrated exactly, but no package was found. Dufour
+and Diouf study regularized Kolmogorov, Anderson–Darling, Eicker, and
+Berk–Jones families with finite-sample Monte Carlo calibration. Owen's band
+ships in R as `SMIR::NPL.bands` at the 0.95 and 0.99 levels only. The
+time-uniform Dvoretzky–Kiefer–Wolfowitz band of Howard & Ramdas (2022,
+*Bernoulli* 28(3), 1704–1728) is about twice as wide as the fixed-n band and
+is not a competitor at a fixed sample size. No published width comparison of
+ELL against these was found beyond Owen's qualitative statement.
+
 ### B.13 Exact boundary-crossing probabilities — the M3 calibration kernel
 
 > Noé, M. (1972). "The Calculation of Distributions of Two-Sided
@@ -558,7 +818,37 @@ boundaries, which the `fiducial_core` kernel computes to set γ without Monte
 Carlo. Noé's recursion and Steck's determinant are the classical exact
 methods (Owen 1995 used Noé's); Moscovich, Nadler & Spiegelman give the exact
 Berk–Jones p-values and Moscovich & Nadler an O(n² log n) two-sided algorithm.
-Cite for the claim that M3's simultaneous level is exact to roundoff.
+Cite for the claim that M3's simultaneous level is exact to roundoff. Public
+code: `crossprob` (C++ with a Python module,
+github.com/mosco/crossing-probability).
+
+### B.14 Fiducial bands and rank-depth trimming — antecedents of the fiducial band
+
+> Cui, Y. and Hannig, J. (2019). "Nonparametric Generalized Fiducial
+> Inference for Survival Functions under Censoring." *Biometrika*, 106(3),
+> 501–518. arXiv:1707.05034.
+>
+> Myllymäki, M., Mrkvička, T., Grabarnik, P., Seijo, H. and Hahn, U. (2017).
+> "Global Envelope Tests for Spatial Processes." *Journal of the Royal
+> Statistical Society: Series B*, 79(2), 381–404. R package `GET`.
+> **[verify volume and pages]**
+>
+> Montiel Olea, J. L. and Plagborg-Møller, M. (2019). "Simultaneous
+> Confidence Bands: Theory, Implementation, and an Application to SVARs."
+> *Journal of Applied Econometrics*, 34(1), 1–17.
+> https://doi.org/10.1002/jae.2656
+
+Cui and Hannig is the closest nonparametric fiducial band (one-sample
+survival curves, with a functional Bernstein–von Mises theorem); no
+generalized fiducial ROC band was found, and the only "generalized
+inference" ROC band is binormal (A.17). The fiducial band's trim by minimum
+pointwise rank is the rank-envelope idea of Myllymäki et al., whose `GET`
+package provides general functional envelopes; no application to ROC curves
+was found. Montiel Olea and Plagborg-Møller argue the sup-t band is the
+narrowest valid default in linear models and is the generic calibration a
+referee may ask to see applied to the ROC; PSN (A.10) with a naive bootstrap
+and an equal split is essentially that band. See A.7 for the Bayesian
+bootstrap, the nearest resampling relative.
 
 ---
 
@@ -585,6 +875,14 @@ Cite for the claim that M3's simultaneous level is exact to roundoff.
 | Exact composition (M3) band: per-class bands composed by monotonicity | Campbell 1994 (A.2); Hilgers 1991 (A.12, pointwise) |
 | M3 class band: equal local levels / tail-sensitive Beta bounds | Berk & Jones 1979; Owen 1995; Aldor-Noiman et al. 2013; Weine et al. 2023 (B.12) |
 | M3 exact simultaneous-level calibration | Noé 1972; Steck 1971; Moscovich et al. 2016; Moscovich & Nadler 2017 (B.13) |
+| Priority for composing one-sample bands; conservativeness of the product level | Doksum 1974; Switzer 1976 (A.14) |
+| Exact two-sample bands on the score (Q-Q) scale | Switzer 1976; Doksum & Sievers 1976 (A.14) |
+| Alternative exact class bands for the composition | Frey 2008; Xu, Ding & Zhao 2009; Dümbgen & Wellner 2023 (B.12) |
+| Exact but pointwise operating-point bounds | Hilgers 1991; Schäfer 1994 (A.12); Tong, Feng & Li 2018 (A.18) |
+| Fiducial band: nearest resampling and fiducial antecedents | Gu, Ghosal & Roy 2008 (A.7); Cui & Hannig 2019; Myllymäki et al. 2017 (B.14) |
+| Shipped simultaneous ROC bands | nsROC (A.9–A.11); `EL` (A.16); Stata `rocplot, confband` (A.17) |
+| Mainstream software gives pointwise bands only | §G |
+| Finite-sample ROC bands under a VC restriction; impossibility | Shi, Wang & Ma 2026 (A.19) |
 
 ---
 
@@ -612,11 +910,35 @@ exact tie handling by random tie-breaking, the refusal to pin U(0) = 0, and its
 use as a floor under the fiducial band (the hybrid). Present the class band and
 its calibration as cited machinery and these as the contribution.
 
+**Second search (19 November 2026).** Three wider searches (exact
+distribution-free bands; asymptotic, bootstrap, and Bayesian bands and
+shipped software; machine-learning and conformal work) again found no ROC,
+ODC, or P-P band built from equal-local-level class bands. They did find
+prior art that changes the framing:
+
+- Composition itself is older than Campbell: Doksum 1974, with Switzer 1976
+  showing how loose the product-level guarantee is (A.14). The contribution
+  should be stated as the choice of class band, its exact calibration, the
+  class split, and the treatment of jumps, ties, and U(0), not as the
+  composition.
+- Exact two-sample bands exist on the score scale (Switzer; Doksum–Sievers).
+  The paper needs a paragraph on why they are not ROC-coordinate bands
+  (A.14).
+- Goldman & Kaplan 2018 (A.20) use two-sample Beta-quantile bands at a common
+  local level, for testing only.
+- Shi, Wang & Ma 2026 (A.19) claim finite-sample trade-off-function bands
+  under a VC restriction; unread beyond the abstract.
+- For the fiducial band, the Bayesian bootstrap ROC (A.7) is close prior art.
+
 **Limits of the search.** Web search over titles and abstracts, plus full
-reads of A.13 and Lourie et al. (B.12); Hilgers (A.12) was read from its
-abstract only. Before claiming novelty in print, check the citing literature
-of Campbell 1994 and Owen 1995 (Google Scholar "cited by") for an ROC or
-two-sample application, and the full text of Hilgers 1991.
+reads of A.13, Lourie et al. (B.12), Switzer 1976, Goldman & Kaplan 2018,
+the PSN preprint, Bertail et al., and Zheng et al.; Hilgers (A.12) was read
+from its abstract only. Entries added on 19 November 2026 were verified by
+search agents, not re-read by the authors; details marked **[verify]** were
+not confirmed at all. Before claiming novelty in print, check the citing
+literature of Campbell 1994 and Owen 1995 (Google Scholar "cited by") for an
+ROC or two-sample application, and the full texts of Hilgers 1991, Gu &
+Ghosal 2008, and Shi, Wang & Ma 2026.
 
 ---
 
@@ -672,8 +994,34 @@ adjacent-estimand contemporary, not a benchmark competitor.
 
 ## F. Open verification items before submission
 
-- **[verify]** Campbell 1994 exact page range (499–508 vs. a commonly mis-cited
-  191–197, which belongs to Ma & Hall 1993).
+- ~~Campbell 1994 page range~~ **Resolved:** *Statistics in Medicine* 13,
+  499–508 (A.2).
+- ~~PSN paper volume and year~~ **Resolved:** *SMMR* 27(6), 1892–1908, 2018,
+  online 2016 (A.10).
+- Read in full: Gu, Ghosal & Roy 2008 and Gu & Ghosal 2008 (are their bands
+  simultaneous; how do the weights differ from n + 1 spacings), Switzer 1976
+  (confirm the score-scale versus ROC-scale argument of A.14), Shi, Wang & Ma
+  2026 (A.19), and Jensen et al. 2000 (which quantile defines the critical
+  value, A.11).
+- Validate the nsROC DEK implementation against Demidenko's reported coverage
+  before using it as a baseline (A.10).
+- Do not copy the reference list of Bertail et al. 2008 for "ROC confidence
+  bands: an empirical evaluation"; it misattributes the paper to Girling
+  (2000).
+- Bibliographic confirmations from the second search: Zou, Hall & Shapiro
+  1997 is *Statistics in Medicine* 16(19), 2143–2156; Owen's band is 1995
+  (the `SMIR` documentation says 1997); Aly, Csörgő & Horváth 1987 is a
+  chapter in *New Perspectives in Theoretical and Applied Statistics*
+  (Wiley), pp. 135–156; the smoothed empirical likelihood paper for censored
+  ROC data is Yang & Zhao (2012), *Journal of Multivariate Analysis* 109,
+  254–263; Macskassy & Provost 2004 is the workshop paper and the ICML 2005
+  paper adds Rosset.
+- Not found, so do not cite without a source: a kernel-smoothed simultaneous
+  ROC band by Lijian Yang and coauthors; "Branscum, Johnson, Hanson &
+  Gardner 2008, *Statistics in Medicine*"; a "Stepanova & Wang" band paper;
+  any time-uniform ROC or AUC confidence sequence.
+- The project's repositories and the `rocci` PyPI page are publicly indexed,
+  which matters for double-blind review.
 - ~~Authors of arXiv:2405.12953~~ **Resolved:** Zheng, Yang & Song (2024),
   Univ. Michigan Biostatistics (A.8).
 - **[verify]** Martínez-Camblor et al. PSN paper: 2016 online-first vs. 2018
@@ -691,3 +1039,49 @@ adjacent-estimand contemporary, not a benchmark competitor.
 - Consider adding Pepe (2003), *The Statistical Evaluation of Medical Tests*
   (Oxford), as the standard textbook anchor for ROC inference if a general
   reference is wanted.
+
+---
+
+## G. What released software computes (searched 19 November 2026)
+
+Entries were read from package documentation or source by a search agent
+unless marked otherwise. "Pointwise" means a separate interval at each FPR or
+threshold.
+
+| Software | Function | Output | Simultaneous band for the population ROC? |
+|---|---|---|---|
+| R `nsROC` | `ROCbands(method = "PSN" / "JMS" / "DEK")` | Bands on the grid {0, 1/N, …, 1} | Yes (A.5, A.10, A.11) |
+| R `EL` | `EL.plot(method = "roc", simultaneous = TRUE)` | Smoothed empirical-likelihood band | Yes, on an interval trimmed 5% at each end (A.16) |
+| Stata | `rocfit` then `rocplot, confband` | Ma–Hall Working–Hotelling band | Yes, binormal (A.6) |
+| R `tram` | Sewak–Hothorn score bands | Transformation-model band | Yes, model-based (A.17) |
+| MATLAB PRT | `prtScoreRocBayesianBootstrap` | "Uniform credible band", undefined | Claimed (A.7) |
+| R `stats` | `qqplot(conf.level = )` | Exact Smirnov band for the Q-Q function | Score scale, not ROC coordinates (A.14) |
+| R `pROC` | `ci.se`, `ci.sp`, `ci.coords` | Stratified percentile bootstrap | No, pointwise |
+| R `fbroc` | `conf` | Percentile bootstrap TPR on an FPR grid | No, pointwise |
+| R `ROCit` | `ciROC` | Delta method or binormal bootstrap per threshold | No, pointwise |
+| R `plotROC` | `geom_rocci` | Clopper–Pearson rectangles at chosen cutoffs | No, pointwise |
+| R `ROCnReg` | `pooledROC.BB`, `pooledROC.dpm` | Pointwise credible bands | No |
+| R `precrec`, `mlr3viz` | `evalmod(cb_alpha = )` | Bounds across multiple test sets | No, pointwise |
+| R `verification` | `roc.plot(CI = TRUE)` | Bootstrap boxes at thresholds | No |
+| R `logcondens` | `confIntBootLogConROC_t0` | Bootstrap interval at one FPR | No |
+| R, PyPI `nproc` | NP-ROC bands | Exact order-statistic bounds per threshold | No, pointwise (A.18) |
+| MATLAB | `perfcurve` (`NBoot`, `XVals`, `TVals`) | Bootstrap bounds; the documentation says they are pointwise and not a simultaneous band | No |
+| Stata | `rocreg` | Bootstrap intervals at listed FPRs | No |
+| SAS | `PROC LOGISTIC` | AUC intervals | No curve band found |
+| MedCalc | ROC "confidence bounds" | Hilgers rectangles | No, pointwise (A.12) |
+| scikit-learn | `RocCurveDisplay`; `plot_roc_crossval` example | No interval; the example shades ±1 SD across folds | No |
+| Python `mmu` | Profile-likelihood regions | Per-threshold regions and their union | No, pointwise (A.18) |
+| Python `roc-utils` | `plot_roc_bootstrap`, `plot_mean_roc` | Percentile ribbon; a "CI of the mean curve" that shrinks with the number of bootstrap draws | No |
+| Python `confidenceinterval`, `MLstatkit`, `roc_comparison`; HF `evaluate`; `torchmetrics` | AUC or scalar-metric intervals | — | No |
+
+Not opened, and no band known: `ROCR`, `cutpointr`, `OptimalCutpoints`,
+`yardstick`, `WeightedROC`, `sROC`, `statsmodels`, `scikit-plot`, TorchEval,
+Keras, `mlxtend`, ROCKIT/LABROC.
+
+Evidence on reporting practice, for the motivation section: Király, Mateen &
+Sonabend (arXiv:1812.07519) found that 32% of 121 NeurIPS 2017 papers
+reported confidence intervals and none said how they were computed;
+Christodoulou et al. (MICCAI 2024, arXiv:2409.17763) found intervals in 0.5%
+of 221 MICCAI 2023 segmentation papers; Agarwal et al. (NeurIPS 2021,
+`rliable`) popularised pointwise bootstrap bands on performance profiles;
+Lourie et al. (B.12) show bootstrap bands under-cover for tuning curves.
