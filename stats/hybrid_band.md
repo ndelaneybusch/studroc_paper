@@ -331,6 +331,65 @@ region = suite.floor_regions[0.05]["hybrid"]
 
 The implementation sources are [`hybrid_floor.py`](../src/studroc_paper/methods/hybrid_floor.py), [`fiducial_band_rs.py`](../src/studroc_paper/methods/fiducial_band_rs.py), and the reference path in [`fiducial_band.py`](../src/studroc_paper/methods/fiducial_band.py). [`test_hybrid_floor.py`](../tests/test_hybrid_floor.py) covers cuts, fallback behavior, closure, nesting, resampling, and the two execution paths; [`test_fiducial_band_rs.py`](../tests/test_fiducial_band_rs.py) covers shared-cloud behavior.
 
+### 4.4 Proposed `auto` Routing Between the Unfloored and Hybrid Bands
+
+> **Note — provisional. [Heuristic; partially empirical.]** This rule is not implemented and has not been validated end to end. Its free parameters are to be calibrated by [`auto_rule_surface.py`](experiments/auto_rule_surface.py).
+
+A user-facing `auto` mode needs to choose between the unfloored fiducial band (`m3_floor=False`) and the hybrid using only the class counts and the AUC. The unfloored band is narrower and covers well in most settings. The proposal is deliberately conservative: it will often choose the hybrid for distributions where the unfloored band would have been safe. Use the unfloored band only when **both** of these hold, and the hybrid otherwise:
+
+```math
+n_{\min} \ge 100,
+\qquad
+n_{\min}\left(\frac{n_{\min}}{n_{\max}}\right)^{2/3}(1-\mathrm{AUC})^{5/2} \ge 12,
+```
+
+where $`n_{\min}`$ and $`n_{\max}`$ are the smaller and larger class counts. Because the risk rises steeply with AUC, the rule should use an upper bound on the empirical AUC rather than the point estimate, for example $`\widehat{\mathrm{AUC}} + 2\sqrt{\widehat{\mathrm{AUC}}(1-\widehat{\mathrm{AUC}})/n_{\min}}`$. This margin is a suggestion and has not been tested.
+
+**Mechanism.** The unfloored band fails when the ROC has a convex hook in a corner that holds about one expected observation of one class ([`fiducial_band_theory.md` §7.4](fiducial_band_theory.md#74-convex-hooks-exact-geometry-approximate-risk)). The data cannot resolve the hook, and the within-gap linear completion assumes there is none. Three factors set the risk:
+
+- **AUC:** a higher AUC pushes the hook further into the corner, so more data are needed to resolve it.
+- **Minority count:** the scarcer class resolves the hook, so the rule uses $`n_{\min}`$, not the total $`n`$.
+- **Imbalance:** at fixed $`n_{\min}`$, a larger majority class lengthens the plateau run beside the corner. This raises the risk by roughly $`(n_{\max}/n_{\min})^{1/3}`$.
+
+Take the worst case of the §7.4 closed-form screen over Student-$`t`$ degrees of freedom 1–30. This gives a miss risk of about $`0.05\,(n_{\max}/n_{\min})^{1/3}/\bigl(\sqrt{n_{\min}}\,(1-\mathrm{AUC})^{1.2}\bigr)`$. Solving it at a fixed risk budget gives the second inequality, with the AUC exponent rounded from 2.4 to 2.5. The floor $`n_{\min}\ge100`$ is there because the shape × AUC study found no safe zone at small samples: at $`n=30`$, heteroscedastic shapes with $`\sigma_+/\sigma_-`$ between 0.2 and 0.5 still covered only about 0.89 at low AUC.
+
+**Largest AUC routed to the unfloored band** (“none” means the unfloored band is never chosen at that size and prevalence):
+
+| Total $`n`$ | 50% prevalence | 30% | 10% |
+|---|---|---|---|
+| 300 | 0.64 | none | none |
+| 1,000 | 0.78 | 0.65 | none |
+| 3,000 | 0.86 | 0.78 | none |
+| 10,000 | 0.91 | 0.86 | 0.69 |
+| 100,000 | 0.96 | 0.95 | 0.88 |
+
+Above an AUC of about 0.95 the rule effectively always chooses the hybrid. This matches the shape × AUC study, where Student-$`t`$ with 4–10 degrees of freedom still under-covers at $`n=10{,}000`$.
+
+**Evidence. [Empirical, spot checks.]** The screen reproduces the ridge in the shape × AUC study for the Student-$`t`$ family and for heteroscedastic Gaussians with $`\sigma_+/\sigma_-`$ between 2 and 5. All coverages below are for the production unfloored band at $`\alpha=.05`$:
+
+- **Constant 6:** about break-even. On 11 cells along that frontier, coverage was 0.956–0.990. The lowest cells were heteroscedastic with $`\sigma_+/\sigma_-=0.25`$ at AUC 0.72 and 150 per class (0.959 ± 0.009), and Student-$`t`$ with 5 degrees of freedom at AUC 0.93 and 5,000 per class (0.956 ± 0.015).
+- **Constant 12:** has margin. On 8 cells along that frontier, coverage was 0.960–0.978. The lowest cell was heteroscedastic with $`\sigma_+/\sigma_-=0.25`$ at AUC 0.60 and 120 per class (0.960 ± 0.009).
+- **Imbalance:** cells at a 9:1 class ratio, with AUC 0.62–0.76 and 220–1,000 in the smaller class, covered 0.965–0.989.
+
+**Calibration status.**
+
+| Parameter | Value | Basis | How well pinned |
+|---|---|---|---|
+| AUC exponent | 5/2 | Fit to the closed-form screen, worst case over $`t`$ degrees of freedom | Reasonably |
+| Constant | 12 | About 20 cells at frontiers 6 and 12 | Weakly: bracketed, not located |
+| Imbalance exponent | 2/3 | Screen, plus four 9:1 cells | Poorly |
+| Floor on $`n_{\min}`$ | 100 | Shape × AUC failures at $`n=30`$; one cell at 120 per class | Poorly: nothing tested between 15 and 120 per class |
+| AUC upper-bound margin | 2 SE | Judgement | Untested |
+
+**Limitations.**
+
+- **Smooth shapes only:** no rule based on $`(n,\mathrm{AUC})`$ can protect against slivers or jumps in the ROC ([`fiducial_band.md`](fiducial_band.md) Proposition 2; theory §12.3). The rule covers smooth heavy-tailed and heteroscedastic shapes only.
+- **Unreliable screen for some shapes:** the screen over-predicts risk for the heteroscedastic left corner ($`\sigma_+/\sigma_-<1`$). That is the family that produced the binding cells at low AUC, so in that region the constant rests on simulation alone.
+- **Untested region:** strong imbalance at low AUC with a large minority class is covered by the screen but not by any runs of the production band.
+- **Selection effect:** routing on the empirical AUC makes the choice of band depend on the data. The combined `auto` procedure has not been simulated.
+
+[`auto_rule_surface.py`](experiments/auto_rule_surface.py) replaces the spot checks with a continuous miss-probability surface over $`n_{\min}`$, the class ratio, AUC, and shape. It fits a Gaussian process with a Bernoulli likelihood, then reads off the rule as the least-slack envelope of the worst-case frontier at a 5% miss rate. Use its output, followed by an end-to-end validation of `auto` that routes on the empirical AUC, to set the final constants.
+
 ---
 
 ## 5. Complete Pseudocode
