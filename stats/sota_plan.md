@@ -94,6 +94,8 @@ A failure to show non-inferiority is inconclusive, not evidence that the compara
 
 If a member is superior to ELL on both primary endpoints over $`\mathcal{D}`$, the paper reports that member as the best evaluated. The contribution then shifts from "ELL" to "exactly calibrated tail-sensitive composition", or to the ROC-optimized composition if that is the member. This outcome is pre-committed, not treated as a failed study. Mixed results (ELL better on one endpoint, a comparator on the other) are reported as a trade-off, with no single winner named.
 
+**Published references versus extensions.** Report the comparisons against published boundary constructions (including uniform-weight Frey, H4) separately from the comparison against our ROC-optimized extension (ROPT, H4r). A gain by ROPT is evidence that our extension improves on ELL; it is not evidence that Frey's published uniform-weight band beats ELL. The decision rule above still concerns the full evaluated matrix. Any narrower claim about published references must name the constructions and weight choices tested; optional Frey variants in §2.2 are not covered by a result against uniform weights alone.
+
 **The region $`\mathcal{D}`$.** The pilot shows ELL and exact KS within 1% of each other when the smaller class has about 10 or fewer observations. We split the design in advance:
 
 - **Core region:** $`\min(n_0, n_1) \ge 30`$. Superiority to KS is claimed here.
@@ -119,14 +121,36 @@ If a member is superior to ELL on both primary endpoints over $`\mathcal{D}`$, t
 | BJ | Likelihood-ratio (Berk–Jones) bounds | Exact | Owen 1995; refs B.12 | The original tail-sensitive band |
 | DW | Dümbgen–Wellner bounds | Exact | Dümbgen & Wellner 2023; refs B.12 | Designed to improve Berk–Jones and Owen in the centre |
 | EK | Studentized margin $`c\sqrt{u(1-u)}`$ | Exact | Eicker-type weighting; the Doksum–Sievers W-band weight (refs A.14) | Classical variance weighting, the natural midpoint between KS and ELL |
-| FREY | Minimum total width, uniform weights | Exact | Frey 2008; refs B.12 | Frey's published criterion; narrower than KS in rank space |
+| FREY | Minimum total class-band width, uniform interval weights | Exact | Frey 2008; refs B.12 | **Primary published Frey reference**; no reference ROC or fitted weights |
 | ROPT | Bounds minimizing expected ROC-band area under a mixture of reference curves | Exact | Ours, built on Frey's convexity result; [`frey_ell_plan.md`](frey_ell_plan.md) | Our own probe shows it 5–14% narrower than ELL at AUC 0.8–0.95, so it cannot be left out |
 
-Each family runs with the sample-size split. KS and ELL also run with the equal split, so the effect of the split is separated from the effect of the family.
+The published boundary families run with the sample-size split. KS and ELL also run with the equal split, so the effect of the split is separated from the effect of the family. ROPT may optimize its split as specified in §3.1.
 
-**Frey's band.** The method is recovered from Frey's preprint and thesis, and our probe reproduces his $`n = 20`$ band from the exact kernel (refs B.12; `frey_ell_plan.md` §3.1). It is implemented as specified there, with his first-order conditions as the optimality check.
+**Which Frey band is the reference? Uniform weights (`frey_ss`).** Frey's framework admits many objectives; the primary reference here is his published uniform-weight choice. For each class separately, choose nondecreasing bounds in $`[0,1]`$ by solving
 
-**The ROC-optimized comparator.** ROPT is trained once per $`(n_0, n_1, \alpha)`$ on a reference library that shares no family and no random draw with the evaluation data, and is then a fixed member like any other. It is run at the designs where full optimization is affordable (totals up to 300). A band optimized separately for each evaluation dataset's true ROC is not a method: it is computed as an **oracle benchmark**, reported descriptively as the best any rectangular composition could do with knowledge of the truth, and excluded from the decision rule.
+```math
+\min_{l,h}\ \sum_{i=1}^{n}(h_i-l_i)
+\qquad\text{subject to}\qquad
+H(l,h)\ge 1-\alpha_c,\quad l_i\le h_i.
+```
+
+In Frey's CDF-interval notation, this is $`w_j=1`$ for every interval $`j=0,\ldots,n`$: his total interval width is $`1+\sum_i(h_i-l_i)`$, so the minimizers agree. The objective gives equal weight to rank intervals, not to observed score spacings or FPR intervals. It minimizes neither composed ROC area nor low-FPR ROC area. The bound arrays depend only on class size and the prescribed class level; no reference ROC, observed ranks, empirical AUC, or training fit enters their construction. Use the same sample-size class split and ROC composition as ELL, so the primary comparison isolates the boundary construction. The ROC composition and class split are this study's application of Frey's one-sample method.
+
+The method is recovered from Frey's preprint and thesis, and our probe reproduces his $`n = 20`$ uniform-weight band from the exact kernel (refs B.12; `frey_ell_plan.md` §3.1). Validate coverage and the full constrained optimality conditions, including active-bound inequalities. Use the explicit label **"Frey, uniform weights"** in tables and figures; "Frey optimal" or "minimum-area band" without naming the objective is ambiguous.
+
+**Other Frey variants worth trying.** Frey's [preprint, §6](https://homepage.villanova.edu/jesse.frey/TechReports/tech_report_2.pdf) compares uniform weights with two additional fixed choices. These are published alternatives, distinct from our ROC-weighted optimization:
+
+| Variant | Interval weights in Frey's notation | Role |
+|---|---|---|
+| Tails emphasized (`frey_tail_ss`) | $`w_j=100`$ on the outermost $`n/5`$ intervals at each end; $`w_j=1`$ elsewhere | Highest-priority additional comparison: tests whether a published tail emphasis improves low-FPR ROC area. Tail emphasis in class-rank space need not translate into low-FPR improvement after composition |
+| Center emphasized (`frey_center_ss`) | $`w_j=1`$ on those outer intervals; $`w_j=100`$ elsewhere | Secondary sensitivity analysis of total and mid-curve area; shows the cost of shifting protection away from the class tails |
+| Uniform weights, equal class split (`frey_eq`) | All $`w_j=1`$; equal Šidák class split | Optional ablation under imbalance to separate the class-allocation effect from the boundary objective |
+
+Frey's illustrated sample sizes are 20 and 40. For these weighted variants at other sizes, use $`q=\lfloor n/5\rfloor`$ outer intervals at each end, indices $`0,\ldots,q-1`$ and $`n-q+1,\ldots,n`$. This rounding convention is a declared extension; when $`q=0`$, both objectives reduce to uniform weighting up to scale. For arbitrary interval weights, implement the objective as $`\sum_{i=1}^{n}w_{i-1}h_i-\sum_{i=1}^{n}w_i l_i`$ (omitting the constant $`w_n`$), not as $`\sum_i w_i(h_i-l_i)`$; the upper and lower bounds border different intervals.
+
+These variants are optional exploratory arms until added to the frozen method matrix. If promoted to confirmatory references, update H4, HA, the comparison counts, critical value, and power calculation before generating confirmatory data. Report every promoted variant, not the variant that looks best after evaluation. If the tail-emphasized comparison is omitted, qualify the Frey conclusion as applying to uniform weights. No choice of weights or variant may depend on an evaluation dataset's ranks or AUC.
+
+**The ROC-optimized comparator is our extension, not the published Frey reference.** ROPT uses Frey's coverage-constraint geometry with a different, two-class ROC-area objective. It is trained once per $`(n_0, n_1, \alpha)`$ on a reference library that shares no family and no random draw with the evaluation data, and is then a fixed member like any other. It is run at the designs where full optimization is affordable (totals up to 300). A band optimized separately for each evaluation dataset's true ROC is computed as an **oracle benchmark**, reported descriptively as an achieved area with knowledge of the truth, and excluded from the decision rule. Alternating optimization does not certify the best possible rectangular composition, even with that knowledge. An independently trained low-FPR-area variant of ROPT is also worth exploring if the aim is to optimize the second primary endpoint; it must have a separate identifier and frozen objective, and is not a substitute for uniform-weight Frey.
 
 **Gate on DW.** The exact form of the bound (the additive correction terms and their constants) is taken from the paper, not from memory, and checked against the critical values tabulated in its supplement.
 
@@ -160,7 +184,7 @@ Each family runs with the sample-size split. KS and ELL also run with the equal 
 | `bj_ss` | Berk–Jones | Exact | Sample-size | New |
 | `dw_ss` | Dümbgen–Wellner | Exact | Sample-size | New |
 | `ek_ss` | Eicker | Exact | Sample-size | New |
-| `frey_ss` | Frey, uniform weights | Exact | Sample-size | New |
+| `frey_ss` | Frey, uniform interval weights; §2.2 objective | Exact | Sample-size | New. **Primary published Frey reference** |
 | `ropt_ss` | ROC-area-optimized, reference mixture | Exact | Part of the solution | New; designs with total up to 300 |
 | `ropt_oracle` | ROC-area-optimized for each dataset's true ROC | Exact | Part of the solution | New; oracle benchmark, not a competitor |
 
@@ -244,7 +268,7 @@ Each row is a set of comparisons of ELL (`ell_ss`) with a comparator, classified
 | H1 | ELL is narrower than exact KS | `ks_x_ss` | Area | 64 core | Superior | 64 |
 | H2 | ELL is narrower at low FPR, by a wide margin at scale | `ks_x_ss` | Low-FPR area | 64 core | Superior; in cells with $`n \ge 1{,}000`$ the interval should lie below 0.80 | 64 |
 | H3 | ELL is not materially wider in small samples | `ks_x_ss` | Area | 24 small | Non-inferior at margin 3% | 24 |
-| H4 | ELL is not beaten by another exactly calibrated family | `bj_ss`, `dw_ss`, `ek_ss`, `frey_ss` | Area and low-FPR area | 64 core | Superior or non-inferior at 2%; any of the four outcomes is reported | 512 |
+| H4 | ELL is not beaten by another exactly calibrated published boundary construction | `bj_ss`, `dw_ss`, `ek_ss`, `frey_ss` (uniform weights) | Area and low-FPR area | 64 core | Superior or non-inferior at 2%; any of the four outcomes is reported | 512 |
 | H4r | ELL against the ROC-optimized composition | `ropt_ss` | Area and low-FPR area | 20 core cells with total up to 300 | No prediction; the probe suggests ELL inferior on area at AUC of 0.8 or more | 40 |
 | H5 | Exact calibration beats the union bound | `bonf_ss` | Area | 64 core | Superior | 64 |
 | H6 | The sample-size split helps under imbalance | `ell_eq` | Area | 24 core cells at 10% and 2% prevalence | Superior | 24 |
@@ -392,6 +416,7 @@ Each row is a gate. Fixtures from R and C++ tools are generated once and committ
 | ELL local levels | R `qqconf`; the current `m3_band_rs`; exact p-values of Moscovich, Nadler & Spiegelman (2016) for their minimum-Beta-tail statistic | Levels within tolerance; bands from the new path equal to the current ones to roundoff |
 | Berk–Jones (likelihood-ratio) band | Owen's 1995 table; R `SMIR::NPL.bands` at 0.95 and 0.99; any other source that uses the same likelihood-ratio statistic | Critical values within tolerance. The "exact Berk–Jones" statistic of Moscovich, Nadler & Spiegelman (2016) is the minimum Beta-tail probability, whose inverted band is ELL, not this band; its values are not expected to agree and are used for ELL instead |
 | Dümbgen–Wellner band | Critical values in the paper's supplement | Within the supplement's stated precision |
+| Frey, uniform weights | Frey's $`n=20`$, 95% one-class band digitized from the preprint; `frey_ell_plan.md` §3.1 | Reproduce total bound width about 8.994 and bounds within the digitization precision; independently verify coverage and constrained optimality. Any optional weighted variant must use the interval-to-bound weight mapping of §2.2 |
 | Class coverage of every family | Monte Carlo with $`10^6`$ uniform samples per $`(n, \alpha_c)`$ | Statistical agreement with the kernel's value: the difference within a prespecified multiple of the Monte Carlo standard error, adjusted for the number of checks. The observed rate is not required to be at or above the target, since an exactly calibrated band falls below it about half the time |
 | Composition | An independent index-counting implementation in Python | Equal on random label sequences, including ties, separation, and single-observation classes |
 | `ks_m_eq` | The current `fixed_width_ks_band` | Equal to roundoff on the native grid |
@@ -436,7 +461,7 @@ These need their own plans. The points already decided:
 
 ## 7. Risks and Open Questions
 
-1. **An alternative may beat ELL on total area.** Frey's and Dümbgen–Wellner's bands are built to be narrower in the centre, and our own ROC-optimized composition was 5–14% narrower than ELL at AUC 0.8–0.95 in a probe. §1.3 commits to reporting that outcome. The low-FPR endpoint is where ELL is most likely to remain best.
+1. **An alternative may beat ELL on total area.** Uniform-weight Frey minimizes total class-band width, and Dümbgen–Wellner improves central precision; neither objective guarantees the narrowest ROC band. The Frey probe shows mixed results against uniform weights, including an ELL advantage at AUC .95 with 100 observations per class. The separate 5–14% gains at AUC .8–.95 concern our reference-mixture ROC-optimized extension, not uniform-weight Frey. §1.3 commits to reporting either outcome. Low-FPR performance against uniform and tail-emphasized Frey remains an empirical question.
 2. **The fair baseline shrinks the small-sample result.** The paper's current statement that ELL's mean area is 0.63–0.99 of KS in every cell rests on the Massart, equal-split baseline and will change.
 3. **Score-scale exact bands.** If a referee reads Switzer's band as a competitor, the answer is the coordinate argument of refs A.14, which we have not yet confirmed against his text.
 4. **Choice of region.** The threshold of 30 in the smaller class was set from a pilot on one family. The dry run could suggest moving it; any change happens before the freeze and is recorded.
