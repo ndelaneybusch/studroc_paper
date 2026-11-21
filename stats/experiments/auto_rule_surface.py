@@ -9,16 +9,20 @@ unfloored band under-covers when the ROC has a convex hook in a corner that
 holds about one expected observation of one class, so the unsafe region is a
 ridge in (sample size, AUC) whose position depends on the score distributions.
 This study estimates the probability that the unfloored band misses the true
-ROC as a continuous function of
+ROC as a continuous function of the class counts, the AUC and the family's
+shape parameter, separately for the two families whose unfloored band is
+known to fail (Student-t location shift, by degrees of freedom;
+heteroscedastic Gaussian, by sigma ratio). The surface is meant as a reference
+that runtime calibration starts from, so it has to be accurate wherever users
+land, not only near one contour. The rule is read off the worst case over
+shape and family.
+
+Draws are placed in a design space of
 
 - the smaller class count ``n_min`` (log scale),
 - the signed class log-ratio ``log(n_pos / n_neg)``,
 - the AUC (probit scale), and
-- the family's shape parameter (log scale),
-
-separately for the two families whose unfloored band is known to fail
-(Student-t location shift, by degrees of freedom; heteroscedastic Gaussian, by
-sigma ratio). The rule is then read off the worst case over shape and family.
+- the family's shape parameter (log scale).
 
 Design
 ------
@@ -34,17 +38,27 @@ raised to the dimension) divided by a power of the draw's cost. The existing
 data are the main suite and the shape x AUC study (``--hot-start``), which sit
 on a few sample sizes and prevalences, so new draws go between them.
 
-Later rounds refine the decision boundary. The surface is refitted to all
-draws and candidates are weighted by the posterior probability that the latent
-surface lies within ``CONTOUR_BAND`` of the target miss rate, again divided by
-cost. A fixed fraction of every refinement round is still spent on the round-0
-criterion, which keeps evidence arriving in regions the surface calls safe.
+Later rounds sample where data are worth most. A committee of surfaces is
+refitted to all draws, and each candidate is weighted by the uncertainty of
+the latent logit there: the reference surface's posterior standard deviation
+combined with the committee's disagreement, which captures the structural
+uncertainty a single model cannot see in itself. The uncertainty is scaled by
+the candidate's relevance, highest where the predicted miss rate is near the
+target and never below ``RELEVANCE_FLOOR``, so the whole surface keeps
+improving, and divided by a power of the cost. A fixed fraction of every round
+is still spent on the round-0 criterion.
 
 Surface
 -------
-A Gaussian process with a Bernoulli likelihood, linear mean and anisotropic
-Matern-5/2 kernel, in its low-rank form (subset of regressors on a fixed
-space-filling set of inducing points). In weight space this is a penalised
+The reference surface is fitted on the expected corner counts
+``log(n_pos (1 - AUC))`` and ``log(n_neg (1 - AUC))``, the probit AUC and the
+log shape (:func:`surface_coordinates`); among the covariates and model
+classes compared by ``surface_model_comparison.py`` this generalised best to
+untested sample sizes and class ratios. The model is a Gaussian process with
+a Bernoulli likelihood, constant mean and anisotropic Matern-5/2 kernel, so
+that away from the data it reverts to a flat level rather than extrapolating
+a trend, in its low-rank form (subset of regressors on a fixed space-filling
+set of inducing points). In weight space this is a penalised
 logistic regression on radial basis functions, so it is fitted by penalised
 IRLS on every draw at once; the length scales and amplitude maximise the
 Laplace approximation to the marginal likelihood. Nothing constrains the
@@ -55,30 +69,45 @@ The fit is checked by K-fold cross-validation (a reliability table of
 predicted against observed miss rates) and, free of any model, by the observed
 miss rate of the draws that a rule admits.
 
+A round can instead replicate a list of fixed cells (``run --cells``), to
+settle a contested region of the surface without leaning on the model: each
+cell's observed miss rate is compared with the surface in the report.
+
 Rule
 ----
-For every (AUC, class ratio) on a grid, the frontier ``n*`` is the smallest
-``n_min`` from which the worst-case miss probability stays at or below the
-target for every larger ``n_min`` in the design, whichever class is the
-minority. The worst case is over shape and family. The rule
+The rule is calibrated to an assurance, not to the central estimate. At every
+point of a grid over ``n_min``, AUC and class ratio, the exceedance
+probability is the largest posterior probability, over shape, family and
+minority class, that the miss rate exceeds the target. A point is unsafe when
+its exceedance probability is above ``1 - assurance``, and the rule may admit
+no unsafe point with a majority class of at most :data:`ROUTED_N_MAX`, the
+extent of the dense paired data. Beyond it the surface rests on sparse draws
+near a 5% miss rate, so the rule is checked there against replicated cells
+instead (see :data:`ROUTED_N_MAX`).
 
-    n_min >= max(floor, C * ratio^b / (1 - AUC)^a)
-
-is the least-slack upper envelope of that frontier (a linear program on the
-log scale), fitted once to the posterior mean surface and once to its upper
-credible bound. Where the surface is still unsafe at the largest sample size
-in the design, the envelope is required to exclude the whole tested range.
+The rule is a conjunction of boundary checks, each a one- or two-parameter
+bound that ropes off one slice of the unsafe region (:class:`Check`): a floor
+on ``n_min``, a bound on the expected minority count beyond the corner
+``n_min (1 - AUC)^a``, optionally deflated by the class ratio, and caps on the
+AUC and the class ratio. For every combination of up to
+:data:`MAX_CHECKS` kinds, the closing check's threshold is solved exactly for
+every candidate setting of the others, and the combination that admits the
+largest share of the grid wins. The report gives the best rule for each number
+of checks and recommends the fewest checks within
+:data:`PARSIMONY_TOLERANCE` of the best, with thresholds rounded to round
+numbers on the strict side. It attributes to each check the unsafe slice that
+it alone excludes, so that a check can be read as one failure mechanism.
 
 Usage
 -----
     uv run python stats/experiments/auto_rule_surface.py run --batch 40000 --dry-run
     uv run python stats/experiments/auto_rule_surface.py run --batch 40000
     uv run python stats/experiments/auto_rule_surface.py fit
-    uv run python stats/experiments/auto_rule_surface.py run --batch 20000
+    uv run python stats/experiments/auto_rule_surface.py run --cells c.csv --reps 2000
 
 ``run`` resumes an unfinished round; otherwise it designs and runs the next
-one. ``fit`` writes ``report.md``, ``frontier.csv`` and ``surface.png`` to the
-output directory.
+one. ``fit`` writes ``report.md``, ``grid.feather``, ``rules.json`` and
+``surface.png`` to the output directory.
 """
 
 import argparse
@@ -89,13 +118,15 @@ import time
 import warnings
 from concurrent.futures import FIRST_COMPLETED, Future, ProcessPoolExecutor, wait
 from dataclasses import asdict, dataclass
+from itertools import combinations, product
 from pathlib import Path
+from typing import Literal
 
 import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 from scipy.linalg import cho_factor, cho_solve, cholesky, solve_triangular
-from scipy.optimize import linprog, minimize
+from scipy.optimize import minimize
 from scipy.spatial import cKDTree
 from scipy.special import expit, logit
 from scipy.stats import norm, qmc, rankdata
@@ -115,12 +146,14 @@ class Family:
         shape_name: Name of the shape parameter in the LHS parametrisation.
         shape_bounds: Range of the shape parameter.
         label: Axis label of the shape parameter.
+        title: Readable name of the family.
     """
 
     name: str
     shape_name: str
     shape_bounds: tuple[float, float]
     label: str
+    title: str
 
 
 FAMILIES = {
@@ -131,12 +164,14 @@ FAMILIES = {
             shape_name="df",
             shape_bounds=(1.1, 30.0),
             label="degrees of freedom",
+            title="Student-t location shift",
         ),
         Family(
             name="hetero_gaussian",
             shape_name="sigma_ratio",
             shape_bounds=(0.2, 5.0),
             label="sigma ratio (positive / negative)",
+            title="heteroscedastic Gaussian",
         ),
     )
 }
@@ -398,6 +433,54 @@ def unit_matrix(frame: pd.DataFrame) -> NDArray:
     return frame[[f"u{d}" for d in range(DIM)]].to_numpy(float)
 
 
+# Ranges of the surface covariates over the design space
+LOG_COUNT_BOUNDS = (np.log(N_MIN_BOUNDS[0]), np.log(N_CLASS_MAX))
+LOG_CORNER_BOUNDS = (
+    np.log(N_MIN_BOUNDS[0] * (1 - AUC_BOUNDS[1])),
+    np.log(N_CLASS_MAX * (1 - AUC_BOUNDS[0])),
+)
+Covariates = Literal["corner", "classes"]
+
+
+def surface_coordinates(
+    *, frame: pd.DataFrame, family: Family, covariates: Covariates = "corner"
+) -> NDArray:
+    """Covariates a surface is fitted on, scaled to the unit cube.
+
+    ``corner`` uses the expected corner counts ``log(n (1 - AUC))`` of each
+    class, roughly how many observations of that class fall on the wrong side
+    of a random member of the other and so populate the ROC's corners;
+    ``classes`` uses the log class counts. Both add the probit AUC and the log
+    shape. The scaling is fixed by the design space, so draws slightly
+    outside it map slightly outside the cube.
+
+    Args:
+        frame: Draws with ``n_pos``, ``n_neg``, ``auc`` and ``shape``.
+        family: The draws' family.
+        covariates: Which class-count covariates to use.
+
+    Returns:
+        (rows, 4) coordinates.
+    """
+    n_pos = frame["n_pos"].to_numpy(float)
+    n_neg = frame["n_neg"].to_numpy(float)
+    auc = frame["auc"].to_numpy(float)
+    if covariates == "corner":
+        counts, bounds = [n_pos * (1 - auc), n_neg * (1 - auc)], LOG_CORNER_BOUNDS
+    else:
+        counts, bounds = [n_pos, n_neg], LOG_COUNT_BOUNDS
+    return np.column_stack(
+        [
+            *(_scale(np.log(c), bounds=bounds) for c in counts),
+            _scale(norm.ppf(auc), bounds=tuple(norm.ppf(AUC_BOUNDS))),
+            _scale(
+                np.log(frame["shape"].to_numpy(float)),
+                bounds=tuple(np.log(family.shape_bounds)),
+            ),
+        ]
+    )
+
+
 # =============================================================================
 # Surface: low-rank Gaussian process with a Bernoulli likelihood
 # =============================================================================
@@ -443,19 +526,27 @@ class Surface:
     The latent logit is ``[1, x] @ beta + amplitude * phi(x) @ w`` with
     ``w ~ N(0, I)``, where ``phi`` are the whitened kernel features on the
     inducing points, so ``amplitude^2 * phi(x) @ phi(x')`` is the
-    subset-of-regressors approximation to the Matern kernel.
+    subset-of-regressors approximation to the Matern kernel. Away from the
+    data the kernel term fades and the logit reverts to the mean
+    ``[1, x] @ beta``, or to the intercept alone without a linear mean.
 
     Attributes:
         inducing: (m, d) inducing points.
         lengthscales: (d,) kernel length scales.
         amplitude: Kernel standard deviation.
+        linear_mean: Whether the mean is linear in ``x`` or constant.
         coefficients: Posterior mode of ``[beta, w]``.
         covariance: Laplace posterior covariance of the coefficients.
         evidence: Laplace log marginal likelihood of the fitted rows.
     """
 
     def __init__(
-        self, *, inducing: NDArray, lengthscales: NDArray, amplitude: float
+        self,
+        *,
+        inducing: NDArray,
+        lengthscales: NDArray,
+        amplitude: float,
+        linear_mean: bool = True,
     ) -> None:
         """Set the kernel; :meth:`fit` estimates the coefficients.
 
@@ -463,8 +554,10 @@ class Surface:
             inducing: (m, d) inducing points.
             lengthscales: (d,) kernel length scales.
             amplitude: Kernel standard deviation.
+            linear_mean: Whether the mean is linear in ``x`` or constant.
         """
         self.inducing = inducing
+        self.linear_mean = linear_mean
         self.lengthscales = np.asarray(lengthscales, float)
         self.amplitude = float(amplitude)
         gram = matern52(a=inducing, b=inducing, lengthscales=self.lengthscales)
@@ -481,11 +574,12 @@ class Surface:
 
         Returns:
             (n, 1 + d + m) matrix of intercept, linear mean and scaled kernel
-            features.
+            features, without the d linear columns for a constant mean.
         """
         cross = matern52(a=self.inducing, b=x, lengthscales=self.lengthscales)
         phi = solve_triangular(self._chol, cross, lower=True).T
-        return np.hstack([np.ones((len(x), 1)), x, self.amplitude * phi])
+        mean = [np.ones((len(x), 1)), x] if self.linear_mean else [np.ones((len(x), 1))]
+        return np.hstack([*mean, self.amplitude * phi])
 
     def _penalised_likelihood(
         self, *, x: NDArray, y: NDArray, theta: NDArray, penalty: NDArray
@@ -529,7 +623,7 @@ class Surface:
         Returns:
             This surface, fitted.
         """
-        n_mean = 1 + x.shape[1]
+        n_mean = 1 + (x.shape[1] if self.linear_mean else 0)
         penalty = np.concatenate(
             [np.full(n_mean, MEAN_PRIOR_SD**-2), np.ones(len(self.inducing))]
         )
@@ -593,6 +687,7 @@ def fit_surface(
     seed: int,
     groups: NDArray | None = None,
     hyperparameters: tuple[NDArray, float] | None = None,
+    linear_mean: bool = True,
 ) -> Surface:
     """Fit one family's surface, choosing the kernel by marginal likelihood.
 
@@ -608,6 +703,7 @@ def fit_surface(
         hyperparameters: Length scales and amplitude to use as given; None
             maximises the Laplace marginal likelihood on a subsample of at
             most :data:`HYPER_ROWS` rows.
+        linear_mean: Whether the mean is linear in ``x`` or constant.
 
     Returns:
         The surface fitted to every row.
@@ -637,6 +733,7 @@ def fit_surface(
                 inducing=inducing,
                 lengthscales=np.exp(log_params[:-1]),
                 amplitude=float(np.exp(log_params[-1])),
+                linear_mean=linear_mean,
             )
             return -surface.fit(x=x[rows], y=y[rows]).evidence
 
@@ -653,31 +750,113 @@ def fit_surface(
         hyperparameters = (np.exp(result.x[:-1]), float(np.exp(result.x[-1])))
     lengthscales, amplitude = hyperparameters
     return Surface(
-        inducing=inducing, lengthscales=lengthscales, amplitude=amplitude
+        inducing=inducing,
+        lengthscales=lengthscales,
+        amplitude=amplitude,
+        linear_mean=linear_mean,
     ).fit(x=x, y=y)
 
 
-def fit_surfaces(*, draws: pd.DataFrame, seed: int) -> dict[str, Surface]:
-    """Fit a surface to every family that has draws.
+def fit_surfaces(
+    *, draws: pd.DataFrame, seed: int, covariates: Covariates = "corner"
+) -> dict[str, Surface]:
+    """Fit a constant-mean surface to every family that has draws.
 
     Args:
         draws: Draws returned by :func:`in_design_space`.
         seed: Seed passed to :func:`fit_surface`.
+        covariates: Covariates of :func:`surface_coordinates`.
 
     Returns:
         Fitted surface by family name.
     """
     surfaces = {}
-    for name in FAMILIES:
+    for name, family in FAMILIES.items():
         sub = draws[draws["family"] == name]
         if len(sub):
             surfaces[name] = fit_surface(
-                x=unit_matrix(sub),
+                x=surface_coordinates(frame=sub, family=family, covariates=covariates),
                 y=sub["miss"].to_numpy(float),
                 seed=seed,
                 groups=sub["source"].to_numpy(),
+                linear_mean=False,
             )
     return surfaces
+
+
+@dataclass(frozen=True, kw_only=True)
+class Committee:
+    """Surfaces of one family whose disagreement measures model uncertainty.
+
+    Attributes:
+        family: The family.
+        reference: Gaussian process on the corner covariates, the surface the
+            study reports.
+        alternative: Gaussian process on the log class counts.
+        boosted: Gradient-boosted trees on the corner covariates.
+    """
+
+    family: Family
+    reference: Surface
+    alternative: Surface
+    boosted: object
+
+    def predict(self, frame: pd.DataFrame) -> tuple[NDArray, NDArray, NDArray]:
+        """Reference logit, its posterior SD, and the committee's spread.
+
+        Args:
+            frame: Draws with ``n_pos``, ``n_neg``, ``auc`` and ``shape``.
+
+        Returns:
+            The reference surface's latent mean and standard deviation, and
+            the standard deviation of the three members' latent logits.
+        """
+        corner = surface_coordinates(frame=frame, family=self.family)
+        mean, sd = self.reference.predict(corner)
+        alternative = self.alternative.predict(
+            surface_coordinates(frame=frame, family=self.family, covariates="classes")
+        )[0]
+        boosted = logit(
+            np.clip(self.boosted.predict_proba(corner)[:, 1], 1e-6, 1 - 1e-6)
+        )
+        spread = np.std(np.column_stack([mean, alternative, boosted]), axis=1)
+        return mean, sd, spread
+
+
+def fit_committees(*, draws: pd.DataFrame, seed: int) -> dict[str, Committee]:
+    """Fit the surface committee of every family that has draws.
+
+    Args:
+        draws: Draws returned by :func:`in_design_space`.
+        seed: Seed of the fits.
+
+    Returns:
+        Committee by family name.
+    """
+    from sklearn.ensemble import HistGradientBoostingClassifier
+
+    references = fit_surfaces(draws=draws, seed=seed)
+    alternatives = fit_surfaces(draws=draws, seed=seed, covariates="classes")
+    committees = {}
+    for name, reference in references.items():
+        family = FAMILIES[name]
+        sub = draws[draws["family"] == name]
+        boosted = HistGradientBoostingClassifier(
+            learning_rate=0.05,
+            max_iter=1000,
+            max_leaf_nodes=31,
+            l2_regularization=1.0,
+            early_stopping=True,
+            validation_fraction=0.15,
+            random_state=seed,
+        ).fit(surface_coordinates(frame=sub, family=family), sub["miss"].to_numpy(int))
+        committees[name] = Committee(
+            family=family,
+            reference=reference,
+            alternative=alternatives[name],
+            boosted=boosted,
+        )
+    return committees
 
 
 # =============================================================================
@@ -688,9 +867,11 @@ CANDIDATES_PER_DRAW = 20
 SPARSITY_NEIGHBOUR = 5
 # Share of every refinement round spent on the space-filling criterion
 FILL_FRACTION = 0.25
-# Half-width, on the logit scale, of the band around the target miss rate
-# that refinement draws aim for; 0.35 is about 3.6% to 6.9% at a 5% target
-CONTOUR_BAND = 0.35
+# Relevance of a candidate falls off as a Gaussian in the distance of its
+# predicted logit from the target's, with this scale; 1 spans about 2% to 12.5%
+# at a 5% target. It never falls below RELEVANCE_FLOOR
+RELEVANCE_SCALE = 1.0
+RELEVANCE_FLOOR = 0.25
 
 
 def candidate_points(*, count: int, seed: int) -> NDArray:
@@ -732,31 +913,36 @@ def sparsity_weights(*, candidates: NDArray, existing: NDArray) -> NDArray:
     return weights / weights.mean()
 
 
-def contour_weights(*, candidates: NDArray, surface: Surface, target: float) -> NDArray:
-    """Posterior probability that the latent surface is near the target.
+def value_weights(
+    *, rows: pd.DataFrame, committee: Committee, target: float
+) -> NDArray:
+    """Value of a draw at each candidate: relevant uncertainty of the surface.
+
+    The uncertainty is the root sum of squares of the reference surface's
+    posterior SD and the committee's spread, both on the logit scale. It is
+    scaled by a relevance that peaks where the predicted miss rate equals the
+    target and never falls below :data:`RELEVANCE_FLOOR`.
 
     Args:
-        candidates: (c, 4) candidate points.
-        surface: Fitted surface of the candidates' family.
+        rows: Candidate draws of the committee's family.
+        committee: Fitted committee of the family.
         target: Target miss rate.
 
     Returns:
-        (c,) probabilities that the latent logit lies within
-        :data:`CONTOUR_BAND` of ``logit(target)``.
+        (c,) non-negative weights.
     """
-    mean, sd = surface.predict(candidates)
-    sd = np.maximum(sd, 1e-6)
-    centre = logit(target)
-    return norm.cdf((centre + CONTOUR_BAND - mean) / sd) - norm.cdf(
-        (centre - CONTOUR_BAND - mean) / sd
+    mean, sd, spread = committee.predict(rows)
+    relevance = RELEVANCE_FLOOR + (1 - RELEVANCE_FLOOR) * np.exp(
+        -0.5 * ((mean - logit(target)) / RELEVANCE_SCALE) ** 2
     )
+    return relevance * np.sqrt(sd**2 + spread**2)
 
 
 def next_design(
     *,
     batch: int,
     existing: pd.DataFrame,
-    surfaces: dict[str, Surface] | None,
+    committees: dict[str, Committee] | None,
     cost_power: float,
     seed: int,
 ) -> pd.DataFrame:
@@ -765,7 +951,7 @@ def next_design(
     Args:
         batch: Draws to choose.
         existing: Every draw so far, from :func:`in_design_space`.
-        surfaces: Fitted surfaces for a refinement round, or None for a
+        committees: Fitted committees for a value-driven round, or None for a
             space-filling round.
         cost_power: Exponent of the cost in the sampling weights; 0 ignores
             cost and 1 chooses per CPU-second.
@@ -773,7 +959,7 @@ def next_design(
 
     Returns:
         The chosen draws with a ``criterion`` column (``fill`` or
-        ``contour``), in run order.
+        ``value``), in run order.
     """
     rng = np.random.default_rng(seed)
     pools = []
@@ -788,20 +974,18 @@ def next_design(
             existing=unit_matrix(existing[existing["family"] == family.name]),
         )
         rows["w_fill"] = fill / deflator
-        rows["w_contour"] = (
-            contour_weights(
-                candidates=candidates, surface=surfaces[family.name], target=ALPHA
-            )
+        rows["w_value"] = (
+            value_weights(rows=rows, committee=committees[family.name], target=ALPHA)
             / deflator
-            if surfaces and family.name in surfaces
+            if committees and family.name in committees
             else 0.0
         )
         pools.append(rows)
     pool = pd.concat(pools, ignore_index=True)
-    n_contour = round((1 - FILL_FRACTION) * batch) if pool["w_contour"].sum() > 0 else 0
+    n_value = round((1 - FILL_FRACTION) * batch) if pool["w_value"].sum() > 0 else 0
     chosen = []
     available = np.ones(len(pool), dtype=bool)
-    for criterion, count in (("contour", n_contour), ("fill", batch - n_contour)):
+    for criterion, count in (("value", n_value), ("fill", batch - n_value)):
         if count == 0:
             continue
         weights = np.where(available, pool[f"w_{criterion}"].to_numpy(float), 0.0)
@@ -813,8 +997,52 @@ def next_design(
         )
         available[picked] = False
         chosen.append(pool.iloc[picked].assign(criterion=criterion))
-    design = pd.concat(chosen, ignore_index=True).drop(columns=["w_fill", "w_contour"])
+    design = pd.concat(chosen, ignore_index=True).drop(columns=["w_fill", "w_value"])
     # Slowest first, so the long draws start at once and the pool drains evenly
+    order = np.argsort(-cost_seconds(design), kind="stable")
+    design = design.iloc[order].reset_index(drop=True)
+    design.insert(0, "draw", np.arange(len(design)))
+    return design
+
+
+CELL_COLUMNS = ["family", "shape", "auc", "n_pos", "n_neg"]
+
+
+def cell_design(*, cells: pd.DataFrame, reps: int) -> pd.DataFrame:
+    """Replicate fixed cells into a round's design.
+
+    Args:
+        cells: One row per cell with :data:`CELL_COLUMNS`, and optionally
+            ``reps`` to override the number of draws of that cell.
+        reps: Draws per cell without its own ``reps``.
+
+    Returns:
+        The design, with a ``cell`` column indexing the rows of ``cells``,
+        ``criterion`` set to ``cell``, slowest draws first.
+
+    Raises:
+        ValueError: If a column is missing, a family is unknown, or a cell
+            lies outside the design space.
+    """
+    missing = set(CELL_COLUMNS) - set(cells.columns)
+    if missing:
+        raise ValueError(f"Cells lack columns {sorted(missing)}")
+    unknown = set(cells["family"]) - set(FAMILIES)
+    if unknown:
+        raise ValueError(f"Unknown families {sorted(unknown)}")
+    counts = (
+        cells["reps"].fillna(reps).astype(int).to_numpy()
+        if "reps" in cells
+        else np.full(len(cells), reps)
+    )
+    cells = cells[CELL_COLUMNS].reset_index(drop=True)
+    outside = in_design_space(frame=cells.assign(source="cells", miss=False))
+    if len(outside) != len(cells):
+        raise ValueError("Some cells lie outside the design space")
+    design = cells.loc[np.repeat(cells.index.to_numpy(), counts)].reset_index(
+        names="cell"
+    )
+    design["criterion"] = "cell"
     order = np.argsort(-cost_seconds(design), kind="stable")
     design = design.iloc[order].reset_index(drop=True)
     design.insert(0, "draw", np.arange(len(design)))
@@ -850,6 +1078,29 @@ def band_memory_gb(frame: pd.DataFrame) -> NDArray:
         Estimated gigabytes per draw.
     """
     return BAND_BYTES_PER_NEGATIVE * (frame["n_neg"].to_numpy(float) + 1) / 1e9
+
+
+def empirical_binormal_slope(*, scores_pos: NDArray, scores_neg: NDArray) -> float:
+    """Slope of the empirical ROC on the binormal (probit-probit) scale.
+
+    The slope is the least-squares fit of ``probit(TPR)`` on ``probit(FPR)``
+    over the empirical ROC's interior points; under a binormal model it
+    estimates the ratio of the negative to the positive score spread.
+
+    Args:
+        scores_pos: Scores of the positives.
+        scores_neg: Scores of the negatives.
+
+    Returns:
+        The slope, or NaN when fewer than three interior points exist.
+    """
+    thresholds = np.unique(np.concatenate([scores_pos, scores_neg]))
+    tpr = 1 - np.searchsorted(np.sort(scores_pos), thresholds) / len(scores_pos)
+    fpr = 1 - np.searchsorted(np.sort(scores_neg), thresholds) / len(scores_neg)
+    inside = (tpr > 0) & (tpr < 1) & (fpr > 0) & (fpr < 1)
+    if inside.sum() < 3:
+        return float("nan")
+    return float(np.polyfit(norm.ppf(fpr[inside]), norm.ppf(tpr[inside]), 1)[0])
 
 
 def simulate_draw(*, row: dict, seed: int, round_index: int) -> dict | None:
@@ -927,6 +1178,7 @@ def simulate_draw(*, row: dict, seed: int, round_index: int) -> dict | None:
         "source": f"round{round_index}",
         "draw": int(row["draw"]),
         "criterion": row["criterion"],
+        "cell": int(row.get("cell", -1)),
         "family": family.name,
         "shape": float(row["shape"]),
         "auc": float(np.trapezoid(dgp.get_true_roc(TRUE_AUC_GRID), TRUE_AUC_GRID)),
@@ -942,8 +1194,117 @@ def simulate_draw(*, row: dict, seed: int, round_index: int) -> dict | None:
         "empirical_auc": float(
             (ranks[:n_pos].sum() - n_pos * (n_pos + 1) / 2) / (n_pos * n_neg)
         ),
+        "pos_above_all_neg": int(np.sum(scores_pos > scores_neg.max())),
+        "neg_below_all_pos": int(np.sum(scores_neg < scores_pos.min())),
+        "binormal_slope": empirical_binormal_slope(
+            scores_pos=scores_pos, scores_neg=scores_neg
+        ),
         "seconds": seconds,
     }
+
+
+def completed_records(partial: Path) -> pd.DataFrame:
+    """Records a round has checkpointed so far.
+
+    Args:
+        partial: The round's checkpoint directory.
+
+    Returns:
+        Every checkpointed record, achievable or not; an empty frame with a
+        ``draw`` column if there are none.
+    """
+    parts = [pd.read_feather(path) for path in sorted(partial.glob("part_*.feather"))]
+    if not parts:
+        return pd.DataFrame({"draw": pd.Series(dtype=int)})
+    return pd.concat(parts, ignore_index=True)
+
+
+def finalize_round(*, round_index: int, out_dir: Path) -> None:
+    """Write a round's checkpointed draws as its draws file and clear them.
+
+    Args:
+        round_index: Index of the round.
+        out_dir: Output directory.
+
+    Raises:
+        ValueError: If the round has no checkpointed draws.
+    """
+    partial = out_dir / "partial" / f"round{round_index}"
+    frame = completed_records(partial)
+    if frame.empty:
+        raise ValueError(f"Round {round_index} has no checkpointed draws")
+    if "unachievable" in frame:
+        frame = frame[frame["unachievable"].isna()].drop(columns="unachievable")
+    frame = frame.sort_values("draw", ignore_index=True)
+    frame.to_feather(out_dir / f"draws_round{round_index}.feather")
+    for path in partial.glob("part_*"):
+        path.unlink()
+    partial.rmdir()
+
+
+# Edges of the negative-count strata that share a trimmed round's budget
+TRIM_STRATA = (0, 1_000, 10_000, 20_000, 50_000, np.inf)
+
+
+def measured_cost_factor(records: pd.DataFrame) -> float:
+    """Ratio of measured band seconds to :func:`cost_seconds` over draws run.
+
+    Args:
+        records: Checkpointed records of a round.
+
+    Returns:
+        The ratio, or 1 when no draw has a measured time.
+    """
+    if "seconds" not in records:
+        return 1.0
+    timed = records.dropna(subset=["seconds"])
+    if timed.empty:
+        return 1.0
+    return float(timed["seconds"].sum() / cost_seconds(timed).sum())
+
+
+def trim_design(
+    *, design: pd.DataFrame, done: set[int], cpu_hours: float, seed: int
+) -> pd.DataFrame:
+    """Keep a round's completed draws and a stratified sample of the rest.
+
+    The remaining draws are stratified by negative count (:data:`TRIM_STRATA`)
+    and every stratum gets an equal share of the budget; a stratum whose
+    draws cost less than its share passes the surplus to the others. Within a
+    stratum the draws are taken in random order until the share is spent.
+    The sample thins the design without reweighting it, so the round remains
+    a draw from its own design criterion.
+
+    Args:
+        design: The round's design.
+        done: Draw indices already completed.
+        cpu_hours: Budget for the sampled draws in hours of
+            :func:`cost_seconds`.
+        seed: Seed of the random order.
+
+    Returns:
+        The completed and sampled draws, in design order.
+    """
+    completed = design["draw"].isin(done).to_numpy()
+    remaining = design[~completed]
+    seconds = cost_seconds(remaining)
+    stratum = pd.cut(remaining["n_neg"], TRIM_STRATA, labels=False).to_numpy()
+    totals = {k: float(seconds[stratum == k].sum()) for k in np.unique(stratum)}
+    share = np.inf
+    left = cpu_hours * 3600
+    for count, total in enumerate(sorted(totals.values())):
+        even = left / (len(totals) - count)
+        if total > even:
+            share = even
+            break
+        left -= total
+    order = np.random.default_rng(seed).permutation(len(remaining))
+    keep = np.zeros(len(remaining), dtype=bool)
+    for k in totals:
+        members = order[stratum[order] == k]
+        keep[members[np.cumsum(seconds[members]) <= share]] = True
+    kept = np.concatenate([np.flatnonzero(completed), np.flatnonzero(~completed)[keep]])
+    return design.iloc[np.sort(kept)].reset_index(drop=True)
 
 
 def run_chunk(*, rows: list[dict], seed: int, round_index: int) -> list[dict]:
@@ -995,11 +1356,7 @@ def run_round(
     # A temporary left by an interrupted write holds draws that are rerun
     for stale in partial.glob("part_*.tmp"):
         stale.unlink()
-    done = {
-        int(draw)
-        for path in partial.glob("part_*.feather")
-        for draw in pd.read_feather(path, columns=["draw"])["draw"]
-    }
+    done = set(completed_records(partial)["draw"].astype(int))
     rows = [r for r in design.to_dict("records") if r["draw"] not in done]
     chunks: list[list[dict]] = [[]]
     chunk_cost = 0.0
@@ -1061,21 +1418,11 @@ def run_round(
     finally:
         flush()
         progress.close()
-    frame = pd.concat(
-        (pd.read_feather(p) for p in sorted(partial.glob("part_*.feather"))),
-        ignore_index=True,
-    )
-    if "unachievable" in frame:
-        frame = frame[frame["unachievable"].isna()].drop(columns="unachievable")
-    frame = frame.sort_values("draw", ignore_index=True)
-    frame.to_feather(out_dir / f"draws_round{round_index}.feather")
-    for path in partial.glob("part_*.feather"):
-        path.unlink()
-    partial.rmdir()
+    finalize_round(round_index=round_index, out_dir=out_dir)
 
 
 def command_run(args: argparse.Namespace) -> None:
-    """Design and run the next round, or resume an unfinished one."""
+    """Design and run the next round, or resume or close an unfinished one."""
     out_dir: Path = args.out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
     designs = sorted(out_dir.glob("design_round*.feather"))
@@ -1086,21 +1433,45 @@ def command_run(args: argparse.Namespace) -> None:
     if unfinished:
         round_index = int(unfinished[0].stem.removeprefix("design_round"))
         design = pd.read_feather(unfinished[0])
-        partial = out_dir / "partial" / f"round{round_index}"
-        done = {
-            int(draw)
-            for path in partial.glob("part_*.feather")
-            for draw in pd.read_feather(path, columns=["draw"])["draw"]
-        }
+        records = completed_records(out_dir / "partial" / f"round{round_index}")
+        done = set(records["draw"].astype(int))
+        factor = measured_cost_factor(records)
+        closing = args.close_round is not None
+        if closing:
+            design = trim_design(
+                design=design,
+                done=done,
+                cpu_hours=args.close_round / factor,
+                seed=args.seed + 1000 * round_index + 1,
+            )
         remaining = design[~design["draw"].isin(done)]
-        cost = cost_seconds(remaining)
-        print(
-            f"Resuming round {round_index}: {len(remaining):,} of {len(design):,} "
-            f"draws left, about {cost.sum() / 3600:.1f} CPU-hours, "
-            f"{cost.sum() / 3600 / args.workers:.1f} h on {args.workers} workers"
+        seconds = cost_seconds(remaining) * factor
+        memory_hours = float(
+            (band_memory_gb(remaining) * seconds).sum() / args.memory_gb / 3600
         )
+        print(
+            f"{'Closing' if closing else 'Resuming'} round {round_index}: "
+            f"{len(done):,} draws done, {len(remaining):,} to run, about "
+            f"{seconds.sum() / 3600:.1f} CPU-hours at {factor:.2f}x the cost "
+            f"model; at least {seconds.sum() / 3600 / args.workers:.1f} h on "
+            f"{args.workers} workers and {memory_hours:.1f} h within "
+            f"{args.memory_gb:g} GB"
+        )
+        if closing:
+            strata = pd.cut(remaining["n_neg"], TRIM_STRATA)
+            print(remaining.groupby(strata, observed=True).size().to_string())
         if args.dry_run:
             return
+        if closing:
+            untrimmed = out_dir / f"untrimmed_design_round{round_index}.feather"
+            if not untrimmed.exists():
+                unfinished[0].replace(untrimmed)
+            design.to_feather(unfinished[0])
+    elif args.close_round is not None:
+        raise SystemExit("--close-round: there is no unfinished round to close")
+    elif args.cells is not None:
+        round_index = len(designs)
+        design = cell_design(cells=pd.read_csv(args.cells), reps=args.reps)
     else:
         round_index = len(designs)
         existing = in_design_space(
@@ -1110,22 +1481,23 @@ def command_run(args: argparse.Namespace) -> None:
         print(f"Existing draws in the design space: {len(existing):,}")
         if len(by_source):
             print(by_source.to_string())
-        surfaces = None
+        committees = None
         if round_index > 0 or args.refine_from_hot_start:
-            print("Fitting surfaces for the refinement criterion...")
-            surfaces = fit_surfaces(draws=existing, seed=args.seed)
+            print("Fitting the surface committees for the value criterion...")
+            committees = fit_committees(draws=existing, seed=args.seed)
         design = next_design(
             batch=args.batch,
             existing=existing,
-            surfaces=surfaces,
+            committees=committees,
             cost_power=args.cost_power,
             seed=args.seed + 1000 * round_index,
         )
+    if not unfinished:
         cost = cost_seconds(design)
         n_min = design[["n_pos", "n_neg"]].min(axis=1)
         print(
             f"Round {round_index}: {len(design):,} draws "
-            f"({(design['criterion'] == 'contour').sum():,} contour), "
+            f"({(design['criterion'] == 'value').sum():,} value), "
             f"about {cost.sum() / 3600:.1f} CPU-hours, "
             f"{cost.sum() / 3600 / args.workers:.1f} h on {args.workers} workers"
         )
@@ -1150,71 +1522,48 @@ def command_run(args: argparse.Namespace) -> None:
 
 
 # =============================================================================
-# Frontier and rule
+# Assurance grid
 # =============================================================================
 
-
-@dataclass(frozen=True, kw_only=True)
-class Rule:
-    """Admission rule ``n_min >= max(floor, constant * ratio^b / (1 - AUC)^a)``.
-
-    Attributes:
-        floor: Smallest admitted minority-class count.
-        constant: Multiplier ``C``.
-        auc_exponent: Exponent ``a`` of ``1 / (1 - AUC)``.
-        ratio_exponent: Exponent ``b`` of the class ratio ``n_max / n_min``.
-    """
-
-    floor: float
-    constant: float
-    auc_exponent: float
-    ratio_exponent: float
-
-    def threshold(self, *, auc: NDArray, ratio: NDArray) -> NDArray:
-        """Smallest admitted ``n_min`` at each (AUC, class ratio)."""
-        return np.maximum(
-            self.floor,
-            self.constant
-            * np.asarray(ratio, float) ** self.ratio_exponent
-            / (1 - np.asarray(auc, float)) ** self.auc_exponent,
-        )
-
-    def admits(self, *, n_min: NDArray, auc: NDArray, ratio: NDArray) -> NDArray:
-        """Whether the rule sends each case to the unfloored band."""
-        return np.asarray(n_min, float) >= self.threshold(auc=auc, ratio=ratio)
-
-    def describe(self) -> str:
-        """The rule as a formula."""
-        return (
-            f"n_min >= max({self.floor:,.0f}, {self.constant:.3g} * "
-            f"ratio^{self.ratio_exponent:.2f} / (1 - AUC)^{self.auc_exponent:.2f})"
-        )
-
-
-# Hand-derived rule from the closed-form corner screen, kept as the reference
-# that fitted rules are compared against
-REFERENCE_RULE = Rule(floor=100, constant=12, auc_exponent=2.5, ratio_exponent=2 / 3)
-
 GRID_N = 56
-GRID_AUC = 23
+GRID_AUC = 33
 GRID_SHAPE = 17
-GRID_RATIOS = (1.0, 1.5, 7 / 3, 4.0, 9.0, 19.0)
-# Standard normal quantile of the upper credible bound used for the
-# conservative frontier
-UPPER_Z = float(norm.ppf(0.9))
+GRID_RATIOS = (1.0, 1.5, 2.0, 7 / 3, 3.0, 4.0, 6.0, 9.0, 13.0, 19.0)
+# Gauss-Hermite nodes for the expected excess of the miss rate over the target
+EXCESS_NODES = 24
 
 
-def worst_case_grid(*, surfaces: dict[str, Surface]) -> pd.DataFrame:
+def expected_excess(*, mean: NDArray, sd: NDArray, target: float) -> NDArray:
+    """Posterior expectation of ``max(p - target, 0)`` for a normal latent logit.
+
+    Args:
+        mean: Latent posterior means.
+        sd: Latent posterior standard deviations.
+        target: Target miss rate.
+
+    Returns:
+        The expected excess at each point.
+    """
+    nodes, weights = np.polynomial.hermite_e.hermegauss(EXCESS_NODES)
+    latent = mean[:, None] + sd[:, None] * nodes[None, :]
+    excess = np.maximum(expit(latent) - target, 0.0)
+    return excess @ weights / weights.sum()
+
+
+def worst_case_grid(*, surfaces: dict[str, Surface], target: float) -> pd.DataFrame:
     """Evaluate the worst case over shape, family and minority class on a grid.
 
     Args:
         surfaces: Fitted surface by family name.
+        target: Target miss rate.
 
     Returns:
-        One row per (class ratio, AUC, n_min) with the worst-case miss
-        probability under the posterior mean (``p_mean``) and under the upper
-        credible bound (``p_upper``), the family and shape attaining the
-        former, and whether the point is inside the design (``runnable``).
+        One row per runnable (class ratio, AUC, n_min) with the worst-case
+        posterior-mean miss probability (``p_mean``), the worst-case
+        posterior probability that the miss rate exceeds the target
+        (``exceedance``), the worst-case expected excess over the target
+        (``excess``), and the family, shape and minority class attaining the
+        worst exceedance.
     """
     n_min = np.exp(np.linspace(*np.log(N_MIN_BOUNDS), GRID_N))
     auc = norm.cdf(np.linspace(*norm.ppf(AUC_BOUNDS), GRID_AUC))
@@ -1222,154 +1571,569 @@ def worst_case_grid(*, surfaces: dict[str, Surface]) -> pd.DataFrame:
     blocks = []
     for ratio in GRID_RATIOS:
         mesh_n, mesh_a = np.meshgrid(n_min, auc, indexing="ij")
-        best = {key: np.full(mesh_n.shape, -np.inf) for key in ("p_mean", "p_upper")}
-        worst_family = np.full(mesh_n.shape, "", dtype=object)
-        worst_shape = np.full(mesh_n.shape, np.nan)
+        mesh_n, mesh_a = mesh_n.ravel(), mesh_a.ravel()
+        runnable = mesh_n * ratio <= N_CLASS_MAX
+        mesh_n, mesh_a = mesh_n[runnable], mesh_a[runnable]
+        p_mean = np.full(len(mesh_n), -np.inf)
+        exceedance = np.full(len(mesh_n), -np.inf)
+        excess = np.full(len(mesh_n), -np.inf)
+        worst = {
+            "worst_family": np.full(len(mesh_n), "", dtype=object),
+            "worst_shape": np.full(len(mesh_n), np.nan),
+            "worst_minority": np.full(len(mesh_n), "", dtype=object),
+        }
         for name, surface in surfaces.items():
             family = FAMILIES[name]
-            for sign in (-1.0, 1.0) if ratio > 1 else (1.0,):
+            log_bounds = tuple(np.log(family.shape_bounds))
+            for minority in ("positive", "negative") if ratio > 1 else ("negative",):
+                n_larger = mesh_n * ratio
                 for u_shape in shape_unit:
-                    unit = np.column_stack(
-                        [
-                            _scale(
-                                np.log(mesh_n.ravel()),
-                                bounds=tuple(np.log(N_MIN_BOUNDS)),
-                            ),
-                            np.full(
-                                mesh_n.size,
-                                0.5 + sign * np.log(ratio) / (2 * np.log(RATIO_MAX)),
-                            ),
-                            _scale(
-                                norm.ppf(mesh_a.ravel()),
-                                bounds=tuple(norm.ppf(AUC_BOUNDS)),
-                            ),
-                            np.full(mesh_n.size, u_shape),
-                        ]
+                    shape = float(np.exp(_unscale(u_shape, bounds=log_bounds)))
+                    points = pd.DataFrame(
+                        {
+                            "n_pos": mesh_n if minority == "positive" else n_larger,
+                            "n_neg": n_larger if minority == "positive" else mesh_n,
+                            "auc": mesh_a,
+                            "shape": shape,
+                        }
                     )
-                    mean, sd = surface.predict(unit)
-                    p_mean = expit(mean).reshape(mesh_n.shape)
-                    p_upper = expit(mean + UPPER_Z * sd).reshape(mesh_n.shape)
-                    improved = p_mean > best["p_mean"]
-                    worst_family[improved] = name
-                    worst_shape[improved] = np.exp(
-                        _unscale(u_shape, bounds=tuple(np.log(family.shape_bounds)))
+                    mean, sd = surface.predict(
+                        surface_coordinates(frame=points, family=family)
                     )
-                    best["p_mean"] = np.maximum(best["p_mean"], p_mean)
-                    best["p_upper"] = np.maximum(best["p_upper"], p_upper)
+                    exceed = norm.sf((logit(target) - mean) / np.maximum(sd, 1e-12))
+                    worse = exceed > exceedance
+                    worst["worst_family"][worse] = name
+                    worst["worst_shape"][worse] = shape
+                    worst["worst_minority"][worse] = minority
+                    exceedance = np.maximum(exceedance, exceed)
+                    p_mean = np.maximum(p_mean, expit(mean))
+                    excess = np.maximum(
+                        excess, expected_excess(mean=mean, sd=sd, target=target)
+                    )
         blocks.append(
             pd.DataFrame(
                 {
                     "ratio": ratio,
-                    "auc": mesh_a.ravel(),
-                    "n_min": mesh_n.ravel(),
-                    "p_mean": best["p_mean"].ravel(),
-                    "p_upper": best["p_upper"].ravel(),
-                    "worst_family": worst_family.ravel(),
-                    "worst_shape": worst_shape.ravel(),
-                    "runnable": mesh_n.ravel() * ratio <= N_CLASS_MAX,
+                    "auc": mesh_a,
+                    "n_min": mesh_n,
+                    "p_mean": p_mean,
+                    "exceedance": exceedance,
+                    "excess": excess,
+                    **worst,
                 }
             )
         )
     return pd.concat(blocks, ignore_index=True)
 
 
-def frontier(*, grid: pd.DataFrame, column: str, target: float) -> pd.DataFrame:
-    """Find where the worst case becomes and stays safe as ``n_min`` grows.
+# =============================================================================
+# Rule
+# =============================================================================
+
+CheckKind = Literal["floor", "corner", "imbalance_corner", "auc_cap", "ratio_cap"]
+# Kinds whose check admits large values of the statistic; the caps admit
+# small values
+LOWER_BOUNDS: frozenset[str] = frozenset({"floor", "corner", "imbalance_corner"})
+
+
+@dataclass(frozen=True, kw_only=True)
+class Check:
+    """One boundary of the admitted region.
+
+    The kinds and the cases each admits:
+
+    - ``floor``: ``n_min >= threshold``
+    - ``corner``: ``n_min (1 - AUC)^a >= threshold``; at ``a = 1`` the
+      expected count of the minority class beyond the ROC's corner
+    - ``imbalance_corner``: ``n_min (1 - AUC)^a / ratio^b >= threshold``
+    - ``auc_cap``: ``AUC <= threshold``
+    - ``ratio_cap``: ``n_max / n_min <= threshold``
+
+    Attributes:
+        kind: Kind of the check.
+        threshold: Threshold on the natural scale of the kind's statistic.
+        auc_exponent: Exponent ``a`` of the corner kinds.
+        ratio_exponent: Exponent ``b`` of ``imbalance_corner``.
+    """
+
+    kind: CheckKind
+    threshold: float
+    auc_exponent: float = 0.0
+    ratio_exponent: float = 0.0
+
+    def score(self, *, n_min: NDArray, auc: NDArray, ratio: NDArray) -> NDArray:
+        """Statistic on the scale of :meth:`bound`, admitted when at least it."""
+        return check_score(
+            kind=self.kind,
+            auc_exponent=self.auc_exponent,
+            ratio_exponent=self.ratio_exponent,
+            n_min=np.asarray(n_min, float),
+            auc=np.asarray(auc, float),
+            ratio=np.asarray(ratio, float),
+        )
+
+    def bound(self) -> float:
+        """The threshold on the scale of :meth:`score`."""
+        if self.kind == "auc_cap":
+            return -self.threshold
+        if self.kind in LOWER_BOUNDS:
+            return float(np.log(self.threshold))
+        return float(-np.log(self.threshold))
+
+    def admits(self, *, n_min: NDArray, auc: NDArray, ratio: NDArray) -> NDArray:
+        """Whether the check lets each case through."""
+        return self.score(n_min=n_min, auc=auc, ratio=ratio) >= self.bound()
+
+    def describe(self) -> str:
+        """The check as an inequality."""
+        a, b, t = self.auc_exponent, self.ratio_exponent, self.threshold
+        match self.kind:
+            case "floor":
+                return f"n_min >= {t:,.4g}"
+            case "corner":
+                return f"n_min * (1 - AUC)^{a:g} >= {t:,.4g}"
+            case "imbalance_corner":
+                return f"n_min * (1 - AUC)^{a:g} / ratio^{b:.3g} >= {t:,.4g}"
+            case "auc_cap":
+                return f"AUC <= {t:.4g}"
+            case "ratio_cap":
+                return f"n_max / n_min <= {t:.4g}"
+
+    def explain(self) -> str:
+        """The check in words, for a reader who does not know the study."""
+        match self.kind:
+            case "floor":
+                return f"the smaller class has at least {self.threshold:,.4g} cases"
+            case "corner" | "imbalance_corner":
+                return (
+                    "the AUC is low enough for the sample size: "
+                    f"`{self.describe()}`. The left side grows with the expected "
+                    "number of minority cases beyond the ROC's corner, so the "
+                    "largest AUC allowed rises with the smaller class"
+                )
+            case "auc_cap":
+                return f"the AUC is at most {self.threshold:.4g}"
+            case "ratio_cap":
+                return (
+                    f"the larger class is at most {self.threshold:.4g} times the "
+                    f"smaller (prevalence of the minority class at least "
+                    f"{1 / (1 + self.threshold):.0%})"
+                )
+
+
+def check_score(
+    *,
+    kind: CheckKind,
+    auc_exponent: float,
+    ratio_exponent: float,
+    n_min: NDArray,
+    auc: NDArray,
+    ratio: NDArray,
+) -> NDArray:
+    """Statistic of a check, transformed so that every check admits large values.
+
+    Args:
+        kind: Kind of the check.
+        auc_exponent: Exponent ``a`` of the corner kinds.
+        ratio_exponent: Exponent ``b`` of ``imbalance_corner``.
+        n_min: Smaller class counts.
+        auc: AUCs.
+        ratio: Class ratios ``n_max / n_min``.
+
+    Returns:
+        The log statistic for the lower bounds, its negative for the ratio
+        cap, and the negative AUC for ``auc_cap``.
+    """
+    match kind:
+        case "floor":
+            return np.log(n_min)
+        case "corner":
+            return np.log(n_min) + auc_exponent * np.log1p(-auc)
+        case "imbalance_corner":
+            return (
+                np.log(n_min)
+                + auc_exponent * np.log1p(-auc)
+                - ratio_exponent * np.log(ratio)
+            )
+        case "auc_cap":
+            return -auc
+        case "ratio_cap":
+            return -np.log(ratio)
+
+
+def check_from_bound(
+    *, kind: CheckKind, bound: float, auc_exponent: float, ratio_exponent: float
+) -> Check:
+    """Build a check from a threshold on the scale of :func:`check_score`."""
+    if kind == "auc_cap":
+        threshold = -bound
+    elif kind in LOWER_BOUNDS:
+        threshold = float(np.exp(bound))
+    else:
+        threshold = float(np.exp(-bound))
+    return Check(
+        kind=kind,
+        threshold=threshold,
+        auc_exponent=auc_exponent,
+        ratio_exponent=ratio_exponent,
+    )
+
+
+@dataclass(frozen=True)
+class Rule:
+    """Conjunction of checks: a case goes to the unfloored band if all pass.
+
+    Attributes:
+        checks: The checks.
+    """
+
+    checks: tuple[Check, ...]
+
+    def admits(self, *, n_min: NDArray, auc: NDArray, ratio: NDArray) -> NDArray:
+        """Whether the rule sends each case to the unfloored band."""
+        admitted = np.ones(np.broadcast(n_min, auc, ratio).shape, dtype=bool)
+        for check in self.checks:
+            admitted &= check.admits(n_min=n_min, auc=auc, ratio=ratio)
+        return admitted
+
+    def describe(self) -> str:
+        """The rule as a conjunction of inequalities."""
+        return " and ".join(check.describe() for check in self.checks)
+
+
+# Hand-derived rule from the closed-form corner screen, kept as the reference
+# that fitted rules are compared against
+REFERENCE_RULE = Rule(
+    (
+        Check(kind="floor", threshold=100),
+        Check(
+            kind="imbalance_corner",
+            threshold=12,
+            auc_exponent=2.5,
+            ratio_exponent=2 / 3,
+        ),
+    )
+)
+
+AUC_EXPONENTS = (0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5)
+RATIO_EXPONENTS = (1 / 3, 2 / 3, 1.0)
+EXPONENTS: dict[CheckKind, list[tuple[float, float]]] = {
+    "floor": [(0.0, 0.0)],
+    "corner": [(a, 0.0) for a in AUC_EXPONENTS],
+    "imbalance_corner": [(a, b) for a in AUC_EXPONENTS for b in RATIO_EXPONENTS],
+    "auc_cap": [(0.0, 0.0)],
+    "ratio_cap": [(0.0, 0.0)],
+}
+# The first kind of a combination in this order closes it: its threshold is
+# solved exactly, the others' are searched
+CLOSING_ORDER: tuple[CheckKind, ...] = (
+    "imbalance_corner",
+    "corner",
+    "floor",
+    "ratio_cap",
+    "auc_cap",
+)
+# Kinds that never appear together because one generalises the other
+REDUNDANT_PAIRS = (frozenset({"corner", "imbalance_corner"}),)
+MAX_CHECKS = 4
+# Candidate thresholds per searched check, at quantiles of its statistic over
+# the unsafe points
+THRESHOLD_CANDIDATES = 16
+# A rule with fewer checks is recommended if it admits at most this much less
+# of the grid than the best rule
+PARSIMONY_TOLERANCE = 0.01
+# Largest majority class over which unsafe points constrain the rule. The
+# earlier studies, which compute the unfloored band and the hybrid on the same
+# datasets, reach a majority class of 9,000. At their largest sizes within the
+# class ratios the rule admits, both bands miss less often than the target,
+# their areas agree to about 1%, and the hybrid's ELL floor costs far more
+# compute. Beyond this size the surface rests on sparse draws near a 5% miss
+# rate, so its exceedance probabilities mostly measure that sparsity; the rule
+# is not constrained there and the report checks it against replicated cells
+ROUTED_N_MAX = 10_000
+
+
+def routed_unsafe(*, grid: pd.DataFrame, assurance: float) -> NDArray:
+    """Grid points that are unsafe at an assurance level and constrain the rule.
 
     Args:
         grid: Output of :func:`worst_case_grid`.
-        column: ``p_mean`` or ``p_upper``.
-        target: Target miss rate.
+        assurance: Required posterior probability that the miss rate is at
+            most the target.
 
     Returns:
-        One row per (class ratio, AUC) with ``n_star``, the smallest grid
-        ``n_min`` from which the worst case is at or below the target at
-        every larger runnable ``n_min``; ``n_tested``, the largest runnable
-        grid ``n_min``; and ``censored``, true when the worst case is still
-        above the target at ``n_tested``.
+        Whether each grid point is unsafe and has a majority class of at most
+        :data:`ROUTED_N_MAX`.
     """
-    rows = []
-    for (ratio, auc), cell in grid[grid["runnable"]].groupby(["ratio", "auc"]):
-        cell = cell.sort_values("n_min")
-        unsafe = cell[column].to_numpy() > target
-        n = cell["n_min"].to_numpy()
-        # Index of the last unsafe grid point; the frontier is the next one
-        last_unsafe = np.flatnonzero(unsafe).max(initial=-1)
-        censored = last_unsafe == len(n) - 1
-        rows.append(
-            {
-                "ratio": ratio,
-                "auc": auc,
-                "n_star": np.nan if censored else n[last_unsafe + 1],
-                "n_tested": n[-1],
-                "censored": censored,
-            }
-        )
-    return pd.DataFrame(rows)
+    routed = grid["n_min"] * grid["ratio"] <= ROUTED_N_MAX
+    return ((grid["exceedance"] > 1 - assurance) & routed).to_numpy()
 
 
-def fit_rule(*, frontier_table: pd.DataFrame) -> Rule:
-    """Fit the least-slack power-law envelope of a frontier.
+@dataclass(frozen=True, kw_only=True)
+class RuleFit:
+    """A rule found by :func:`search_rules` and its share of the grid.
 
-    For each candidate floor, a linear program on the log scale finds the
-    power law that lies on or above every frontier point above the floor,
-    and above the whole tested range where the frontier is censored, with
-    the smallest total slack. The floor with the smallest total slack of
-    ``max(floor, power law)`` over the uncensored frontier is kept.
+    Attributes:
+        rule: The rule, with only its active checks.
+        admitted_share: Share of the runnable grid the rule admits.
+    """
+
+    rule: Rule
+    admitted_share: float
+
+
+def solve_combination(
+    *,
+    kinds: tuple[CheckKind, ...],
+    exponents: tuple[tuple[float, float], ...],
+    grid: pd.DataFrame,
+    unsafe: NDArray,
+) -> RuleFit | None:
+    """Best rule with the given kinds and exponents.
+
+    The last kind closes the rule. Every other kind is searched over
+    :data:`THRESHOLD_CANDIDATES` thresholds, including none; for each setting
+    the closing threshold is the smallest that excludes every unsafe point
+    the other checks let through. Each active threshold of the winner is then
+    moved onto the nearest admitted grid point, so that the rule claims
+    nothing between the last admitted and the first excluded point.
 
     Args:
-        frontier_table: Output of :func:`frontier`.
+        kinds: Kinds of the checks, the closing kind last.
+        exponents: ``(a, b)`` of each kind.
+        grid: Output of :func:`worst_case_grid`.
+        unsafe: Whether each grid point is unsafe.
 
     Returns:
-        The fitted rule.
-
-    Raises:
-        ValueError: If the frontier is censored everywhere.
+        The rule admitting the largest share, or None if no unsafe point
+        exists to bound.
     """
-    required = np.log(
-        np.where(
-            frontier_table["censored"],
-            frontier_table["n_tested"] * 1.0001,
-            frontier_table["n_star"],
-        ).astype(float)
+    if not unsafe.any():
+        return None
+    n_min, auc, ratio = (grid[c].to_numpy(float) for c in ("n_min", "auc", "ratio"))
+    scores = [
+        check_score(
+            kind=kind,
+            auc_exponent=a,
+            ratio_exponent=b,
+            n_min=n_min,
+            auc=auc,
+            ratio=ratio,
+        )
+        for kind, (a, b) in zip(kinds, exponents, strict=True)
+    ]
+    closing = scores[-1]
+    options = []
+    for score in scores[:-1]:
+        bounds = np.unique(
+            np.quantile(score[unsafe], np.linspace(0, 1, THRESHOLD_CANDIDATES - 1))
+        )
+        # A bound just above an unsafe value excludes that point
+        options.append([-np.inf, *np.nextafter(bounds, np.inf)])
+    # Every setting admits a share of at least zero, so the first replaces this
+    best: tuple[float, list[float]] = (-1.0, [])
+    for chosen in product(*options):
+        passing = np.ones(len(grid), dtype=bool)
+        for score, bound in zip(scores[:-1], chosen, strict=True):
+            passing &= score >= bound
+        leaking = passing & unsafe
+        closing_bound = (
+            float(np.nextafter(closing[leaking].max(), np.inf))
+            if leaking.any()
+            else -np.inf
+        )
+        share = float(np.mean(passing & (closing >= closing_bound)))
+        if share > best[0]:
+            best = (share, [*chosen, closing_bound])
+    share, bounds = best
+    admitted = np.ones(len(grid), dtype=bool)
+    for score, bound in zip(scores, bounds, strict=True):
+        admitted &= score >= bound
+    if admitted.any():
+        bounds = [
+            float(score[admitted].min()) if np.isfinite(bound) else bound
+            for score, bound in zip(scores, bounds, strict=True)
+        ]
+    checks = tuple(
+        check_from_bound(kind=kind, bound=bound, auc_exponent=a, ratio_exponent=b)
+        for kind, (a, b), bound in zip(kinds, exponents, bounds, strict=True)
+        if np.isfinite(bound)
     )
-    x_auc = -np.log(1 - frontier_table["auc"].to_numpy(float))
-    x_ratio = np.log(frontier_table["ratio"].to_numpy(float))
-    observed = ~frontier_table["censored"].to_numpy(bool)
-    if not observed.any():
-        raise ValueError("The frontier is censored at every (AUC, class ratio)")
-    best: tuple[float, Rule] | None = None
-    for log_floor in np.unique(required[observed]):
-        active = required > log_floor
-        if active.any():
-            design = np.column_stack(
-                [np.ones(active.sum()), x_auc[active], x_ratio[active]]
-            )
-            solution = linprog(
-                c=design.sum(axis=0),
-                A_ub=-design,
-                b_ub=-required[active],
-                bounds=[(None, None), (0, None), (0, None)],
-                method="highs",
-            )
-            if not solution.success:
+    return RuleFit(rule=Rule(checks), admitted_share=share)
+
+
+def search_rules(*, grid: pd.DataFrame, unsafe: NDArray) -> pd.DataFrame:
+    """Find the best rule for every combination of check kinds.
+
+    Args:
+        grid: Output of :func:`worst_case_grid`.
+        unsafe: Whether each grid point is unsafe.
+
+    Returns:
+        One row per combination of kinds with the best rule found
+        (``fit``), its number of active checks (``checks``) and its admitted
+        share, sorted by share.
+    """
+    rows = []
+    for size in range(1, MAX_CHECKS + 1):
+        for kinds in combinations(CLOSING_ORDER, size):
+            if any(pair <= set(kinds) for pair in REDUNDANT_PAIRS):
                 continue
-            intercept, auc_exponent, ratio_exponent = solution.x
-        else:
-            intercept, auc_exponent, ratio_exponent = -np.inf, 0.0, 0.0
-        predicted = np.maximum(
-            log_floor, intercept + auc_exponent * x_auc + ratio_exponent * x_ratio
-        )
-        slack = float(np.sum(predicted[observed] - required[observed]))
-        rule = Rule(
-            floor=float(np.exp(log_floor)),
-            constant=float(np.exp(intercept)),
-            auc_exponent=float(auc_exponent),
-            ratio_exponent=float(ratio_exponent),
-        )
-        if best is None or slack < best[0]:
-            best = (slack, rule)
-    return best[1]
+            # combinations preserves CLOSING_ORDER, so the closing kind is first
+            ordered = (*kinds[1:], kinds[0])
+            best: RuleFit | None = None
+            for exponents in product(*(EXPONENTS[k] for k in ordered)):
+                fit = solve_combination(
+                    kinds=ordered, exponents=exponents, grid=grid, unsafe=unsafe
+                )
+                if fit is not None and (
+                    best is None or fit.admitted_share > best.admitted_share
+                ):
+                    best = fit
+            if best is not None:
+                rows.append(
+                    {
+                        "kinds": " + ".join(kinds),
+                        "fit": best,
+                        "checks": len(best.rule.checks),
+                        "admitted_share": best.admitted_share,
+                    }
+                )
+    return pd.DataFrame(rows).sort_values("admitted_share", ascending=False)
+
+
+def round_strict(check: Check) -> Check:
+    """Round a check's threshold to a round number on its strict side.
+
+    Lower bounds round up and caps round down, to two significant figures; an
+    AUC cap rounds down to a multiple of 0.005.
+
+    Args:
+        check: The check.
+
+    Returns:
+        The check with the rounded threshold; it admits a subset of what the
+        original admits.
+    """
+    t = check.threshold
+    # The tolerance keeps a threshold that is already round from moving
+    if check.kind == "auc_cap":
+        rounded = np.floor(t / 0.005 + 1e-9) * 0.005
+    elif check.kind in LOWER_BOUNDS:
+        scale = 10.0 ** (np.floor(np.log10(t)) - 1)
+        rounded = np.ceil(t / scale - 1e-9) * scale
+    else:
+        scale = 10.0 ** (np.floor(np.log10(t)) - 1)
+        rounded = np.floor(t / scale + 1e-9) * scale
+    return Check(
+        kind=check.kind,
+        threshold=float(rounded),
+        auc_exponent=check.auc_exponent,
+        ratio_exponent=check.ratio_exponent,
+    )
+
+
+def recommend(*, search: pd.DataFrame) -> pd.DataFrame:
+    """The best rule for each number of checks, and the recommended one.
+
+    Args:
+        search: Output of :func:`search_rules`.
+
+    Returns:
+        One row per number of checks with the best rule, its share before
+        and after rounding, and whether it is recommended: the fewest checks
+        within :data:`PARSIMONY_TOLERANCE` of the best share.
+    """
+    ladder = search.loc[search.groupby("checks")["admitted_share"].idxmax()]
+    ladder = ladder.sort_values("checks").reset_index(drop=True)
+    best = ladder["admitted_share"].max()
+    eligible = ladder["admitted_share"] >= best - PARSIMONY_TOLERANCE
+    ladder["recommended"] = False
+    ladder.loc[eligible.idxmax(), "recommended"] = True
+    ladder["rounded"] = [
+        Rule(tuple(round_strict(c) for c in fit.rule.checks)) for fit in ladder["fit"]
+    ]
+    return ladder
+
+
+def rule_summary(
+    *, rule: Rule, grid: pd.DataFrame, unsafe: NDArray
+) -> dict[str, float]:
+    """Score a rule against the worst-case grid.
+
+    Args:
+        rule: The rule.
+        grid: Output of :func:`worst_case_grid`.
+        unsafe: Whether each grid point is unsafe.
+
+    Returns:
+        The share of the runnable grid admitted, the number of unsafe points
+        admitted, the largest worst-case posterior-mean miss probability,
+        exceedance probability and expected excess among the admitted points
+        with a majority class of at most :data:`ROUTED_N_MAX`, and the largest
+        posterior-mean miss probability among the admitted points beyond it.
+    """
+    admitted = rule.admits(n_min=grid["n_min"], auc=grid["auc"], ratio=grid["ratio"])
+    routed = (grid["n_min"] * grid["ratio"] <= ROUTED_N_MAX).to_numpy()
+    inside = grid[admitted & routed]
+    beyond = grid[admitted & ~routed]
+    return {
+        "admitted_share": float(admitted.mean()),
+        "unsafe_admitted": int((admitted & unsafe).sum()),
+        "max_p_mean": float(inside["p_mean"].max()) if len(inside) else np.nan,
+        "max_exceedance": float(inside["exceedance"].max()) if len(inside) else np.nan,
+        "max_excess": float(inside["excess"].max()) if len(inside) else np.nan,
+        "max_p_mean_beyond": float(beyond["p_mean"].max()) if len(beyond) else np.nan,
+    }
+
+
+def attribute_checks(
+    *, rule: Rule, grid: pd.DataFrame, unsafe: NDArray
+) -> pd.DataFrame:
+    """Describe the unsafe slice each check of a rule is responsible for.
+
+    A check's slice is the unsafe points that it alone excludes; points that
+    several checks exclude are reported together.
+
+    Args:
+        rule: The rule.
+        grid: Output of :func:`worst_case_grid`.
+        unsafe: Whether each grid point is unsafe.
+
+    Returns:
+        One row per check, plus one for the shared points, with the slice's
+        size, its ranges of ``n_min``, AUC and class ratio, the family and
+        minority class that most often attain its worst case, and the median
+        worst shape within that family.
+    """
+    n_min, auc, ratio = grid["n_min"], grid["auc"], grid["ratio"]
+    failing = np.column_stack(
+        [~c.admits(n_min=n_min, auc=auc, ratio=ratio) for c in rule.checks]
+    )
+    count = failing.sum(axis=1)
+    slices = {
+        check.describe(): unsafe & failing[:, k] & (count == 1)
+        for k, check in enumerate(rule.checks)
+    }
+    slices["several checks"] = unsafe & (count > 1)
+    rows = {}
+    for label, members in slices.items():
+        part = grid[members]
+        if part.empty:
+            rows[label] = {"unsafe_points": 0}
+            continue
+        family = part["worst_family"].mode().iloc[0]
+        shape = part.loc[part["worst_family"] == family, "worst_shape"].median()
+        rows[label] = {
+            "unsafe_points": len(part),
+            "n_min": f"{part['n_min'].min():,.0f}-{part['n_min'].max():,.0f}",
+            "auc": f"{part['auc'].min():.3f}-{part['auc'].max():.3f}",
+            "ratio": f"{part['ratio'].min():.3g}-{part['ratio'].max():.3g}",
+            "worst_family": FAMILIES[family].title,
+            "worst_minority": part["worst_minority"].mode().iloc[0],
+            "worst_shape": f"{FAMILIES[family].label} {shape:.2g}",
+        }
+    return pd.DataFrame(rows).T
 
 
 # =============================================================================
@@ -1422,7 +2186,8 @@ def cross_validate(
     parts = []
     for name, surface in surfaces.items():
         sub = draws[draws["family"] == name].reset_index(drop=True)
-        x, y = unit_matrix(sub), sub["miss"].to_numpy(float)
+        x = surface_coordinates(frame=sub, family=FAMILIES[name])
+        y = sub["miss"].to_numpy(float)
         fold = rng.integers(0, folds, len(sub))
         predicted = np.empty(len(sub))
         for k in range(folds):
@@ -1432,6 +2197,7 @@ def cross_validate(
                 y=y[~held],
                 seed=seed,
                 hyperparameters=(surface.lengthscales, surface.amplitude),
+                linear_mean=surface.linear_mean,
             )
             predicted[held] = expit(fitted.predict(x[held])[0])
         parts.append(sub.assign(p_cv=predicted))
@@ -1459,8 +2225,33 @@ def reliability_table(*, predictions: pd.DataFrame) -> pd.DataFrame:
     return table
 
 
+def wilson_interval(*, missed: NDArray, draws: NDArray) -> tuple[NDArray, NDArray]:
+    """95% Wilson interval of a binomial proportion.
+
+    Args:
+        missed: Successes.
+        draws: Trials.
+
+    Returns:
+        Lower and upper ends.
+    """
+    missed, draws = np.asarray(missed, float), np.asarray(draws, float)
+    z = norm.ppf(0.975)
+    rate = missed / draws
+    centre = (rate + z**2 / (2 * draws)) / (1 + z**2 / draws)
+    half = (
+        z
+        * np.sqrt(rate * (1 - rate) / draws + z**2 / (4 * draws**2))
+        / (1 + z**2 / draws)
+    )
+    return centre - half, centre + half
+
+
+RATIO_BANDS = (1.0, 7 / 3, 6.0, RATIO_MAX)
+
+
 def admitted_miss_rates(*, draws: pd.DataFrame, rule: Rule) -> pd.DataFrame:
-    """Observed miss rate of the draws a rule admits, by family and shape third.
+    """Observed miss rate of the draws a rule admits, by family, ratio and shape.
 
     This uses no fitted surface: it is the direct evidence on whether the
     admitted region covers.
@@ -1471,60 +2262,90 @@ def admitted_miss_rates(*, draws: pd.DataFrame, rule: Rule) -> pd.DataFrame:
 
     Returns:
         Draw count, observed miss rate and the upper end of its 95% Wilson
-        interval for each family and third of the shape range.
+        interval for each family, class-ratio band and third of the shape
+        range.
     """
     n_pos, n_neg = draws["n_pos"].to_numpy(float), draws["n_neg"].to_numpy(float)
     n_min, n_max = np.minimum(n_pos, n_neg), np.maximum(n_pos, n_neg)
     admitted = draws[
         rule.admits(n_min=n_min, auc=draws["auc"].to_numpy(float), ratio=n_max / n_min)
     ]
+    ratio = np.maximum(admitted["n_pos"], admitted["n_neg"]) / np.minimum(
+        admitted["n_pos"], admitted["n_neg"]
+    )
     table = (
-        admitted.assign(shape_third=np.minimum((admitted["u3"] * 3).astype(int), 2))
-        .groupby(["family", "shape_third"])
+        admitted.assign(
+            ratio_band=pd.cut(ratio, RATIO_BANDS, include_lowest=True),
+            shape_third=np.minimum((admitted["u3"] * 3).astype(int), 2),
+        )
+        .groupby(["family", "ratio_band", "shape_third"], observed=True)
         .agg(draws=("miss", "size"), missed=("miss", "sum"))
     )
-    z = norm.ppf(0.975)
-    rate = table["missed"] / table["draws"]
-    centre = (rate + z**2 / (2 * table["draws"])) / (1 + z**2 / table["draws"])
-    half = (
-        z
-        * np.sqrt(rate * (1 - rate) / table["draws"] + z**2 / (4 * table["draws"] ** 2))
-        / (1 + z**2 / table["draws"])
-    )
-    return table.assign(miss_rate=rate, wilson_upper=centre + half)
+    _, upper = wilson_interval(missed=table["missed"], draws=table["draws"])
+    return table.assign(miss_rate=table["missed"] / table["draws"], wilson_upper=upper)
 
 
-def rule_summary(*, rule: Rule, grid: pd.DataFrame) -> dict[str, float]:
-    """Score a rule against the worst-case grid.
+def cell_check(
+    *, cells: pd.DataFrame, surfaces: dict[str, Surface], target: float
+) -> pd.DataFrame:
+    """Compare the replicated cells' observed miss rates with the surface.
 
     Args:
-        rule: The rule.
-        grid: Output of :func:`worst_case_grid`.
+        cells: Draws of cell rounds, with ``source`` and ``cell``.
+        surfaces: Fitted surface by family name.
+        target: Target miss rate.
 
     Returns:
-        The share of runnable grid points admitted, and the largest
-        worst-case miss probability among them under the posterior mean and
-        under the upper credible bound.
+        One row per cell with its settings, draw count, observed miss rate
+        and 95% Wilson interval, the surface's posterior-mean miss
+        probability, and its probability that the miss rate exceeds the
+        target.
     """
-    runnable = grid[grid["runnable"]]
-    admitted = runnable[
-        rule.admits(
-            n_min=runnable["n_min"], auc=runnable["auc"], ratio=runnable["ratio"]
+    table = (
+        cells.groupby(["source", "cell"])
+        .agg(
+            family=("family", "first"),
+            shape=("shape", "first"),
+            auc=("auc", "mean"),
+            n_pos=("n_pos", "first"),
+            n_neg=("n_neg", "first"),
+            draws=("miss", "size"),
+            missed=("miss", "sum"),
         )
-    ]
-    return {
-        "admitted_share": len(admitted) / len(runnable),
-        "max_p_mean": float(admitted["p_mean"].max()) if len(admitted) else np.nan,
-        "max_p_upper": float(admitted["p_upper"].max()) if len(admitted) else np.nan,
-    }
+        .reset_index()
+    )
+    lower, upper = wilson_interval(missed=table["missed"], draws=table["draws"])
+    table["miss_rate"] = table["missed"] / table["draws"]
+    table["wilson_lower"], table["wilson_upper"] = lower, upper
+    table[["cell", "n_pos", "n_neg"]] = table[["cell", "n_pos", "n_neg"]].astype(int)
+    table["p_surface"] = np.nan
+    table["exceedance"] = np.nan
+    for name, surface in surfaces.items():
+        rows = table["family"] == name
+        if rows.any():
+            mean, sd = surface.predict(
+                surface_coordinates(frame=table[rows], family=FAMILIES[name])
+            )
+            table.loc[rows, "p_surface"] = expit(mean)
+            table.loc[rows, "exceedance"] = norm.sf(
+                (logit(target) - mean) / np.maximum(sd, 1e-12)
+            )
+    return table.drop(columns="missed").set_index(["source", "cell"])
 
 
-def plot_surface(*, grid: pd.DataFrame, rules: dict[str, Rule], path: Path) -> None:
-    """Draw the worst-case miss probability with each rule's threshold.
+PLOT_RATIOS = (1.0, 2.0, 4.0, 9.0, 19.0)
+
+
+def plot_surface(
+    *, grid: pd.DataFrame, rules: dict[str, Rule], assurance: float, path: Path
+) -> None:
+    """Draw the worst-case miss probability, the assurance boundary and rules.
 
     Args:
         grid: Output of :func:`worst_case_grid`.
-        rules: Rules to overlay, by label.
+        rules: Rules to overlay, by label; each is drawn as the boundary of
+            its admitted region.
+        assurance: Posterior probability of safety the rules were fitted to.
         path: Destination image.
     """
     import matplotlib
@@ -1532,58 +2353,998 @@ def plot_surface(*, grid: pd.DataFrame, rules: dict[str, Rule], path: Path) -> N
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     from matplotlib.colors import TwoSlopeNorm
+    from matplotlib.lines import Line2D
 
-    ratios = sorted(grid["ratio"].unique())
+    n_axis = np.exp(np.linspace(*np.log(N_MIN_BOUNDS), GRID_N))
     fig, axes = plt.subplots(
-        2, 3, figsize=(15, 8.5), sharex=True, sharey=True, constrained_layout=True
+        2,
+        len(PLOT_RATIOS),
+        figsize=(4.2 * len(PLOT_RATIOS), 8.5),
+        sharex=True,
+        sharey=True,
+        constrained_layout=True,
     )
-    for ax, ratio in zip(axes.ravel(), ratios, strict=True):
-        cell = grid[grid["ratio"] == ratio]
-        table = cell.pivot(index="auc", columns="n_min", values="p_mean")
-        z_auc = norm.ppf(table.index.to_numpy())
-        mesh = ax.pcolormesh(
-            table.columns.to_numpy(),
-            z_auc,
-            table.to_numpy(),
-            norm=TwoSlopeNorm(vmin=0.0, vcenter=ALPHA, vmax=0.30),
-            cmap="RdBu_r",
-            shading="nearest",
-        )
-        ax.contour(
-            table.columns.to_numpy(),
-            z_auc,
-            table.to_numpy(),
-            levels=[ALPHA],
-            colors="black",
-            linewidths=1.2,
-        )
-        for (label, rule), style in zip(rules.items(), ("-", "--", ":"), strict=False):
-            ax.plot(
-                rule.threshold(auc=table.index.to_numpy(), ratio=ratio),
-                z_auc,
-                style,
-                color="tab:green",
-                linewidth=2,
-                label=label,
+    styles = ("-", "--", ":", "-.")
+    meshes = {}
+    for column, ratio in enumerate(PLOT_RATIOS):
+        cell = grid[np.isclose(grid["ratio"], ratio)]
+        for row, (value, label) in enumerate(
+            (("p_mean", "posterior mean"), ("exceedance", "exceedance probability"))
+        ):
+            ax = axes[row, column]
+            table = cell.pivot(index="auc", columns="n_min", values=value).reindex(
+                columns=n_axis
             )
-        ax.axvline(N_CLASS_MAX / ratio, color="grey", linewidth=0.8)
-        ax.set_xscale("log")
-        ax.set_xlim(*N_MIN_BOUNDS)
-        ticks = [0.6, 0.7, 0.8, 0.9, 0.95, 0.98]
-        ax.set_yticks(norm.ppf(ticks), [f"{t:g}" for t in ticks])
-        ax.set_title(f"class ratio {ratio:.3g} : 1 (prevalence {1 / (1 + ratio):.0%})")
-    for ax in axes[-1]:
-        ax.set_xlabel("smaller class count")
-    for ax in axes[:, 0]:
-        ax.set_ylabel("AUC")
-    axes[0, 0].legend(loc="lower left", fontsize=8)
-    fig.colorbar(mesh, ax=axes, label="worst-case miss probability (posterior mean)")
+            z_auc = norm.ppf(table.index.to_numpy())
+            x = table.columns.to_numpy()
+            mesh = ax.pcolormesh(
+                x,
+                z_auc,
+                table.to_numpy(),
+                norm=(
+                    TwoSlopeNorm(vmin=0.0, vcenter=ALPHA, vmax=0.30)
+                    if value == "p_mean"
+                    else TwoSlopeNorm(vmin=0.0, vcenter=1 - assurance, vmax=1.0)
+                ),
+                cmap="RdBu_r",
+                shading="nearest",
+            )
+            exceed = cell.pivot(index="auc", columns="n_min", values="exceedance")
+            exceed = exceed.reindex(columns=n_axis).to_numpy()
+            ax.contour(
+                x,
+                z_auc,
+                np.nan_to_num(exceed, nan=1.0),
+                levels=[1 - assurance],
+                colors="black",
+                linewidths=1.2,
+            )
+            mesh_n, mesh_a = np.meshgrid(x, table.index.to_numpy())
+            for rule, style in zip(rules.values(), styles, strict=False):
+                admitted = rule.admits(n_min=mesh_n, auc=mesh_a, ratio=ratio)
+                ax.contour(
+                    x,
+                    z_auc,
+                    admitted.astype(float),
+                    levels=[0.5],
+                    colors="tab:green",
+                    linestyles=style,
+                    linewidths=2,
+                )
+            ax.axvline(N_CLASS_MAX / ratio, color="grey", linewidth=0.8)
+            ax.axvline(
+                ROUTED_N_MAX / ratio, color="black", linestyle=":", linewidth=1.2
+            )
+            ax.set_xscale("log")
+            ax.set_xlim(*N_MIN_BOUNDS)
+            ticks = [0.6, 0.7, 0.8, 0.9, 0.95, 0.98]
+            ax.set_yticks(norm.ppf(ticks), [f"{t:g}" for t in ticks])
+            if row == 0:
+                ax.set_title(
+                    f"class ratio {ratio:.3g} : 1 (prevalence {1 / (1 + ratio):.0%})"
+                )
+            else:
+                ax.set_xlabel("smaller class count")
+            if column == 0:
+                ax.set_ylabel(f"AUC\n({label})")
+            meshes[row] = (mesh, label)
+    for row, (mesh, label) in meshes.items():
+        fig.colorbar(mesh, ax=axes[row], label=label)
+    handles = [
+        Line2D([], [], color="black", label=f"{assurance:.0%} assurance boundary"),
+        Line2D(
+            [],
+            [],
+            color="black",
+            linestyle=":",
+            label=f"larger class {ROUTED_N_MAX:,}: limit of calibration",
+        ),
+        *(
+            Line2D([], [], color="tab:green", linestyle=style, label=name)
+            for name, style in zip(rules, styles, strict=False)
+        ),
+    ]
+    axes[0, 0].legend(handles=handles, loc="lower left", fontsize=8)
     fig.suptitle(
-        "Unfloored band: worst case over shape, family and minority class; "
-        "black = 5% contour, green = rules (admit to the right)"
+        "Unfloored band: worst case over shape, family and minority class "
+        "(top: posterior-mean miss probability; bottom: posterior probability "
+        f"of exceeding {ALPHA:g}); rules admit inside the green boundary"
     )
     fig.savefig(path, dpi=140)
     plt.close(fig)
+
+
+ASSURANCE_LEVELS = (0.8, 0.9, 0.95)
+# Studies whose trial-level results seed the surface; each sits on a few fixed
+# sample sizes at one prevalence
+SOURCE_DESCRIPTIONS = {
+    "nov11": "Main simulation suite, 50% prevalence",
+    "nov11_p30": "Main simulation suite, 30% prevalence",
+    "nov11_p10": "Main simulation suite, 10% prevalence",
+    "shape_auc_study": "Shape x AUC study, 50% prevalence",
+    "shape_auc_study_p10": "Shape x AUC study, 10% prevalence",
+}
+CRITERION_DESCRIPTIONS = {
+    "fill": "spread over the design space",
+    "contour": "near the 5% contour",
+    "value": "where the surface was least certain near 5%",
+    "cell": "replicated fixed cells",
+}
+# Smaller-class sizes and class ratios of the report's table of the largest
+# AUC the rule routes
+SUMMARY_N_MIN = (100, 250, 500, 1_000, 3_000, 10_000)
+SUMMARY_RATIOS = (1.0, 2.0, 4.0, 6.0, 9.0, 19.0)
+# Class sizes (positives, negatives) at which the report times both bands
+TIMING_SIZES = ((1_000, 1_000), (1_000, 9_000), (10_000, 10_000))
+# Smallest group of admitted draws whose miss rate the report quotes
+MIN_GROUP_DRAWS = 200
+
+
+def percent(value: float, *, digits: int = 1) -> str:
+    """Format a proportion as a percentage, or a dash if it is missing."""
+    return "—" if pd.isna(value) else f"{value:.{digits}%}"
+
+
+def describe_sources(*, draws: pd.DataFrame, rounds: pd.DataFrame) -> pd.DataFrame:
+    """Summarise where the draws come from.
+
+    Args:
+        draws: Draws returned by :func:`in_design_space`.
+        rounds: Output of :func:`load_rounds`, which records how each of this
+            study's draws was placed.
+
+    Returns:
+        One row per source with a description, the draw count, the range of
+        the larger class and the observed miss rate.
+    """
+    rows = {}
+    for source, part in draws.groupby("source", sort=False):
+        if source in SOURCE_DESCRIPTIONS:
+            description = f"{SOURCE_DESCRIPTIONS[source]}, fixed sample sizes"
+        else:
+            placed = rounds.loc[rounds["source"] == source, "criterion"]
+            description = "This study, " + ", ".join(
+                f"{share:.0%} {CRITERION_DESCRIPTIONS[criterion]}"
+                for criterion, share in placed.value_counts(normalize=True).items()
+            )
+        n_max = np.maximum(part["n_pos"], part["n_neg"]).astype(int)
+        rows[source] = {
+            "description": description,
+            "draws": f"{len(part):,}",
+            "larger class": f"{n_max.min():,}-{n_max.max():,}",
+            "miss rate": percent(part["miss"].mean()),
+        }
+    table = pd.DataFrame(rows).T
+    table.index.name = "source"
+    return table
+
+
+def paired_floor_effect(*, directories: list[Path]) -> pd.DataFrame:
+    """Compare the unfloored band with the hybrid on the same datasets.
+
+    The earlier studies computed both bands on every dataset; this reads their
+    trial-level results for the families in :data:`FAMILIES` at the study's
+    alpha.
+
+    Args:
+        directories: Result directories of the earlier studies.
+
+    Returns:
+        One row per pair of class sizes with the number of datasets, the mean
+        ratio of the hybrid's area to the unfloored band's, and each band's
+        miss rate in the family where that rate is higher.
+    """
+    parts = []
+    for directory in directories:
+        for path in sorted(directory.glob("*_individual.feather")):
+            family = next(
+                (name for name in FAMILIES if path.name.startswith(name)), None
+            )
+            if family is None:
+                continue
+            frame = pd.read_feather(
+                path,
+                columns=[
+                    "method",
+                    "alpha",
+                    "true_auc",
+                    "n_pos",
+                    "n_neg",
+                    "covers_entirely",
+                    "band_area",
+                ],
+            )
+            frame = frame[np.isclose(frame["alpha"], ALPHA)]
+            plain = frame[frame["method"] == "fiducial"].reset_index(drop=True)
+            hybrid = frame[frame["method"] == "fiducial_hybrid"].reset_index(drop=True)
+            if hybrid.empty:
+                continue
+            # The studies write every method of a dataset in the same order, so
+            # the two bands pair by position
+            if len(plain) != len(hybrid) or not np.allclose(
+                plain["true_auc"], hybrid["true_auc"]
+            ):
+                raise ValueError(f"The bands in {path} do not pair by position")
+            parts.append(
+                pd.DataFrame(
+                    {
+                        "family": family,
+                        "n_min": np.minimum(plain["n_pos"], plain["n_neg"]),
+                        "n_max": np.maximum(plain["n_pos"], plain["n_neg"]),
+                        "miss_unfloored": ~plain["covers_entirely"].to_numpy(bool),
+                        "miss_hybrid": ~hybrid["covers_entirely"].to_numpy(bool),
+                        "area_ratio": hybrid["band_area"].to_numpy(float)
+                        / plain["band_area"].to_numpy(float),
+                    }
+                )
+            )
+    if not parts:
+        return pd.DataFrame(
+            columns=pd.Index(
+                ["datasets", "area_ratio", "miss_unfloored", "miss_hybrid"]
+            ),
+            index=pd.MultiIndex.from_tuples([], names=["n_min", "n_max"]),
+        )
+    pairs = pd.concat(parts, ignore_index=True)
+    sizes = ["n_min", "n_max"]
+    worst = (
+        pairs.groupby([*sizes, "family"])[["miss_unfloored", "miss_hybrid"]]
+        .mean()
+        .groupby(level=sizes)
+        .max()
+    )
+    pooled = pairs.groupby(sizes).agg(
+        datasets=("area_ratio", "size"), area_ratio=("area_ratio", "mean")
+    )
+    table = pooled.join(worst)
+    return table.iloc[np.argsort(table.index.get_level_values("n_max"), kind="stable")]
+
+
+def time_bands(*, sizes: tuple[tuple[int, int], ...]) -> pd.DataFrame:
+    """Time the unfloored band and the hybrid on one dataset per class size.
+
+    Every size is new to the process, so the hybrid pays for its ELL
+    calibration as a user's first call at that size does.
+
+    Args:
+        sizes: Class sizes as (positives, negatives).
+
+    Returns:
+        One row per size with both bands' wall times in seconds.
+    """
+    from studroc_paper.methods.fiducial_band_rs import fiducial_band_rs
+
+    rng = np.random.default_rng(0)
+    rows = {}
+    for n_pos, n_neg in sizes:
+        y_true = np.r_[np.ones(n_pos), np.zeros(n_neg)].astype(np.float32)
+        y_score = np.r_[
+            rng.normal(1.0, 1.0, n_pos), rng.normal(0.0, 1.0, n_neg)
+        ].astype(np.float32)
+        seconds = []
+        for floor in (False, True):
+            start = time.perf_counter()
+            fiducial_band_rs(
+                y_true=y_true, y_score=y_score, alpha=ALPHA, m3_floor=floor
+            )
+            seconds.append(time.perf_counter() - start)
+        rows[f"{n_pos:,} / {n_neg:,}"] = {
+            "unfloored (s)": seconds[0],
+            "hybrid (s)": seconds[1],
+        }
+    table = pd.DataFrame(rows).T
+    table.index.name = "positives / negatives"
+    return table
+
+
+def largest_routed_auc(
+    *, rule: Rule, n_mins: tuple[int, ...], ratios: tuple[float, ...]
+) -> pd.DataFrame:
+    """The largest AUC a rule sends to the unfloored band, by size and ratio.
+
+    Args:
+        rule: The rule.
+        n_mins: Smaller-class sizes.
+        ratios: Class ratios ``n_max / n_min``.
+
+    Returns:
+        The largest admitted AUC within :data:`AUC_BOUNDS` for each smaller
+        class (rows) and class ratio (columns), or ``"hybrid"`` where the rule
+        admits no AUC.
+    """
+    auc = np.linspace(*AUC_BOUNDS, 4401)
+    table = {}
+    for ratio in ratios:
+        column = {}
+        for n_min in n_mins:
+            admitted = rule.admits(
+                n_min=np.full_like(auc, n_min), auc=auc, ratio=np.full_like(auc, ratio)
+            )
+            column[f"{n_min:,}"] = (
+                f"{auc[admitted].max():.3f}" if admitted.any() else "hybrid"
+            )
+        table[f"{ratio:g} : 1"] = column
+    frame = pd.DataFrame(table)
+    frame.index.name = "smaller class"
+    return frame
+
+
+def summary_columns(*, summary: dict[str, float]) -> dict[str, str]:
+    """Format :func:`rule_summary` for a reader.
+
+    Args:
+        summary: Output of :func:`rule_summary`.
+
+    Returns:
+        The summary with readable names and formatted values.
+    """
+    return {
+        "grid share": percent(summary["admitted_share"]),
+        "unsafe settings admitted": f"{summary['unsafe_admitted']:,}",
+        f"worst mean miss rate, n_max <= {ROUTED_N_MAX:,}": percent(
+            summary["max_p_mean"], digits=2
+        ),
+        f"worst P(miss rate > {ALPHA:.0%}), n_max <= {ROUTED_N_MAX:,}": percent(
+            summary["max_exceedance"]
+        ),
+        f"worst mean miss rate, n_max > {ROUTED_N_MAX:,}": percent(
+            summary["max_p_mean_beyond"], digits=2
+        ),
+    }
+
+
+def shape_third_label(*, family: str, third: int) -> str:
+    """The range of a family's shape parameter in one third of its log range.
+
+    Args:
+        family: Family name.
+        third: 0, 1 or 2, from the lowest third of the range up.
+
+    Returns:
+        The shape parameter's name and range.
+    """
+    low, high = np.log(FAMILIES[family].shape_bounds)
+    edges = np.exp(low + (high - low) * np.array([third, third + 1]) / 3)
+    return f"{FAMILIES[family].label} {edges[0]:.2g}-{edges[1]:.2g}"
+
+
+def admits_cells(*, rule: Rule, cells: pd.DataFrame) -> NDArray:
+    """Whether a rule admits each replicated cell.
+
+    Args:
+        rule: The rule.
+        cells: Output of :func:`cell_check`.
+
+    Returns:
+        One flag per cell.
+    """
+    n_min = np.minimum(cells["n_pos"], cells["n_neg"]).to_numpy(float)
+    n_max = np.maximum(cells["n_pos"], cells["n_neg"]).to_numpy(float)
+    return rule.admits(
+        n_min=n_min, auc=cells["auc"].to_numpy(float), ratio=n_max / n_min
+    )
+
+
+def build_report(
+    *,
+    draws: pd.DataFrame,
+    rounds: pd.DataFrame,
+    surfaces: dict[str, Surface],
+    predictions: pd.DataFrame,
+    grid: pd.DataFrame,
+    paired: pd.DataFrame,
+    timing: pd.DataFrame,
+    assurance: float,
+    folds: int,
+) -> tuple[dict[str, Rule], str]:
+    """Derive the rules and write the report for a reader new to the study.
+
+    Args:
+        draws: Draws returned by :func:`in_design_space`.
+        rounds: Output of :func:`load_rounds`.
+        surfaces: Fitted surface by family name.
+        predictions: Output of :func:`cross_validate`.
+        grid: Output of :func:`worst_case_grid`.
+        paired: Output of :func:`paired_floor_effect`.
+        timing: Output of :func:`time_bands`.
+        assurance: Required posterior probability that the miss rate is at
+            most the target.
+        folds: Number of cross-validation folds behind ``predictions``.
+
+    Returns:
+        The recommended rule and the current rule by label, and the report as
+        Markdown.
+    """
+    families = " and ".join(
+        f"{f.title} ({f.label} from {f.shape_bounds[0]:g} to {f.shape_bounds[1]:g})"
+        for f in FAMILIES.values()
+    )
+    unsafe = routed_unsafe(grid=grid, assurance=assurance)
+    unsafe_anywhere = (grid["exceedance"] > 1 - assurance).to_numpy()
+    routed = (grid["n_min"] * grid["ratio"] <= ROUTED_N_MAX).to_numpy()
+    search = search_rules(grid=grid, unsafe=unsafe)
+    ladder = recommend(search=search)
+    recommended = ladder.loc[ladder["recommended"], "rounded"].iloc[0]
+    rules = {"recommended": recommended, "current": REFERENCE_RULE}
+    summaries = {
+        label: rule_summary(rule=rule, grid=grid, unsafe=unsafe)
+        for label, rule in rules.items()
+    }
+    admitted_grid = recommended.admits(
+        n_min=grid["n_min"], auc=grid["auc"], ratio=grid["ratio"]
+    )
+
+    reliability = reliability_table(predictions=predictions)
+    near = reliability[reliability["predicted"].between(0.02, 0.12)]
+    largest_deviation = (near["predicted"] - near["observed"]).abs().max()
+    around_target = reliability[reliability["predicted"].between(0.03, 0.08)]
+    bias = (around_target["predicted"] - around_target["observed"]).mean()
+
+    cells = rounds[rounds["cell"] >= 0] if "cell" in rounds else rounds.iloc[0:0]
+    cell_table = (
+        cell_check(cells=cells, surfaces=surfaces, target=ALPHA)
+        if len(cells)
+        else pd.DataFrame(
+            columns=pd.Index(
+                [
+                    "n_pos",
+                    "n_neg",
+                    "auc",
+                    "miss_rate",
+                    "wilson_lower",
+                    "wilson_upper",
+                    "p_surface",
+                ]
+            )
+        )
+    )
+    # Replicated cells the rule admits beyond the range it is calibrated on
+    far = (
+        np.maximum(cell_table["n_pos"], cell_table["n_neg"]).to_numpy() > ROUTED_N_MAX
+    ) & admits_cells(rule=recommended, cells=cell_table)
+    far_cells = cell_table[far]
+
+    admitted = admitted_miss_rates(draws=draws, rule=recommended)
+    lower, _ = wilson_interval(missed=admitted["missed"], draws=admitted["draws"])
+    admitted = admitted.assign(wilson_lower=lower)
+    admitted_draws = int(admitted["draws"].sum())
+    admitted_rate = admitted["missed"].sum() / admitted_draws
+    significant = admitted[admitted["wilson_lower"] > ALPHA]
+    large_groups = admitted[admitted["draws"] >= MIN_GROUP_DRAWS]
+
+    lines = [
+        "# Routing rule for `auto`: when the unfloored fiducial band is safe",
+        "",
+        "## Summary",
+        "",
+        "**The decision.** The `auto` mode chooses between two ROC confidence "
+        "bands using only what it can see: the two class counts and the AUC. "
+        "The *unfloored fiducial band* is narrow and fast. The *hybrid* adds an "
+        "exact ELL floor at the two ends of the curve, which protects against "
+        "the unfloored band's known failure: when the ROC has a convex hook in "
+        "a corner that few observations reach, the unfloored band misses the "
+        "true curve more often than its nominal 5%. Where the unfloored band is "
+        "safe it is preferred, because it is narrower at small samples, much "
+        "faster at large ones, and closer to nominal (Section 1). This report "
+        "finds where it is safe.",
+        "",
+        "**Recommended rule.** Use the unfloored band when all of the following "
+        "hold, and the hybrid otherwise (`n_min` and `n_max` are the smaller "
+        "and larger class counts):",
+        "",
+        *(f"- {check.explain()}." for check in recommended.checks),
+        "",
+        f"In one line: `{recommended.describe()}`.",
+        "",
+        f"**What safe means.** A *miss* is a dataset whose band fails to contain "
+        f"the true ROC somewhere; at 95% confidence the target miss rate is "
+        f"{ALPHA:.0%}. At every setting the rule admits with a larger class of "
+        f"at most {ROUTED_N_MAX:,}, the fitted model gives at least "
+        f"{assurance:.0%} probability that the miss rate is at most "
+        f"{ALPHA:.0%}. This holds for the worst score distribution in the two "
+        f"families known to break the unfloored band, {families}, with either "
+        f"class as the minority. The largest best-estimate miss rate the rule "
+        f"admits there is "
+        f"{percent(summaries['recommended']['max_p_mean'], digits=2)}.",
+        "",
+        "**Where it routes.** The largest AUC sent to the unfloored band, by the "
+        "size of the smaller class and the class ratio. Above it, and wherever "
+        "the table says hybrid, the hybrid is used:",
+        "",
+        markdown_table(
+            largest_routed_auc(
+                rule=recommended, n_mins=SUMMARY_N_MIN, ratios=SUMMARY_RATIOS
+            ),
+            floatfmt=".3f",
+        ),
+        "",
+        "**Evidence.**",
+        "",
+        f"- The model of the miss rate predicts held-out data well: between "
+        f"predicted rates of 2% and 12%, predictions are within "
+        f"{largest_deviation * 100:.1f} percentage points of observed rates "
+        f"(Section 3).",
+    ]
+    if len(cell_table):
+        within = int(
+            (
+                (cell_table["p_surface"] >= cell_table["wilson_lower"])
+                & (cell_table["p_surface"] <= cell_table["wilson_upper"])
+            ).sum()
+        )
+        lines.append(
+            f"- At {len(cell_table)} fixed settings, each simulated up to 1,000 "
+            f"times, {within} observed miss rates have 95% intervals that contain "
+            "the model's prediction (Section 4)."
+        )
+    lines += [
+        f"- Without any model: of the {admitted_draws:,} simulated datasets the "
+        f"rule admits, {percent(admitted_rate, digits=2)} missed, and "
+        + (
+            f"no group by family, class ratio and shape is significantly above "
+            f"{ALPHA:.0%}"
+            if significant.empty
+            else f"{len(significant)} groups by family, class ratio and shape are "
+            f"significantly above {ALPHA:.0%}"
+        )
+        + " (Section 6).",
+        f"- The rule currently in `hybrid_band.md` §4.4 "
+        f"(`{REFERENCE_RULE.describe()}`) admits "
+        f"{summaries['current']['unsafe_admitted']:,} settings that fail the "
+        f"same test; the recommended rule admits none (Section 5.4).",
+        "",
+        "**Limits.**",
+        "",
+        "- Only the two families above are modelled. They are the known failure "
+        "modes, but other score distributions are not covered.",
+        f"- Above a larger class of {ROUTED_N_MAX:,} the simulated data are "
+        f"sparse and the rule is not held to the {assurance:.0%} test; there "
+        f"the floor costs far more compute and buys no width (Section 1). "
+        + (
+            f"The {len(far_cells)} replicated settings measured there that the "
+            f"rule admits missed at "
+            f"{percent(far_cells['miss_rate'].min())}-"
+            f"{percent(far_cells['miss_rate'].max())}, "
+            + (
+                f"none significantly above {ALPHA:.0%}"
+                if (far_cells["wilson_lower"] <= ALPHA).all()
+                else f"{int((far_cells['wilson_lower'] > ALPHA).sum())} "
+                f"significantly above {ALPHA:.0%}"
+            )
+            + "; the model's best estimate, extended past its data, reaches "
+            if len(far_cells)
+            else "The model's best estimate, extended past its data, reaches "
+        )
+        + f"{percent(summaries['recommended']['max_p_mean_beyond'], digits=2)} at "
+        f"the edge of the design (Section 5.5).",
+        "- The study evaluates the rule at the true AUC; at runtime the "
+        "empirical AUC stands in for it.",
+        f"- Shares of the grid quoted below count points of an evaluation grid "
+        f"(log class size, probit AUC, ten class ratios) without weights. They "
+        f"compare candidate rules and do not estimate how often users are "
+        f"routed. The recommended rule admits "
+        f"{percent(summaries['recommended']['admitted_share'])} of the grid.",
+        "",
+        "## 1. What routing buys",
+        "",
+        "The earlier studies computed both bands on the same datasets, so they "
+        "can be compared directly. The table pairs them for the two families of "
+        "this study at the study's alpha; each miss rate is from the family in "
+        "which it is higher.",
+        "",
+    ]
+    paired_display = pd.DataFrame(
+        {
+            "class ratio": [f"{n_max / n_min:.3g}" for n_min, n_max in paired.index],
+            "datasets": [f"{n:,}" for n in paired["datasets"]],
+            "hybrid area / unfloored area": [f"{r:.2f}" for r in paired["area_ratio"]],
+            "unfloored miss rate": [percent(v) for v in paired["miss_unfloored"]],
+            "hybrid miss rate": [percent(v) for v in paired["miss_hybrid"]],
+        },
+        index=paired.index,
+    )
+    n_max_paired = paired.index.get_level_values("n_max")
+    small = paired[n_max_paired <= 50]
+    large = paired[n_max_paired >= 5_000]
+    failing = paired[paired["miss_unfloored"] > ALPHA]
+    imbalanced_failures = int(
+        (
+            failing.index.get_level_values("n_max")
+            > failing.index.get_level_values("n_min")
+        ).sum()
+    )
+    timing_display = timing.map(lambda seconds: f"{seconds:.1f}")
+    lines += [
+        markdown_table(paired_display, floatfmt=".3f"),
+        "",
+        f"- **The unfloored band can exceed the target.** Its miss rate is "
+        f"above {ALPHA:.0%} at {len(failing)} of these sizes, up to "
+        f"{percent(failing['miss_unfloored'].max())}, all with a smaller class "
+        f"of {failing.index.get_level_values('n_min').max():,} or less; "
+        f"{imbalanced_failures} of them have unequal classes. The hybrid's miss "
+        f"rate there is at most {percent(failing['miss_hybrid'].max())}. These "
+        f"are averages over shapes, so the worst shapes fail by more. This is "
+        f"what the rule must screen out."
+        if len(failing)
+        else f"- **On average over shapes the unfloored band stays below "
+        f"{ALPHA:.0%} at these sizes**; the worst shapes need not, which is "
+        f"what the rule must screen out.",
+        f"- **At small samples the floor is costly.** With at most 50 cases in "
+        f"the larger class the hybrid is up to "
+        f"{small['area_ratio'].max():.1f} times as wide as the unfloored band.",
+        f"- **At large samples it buys nothing a user needs.** With "
+        f"{n_max_paired[n_max_paired >= 5_000].min():,} or more in the larger "
+        f"class the two areas agree within "
+        f"{(large['area_ratio'] - 1).abs().max():.1%}. The floor still lowers "
+        f"the miss rate under imbalance, but further below the target, which "
+        f"is no gain when closer to nominal is better.",
+        "- **And it is slow there.** The hybrid's ELL floor needs a calibration "
+        "for every new pair of class sizes. Timed once per size on this "
+        "machine:",
+        "",
+        markdown_table(timing_display, floatfmt=".1f"),
+        "",
+        "So the rule's job is to find where the unfloored band is safe and to "
+        "send everything else to the hybrid.",
+        "",
+        "## 2. Data",
+        "",
+        "Each draw is one simulated dataset: scores from one of the two families "
+        "at a chosen shape and AUC, at chosen class counts, with a record of "
+        "whether the unfloored band missed the true ROC. The earlier studies "
+        "sit on a few fixed sample sizes; this study's rounds placed draws "
+        "between them and where the answer was least certain.",
+        "",
+        markdown_table(describe_sources(draws=draws, rounds=rounds), floatfmt=".4f"),
+        "",
+        "## 3. The model of the miss rate, and how well it predicts",
+        "",
+        "For each family the probability that the band misses is modelled as a "
+        "smooth function of four quantities: the expected number of each class "
+        "beyond the ROC's corners, `n_pos (1 - AUC)` and `n_neg (1 - AUC)`; the "
+        "AUC; and the family's shape parameter. The model (a Gaussian process "
+        "classifier) gives, at any setting, a best estimate of the miss rate "
+        "and how uncertain that estimate is. The rule uses both.",
+        "",
+        f"Held-out check: the data were split into {folds} parts, and each part "
+        f"was predicted from a fit to the others. By predicted miss rate:",
+        "",
+    ]
+    reliability_display = pd.DataFrame(
+        {
+            "datasets": [f"{n:,}" for n in reliability["draws"]],
+            "predicted": [percent(v, digits=2) for v in reliability["predicted"]],
+            "observed": [percent(v, digits=2) for v in reliability["observed"]],
+            "standard error": [percent(v, digits=2) for v in reliability["se"]],
+        },
+        index=pd.Index(
+            [
+                f"{max(interval.left, 0.0):.0%}-{interval.right:.0%}"
+                for interval in reliability.index
+            ],
+            name="predicted miss rate",
+        ),
+    )
+    lines += [
+        markdown_table(reliability_display, floatfmt=".4f"),
+        "",
+        f"Between 2% and 12%, the range the rule depends on, predictions are "
+        f"within {largest_deviation * 100:.1f} percentage points of the observed "
+        f"rates. Around the {ALPHA:.0%} target the model "
+        + (
+            "predicts slightly more misses than occur, which errs toward caution."
+            if bias > 0
+            else "predicts slightly fewer misses than occur, which the assurance "
+            "requirement has to absorb."
+        ),
+        "",
+    ]
+
+    cell_display = pd.DataFrame()
+    if len(cell_table):
+        cell_display = pd.DataFrame(
+            {
+                "family": [FAMILIES[f].title for f in cell_table["family"]],
+                "shape": [f"{v:.3g}" for v in cell_table["shape"]],
+                "AUC": [f"{v:.3f}" for v in cell_table["auc"]],
+                "positives": [f"{v:,}" for v in cell_table["n_pos"]],
+                "negatives": [f"{v:,}" for v in cell_table["n_neg"]],
+                "datasets": [f"{v:,}" for v in cell_table["draws"]],
+                "observed miss rate (95% interval)": [
+                    f"{percent(r)} ({percent(lo)}-{percent(hi)})"
+                    for r, lo, hi in zip(
+                        cell_table["miss_rate"],
+                        cell_table["wilson_lower"],
+                        cell_table["wilson_upper"],
+                        strict=True,
+                    )
+                ],
+                "model's best estimate": [percent(v) for v in cell_table["p_surface"]],
+                f"model's P(miss rate > {ALPHA:.0%})": [
+                    percent(v) for v in cell_table["exceedance"]
+                ],
+                "routed to": [
+                    "unfloored" if admit else "hybrid"
+                    for admit in admits_cells(rule=recommended, cells=cell_table)
+                ],
+            },
+            index=pd.Index(cell_table.index.get_level_values("cell"), name="cell"),
+        )
+        above = cell_table[cell_table["wilson_lower"] > ALPHA]
+        above_admitted = admits_cells(rule=recommended, cells=above)
+        outside = cell_table[
+            (cell_table["p_surface"] < cell_table["wilson_lower"])
+            | (cell_table["p_surface"] > cell_table["wilson_upper"])
+        ]
+        disagreements = [
+            f"cell {cell} (observed "
+            f"{'fewer' if row['miss_rate'] < row['p_surface'] else 'more'} misses "
+            f"than predicted)"
+            for (_, cell), row in outside.iterrows()
+        ]
+        above_ids = above.index.get_level_values("cell")
+        cell_findings = [
+            f"{within} of {len(cell_table)} cells' 95% intervals contain the "
+            "model's best estimate"
+            + (
+                f"; the exception is {', '.join(disagreements)}"
+                if disagreements
+                else ""
+            )
+            + "."
+        ]
+        if len(above):
+            cell_findings.append(
+                f"Significantly above {ALPHA:.0%}: "
+                + ", ".join(f"cell {c}" for c in above_ids)
+                + (
+                    ", which the rule sends to the hybrid."
+                    if not above_admitted.any()
+                    else ", of which the rule admits "
+                    + ", ".join(f"cell {c}" for c in above_ids[above_admitted])
+                    + "."
+                )
+            )
+        else:
+            cell_findings.append(f"No cell is significantly above {ALPHA:.0%}.")
+        predicted_high = cell_table[cell_table["p_surface"] > ALPHA]
+        if (
+            len(predicted_high)
+            and not admits_cells(rule=recommended, cells=predicted_high).any()
+        ):
+            cell_findings.append(
+                f"All {len(predicted_high)} cells whose best estimate exceeds "
+                f"{ALPHA:.0%} are routed to the hybrid."
+            )
+        lines += [
+            "## 4. Replicated cells: a direct check where it matters",
+            "",
+            "Most draws sit at their own setting, which lets the model borrow "
+            "strength across settings but leaves it to the model to say what "
+            "happens at any one of them. To check the model where the rule's "
+            "boundaries are decided, fixed settings were each simulated up to "
+            "1,000 times: worst-case shapes at the edges of the admitted region, "
+            "at large samples and at high imbalance.",
+            "",
+            markdown_table(cell_display, floatfmt=".4f"),
+            "",
+            " ".join(cell_findings),
+            "",
+        ]
+
+    ladder_display = pd.DataFrame(
+        {
+            "rule": [r.describe() for r in ladder["rounded"]],
+            "grid share": [
+                percent(
+                    rule_summary(rule=r, grid=grid, unsafe=unsafe)["admitted_share"]
+                )
+                for r in ladder["rounded"]
+            ],
+            "recommended": ["yes" if r else "" for r in ladder["recommended"]],
+        },
+        index=pd.Index(ladder["checks"], name="checks"),
+    )
+    lines += [
+        "## 5. Deriving the rule",
+        "",
+        "### 5.1 Which settings are unsafe",
+        "",
+        f"The model is evaluated on a grid of settings: smaller class "
+        f"{N_MIN_BOUNDS[0]:,}-{N_MIN_BOUNDS[1]:,} (log scale), AUC "
+        f"{AUC_BOUNDS[0]:g}-{AUC_BOUNDS[1]:g} (probit scale) and class ratios "
+        f"{', '.join(f'{r:.3g}' for r in GRID_RATIOS)}. At each setting it takes "
+        f"the worst case over both families, their shapes and which class is "
+        f"the minority. A setting is *unsafe* if the probability that this "
+        f"worst-case miss rate exceeds {ALPHA:.0%} is above "
+        f"{1 - assurance:.0%}. Requiring a probability, not only a best "
+        f"estimate, below the target keeps the rule out of regions the data "
+        f"cannot yet vouch for.",
+        "",
+        f"{percent(unsafe_anywhere.mean())} of the grid is unsafe. The rule must "
+        f"exclude every unsafe setting with a larger class of at most "
+        f"{ROUTED_N_MAX:,} ({percent(unsafe.mean())} of the grid). Beyond that "
+        f"size the simulated data are sparse, Section 1 shows the floor buys no "
+        f"width there and costs far more compute, and the unsafe settings mostly "
+        f"reflect uncertainty about miss rates just below {ALPHA:.0%}. Section "
+        f"5.5 checks the rule there against the replicated cells.",
+        "",
+        "### 5.2 Choosing the rule",
+        "",
+        "Candidate rules are conjunctions of simple checks: a minimum on the "
+        "smaller class, a cap on the class ratio, a cap on the AUC, and a "
+        "*corner* check that the AUC is low enough for the sample size. For "
+        "every combination the thresholds are set to admit as much of the grid "
+        "as possible without admitting an unsafe setting, then rounded to round "
+        "numbers on the safe side. The best rule for each number of checks:",
+        "",
+        markdown_table(ladder_display, floatfmt=".4f"),
+        "",
+        f"The recommended rule is the one with the fewest checks that admits "
+        f"within {PARSIMONY_TOLERANCE * 100:g} percentage point of the best "
+        f"rule's grid share.",
+        "",
+        "### 5.3 What each check guards against",
+        "",
+        "Each check is credited with the unsafe settings that it alone "
+        "excludes. Each turns out to bound one failure mechanism, identified by "
+        "the family, minority class and shape at which the worst case occurs:",
+        "",
+    ]
+    attribution = attribute_checks(rule=recommended, grid=grid, unsafe=unsafe)
+    attribution = attribution.rename(
+        columns={
+            "unsafe_points": "unsafe settings",
+            "n_min": "smaller class",
+            "auc": "AUC",
+            "ratio": "class ratio",
+            "worst_family": "worst family",
+            "worst_minority": "minority class",
+            "worst_shape": "typical worst shape",
+        }
+    )
+    attribution.index.name = "check"
+    lines += [
+        markdown_table(attribution, floatfmt=".3g"),
+        "",
+        "The last row counts settings that more than one check excludes; they "
+        "lie deep inside the unsafe region and do not bear on any one check.",
+        "",
+        "### 5.4 Sensitivity, and the current rule",
+        "",
+        "The recommended rule at other assurance levels, and the rule currently "
+        "in `hybrid_band.md` §4.4 judged by the same test:",
+        "",
+    ]
+    by_level = {}
+    for level in ASSURANCE_LEVELS:
+        level_unsafe = routed_unsafe(grid=grid, assurance=level)
+        level_ladder = recommend(search=search_rules(grid=grid, unsafe=level_unsafe))
+        rule = level_ladder.loc[level_ladder["recommended"], "rounded"].iloc[0]
+        by_level[f"recommended at {level:.0%} assurance"] = {
+            "rule": rule.describe(),
+            **summary_columns(
+                summary=rule_summary(rule=rule, grid=grid, unsafe=level_unsafe)
+            ),
+        }
+    by_level[f"current, judged at {assurance:.0%}"] = {
+        "rule": REFERENCE_RULE.describe(),
+        **summary_columns(summary=summaries["current"]),
+    }
+    beyond = grid[admitted_grid & ~routed]
+    beyond_high = beyond[beyond["p_mean"] > ALPHA]
+    beyond_unsafe = int(unsafe_anywhere[admitted_grid & ~routed].sum())
+    sensitivity = pd.DataFrame(by_level).T
+    sensitivity.index.name = "rule"
+    sensitivity = sensitivity.rename(columns={"rule": "checks"})
+    lines += [
+        markdown_table(sensitivity, floatfmt=".4f"),
+        "",
+        "The checks keep their form across assurance levels; the thresholds move.",
+        "",
+        f"### 5.5 Beyond a larger class of {ROUTED_N_MAX:,}",
+        "",
+        f"The rule admits {len(beyond):,} grid settings there, "
+        f"{beyond_unsafe:,} of them unsafe by the test above. At "
+        f"{beyond_unsafe - len(beyond_high):,} of those the best estimate is "
+        f"below {ALPHA:.0%} and only its uncertainty fails the test. The best "
+        f"estimate exceeds {ALPHA:.0%} at {len(beyond_high):,}"
+        + (
+            f", all with a larger class of "
+            f"{(beyond_high['n_min'] * beyond_high['ratio']).min():,.0f} or more, "
+            f"where it extends a rising trend beyond the data"
+            if len(beyond_high)
+            else ""
+        )
+        + ". The replicated cells in that range that the rule admits measure "
+        "the band directly:",
+        "",
+    ]
+    lines += [
+        markdown_table(cell_display[far], floatfmt=".4f")
+        if far.any()
+        else "No replicated cell lies there.",
+        "",
+    ]
+    lines += [
+        "## 6. Model-free check: the simulated datasets the rule admits",
+        "",
+        "The simulated datasets inside the recommended rule, grouped by family, "
+        "class ratio and third of the family's shape range (on a log scale). "
+        "Each group pools easier and harder shapes, so this confirms the rule "
+        "rather than testing its worst case, which is what the model is for.",
+        "",
+    ]
+    admitted_display = pd.DataFrame(
+        {
+            "datasets": [f"{n:,}" for n in admitted["draws"]],
+            "miss rate": [percent(v, digits=2) for v in admitted["miss_rate"]],
+            "95% upper bound": [percent(v, digits=2) for v in admitted["wilson_upper"]],
+        },
+        index=pd.MultiIndex.from_tuples(
+            [
+                (
+                    FAMILIES[family].title,
+                    f"{max(band.left, 1.0):.3g}-{band.right:.3g}",
+                    shape_third_label(family=family, third=third),
+                )
+                for family, band, third in admitted.index
+            ],
+            names=["family", "class ratio", "shape"],
+        ),
+    )
+    lines += [markdown_table(admitted_display, floatfmt=".4f"), ""]
+    if len(large_groups):
+        worst = large_groups["miss_rate"].idxmax()
+        lines += [
+            f"Over all {admitted_draws:,} datasets the miss rate is "
+            f"{percent(admitted_rate, digits=2)}. The highest among groups of at "
+            f"least {MIN_GROUP_DRAWS} datasets is "
+            f"{percent(large_groups.loc[worst, 'miss_rate'], digits=2)} "
+            f"({FAMILIES[worst[0]].title}, class ratio "
+            f"{max(worst[1].left, 1.0):.3g}-{worst[1].right:.3g}, "
+            f"{shape_third_label(family=worst[0], third=worst[2])}).",
+            "",
+        ]
+    lines += [
+        "## 7. Figure",
+        "",
+        "`surface.png` shows, for five class ratios, the worst-case best "
+        "estimate of the miss rate (top row; blue below 5%, red above) and the "
+        f"probability that it exceeds {ALPHA:.0%} (bottom row). The black "
+        f"contour marks the {assurance:.0%} assurance boundary; the solid green "
+        "line encloses the settings the recommended rule admits, the dashed "
+        "line those of the current rule. The dotted black line marks a larger "
+        f"class of {ROUTED_N_MAX:,}, beyond which the rule is not held to the "
+        "assurance test (Section 5.5), so the green line may cross the black "
+        "contour to its right. The grey line marks the largest smaller class "
+        "that can be simulated at that ratio.",
+        "",
+        "## Appendix: best rule for every combination of checks",
+        "",
+        markdown_table(
+            pd.DataFrame(
+                {
+                    "rule (exact thresholds)": [
+                        fit.rule.describe() for fit in search["fit"]
+                    ],
+                    "grid share": [percent(v) for v in search["admitted_share"]],
+                },
+                index=pd.Index(search["kinds"], name="checks"),
+            ),
+            floatfmt=".4f",
+        ),
+        "",
+        "Model length scales (positive corner, negative corner, AUC, shape): "
+        + "; ".join(
+            f"{FAMILIES[name].title} {np.round(surface.lengthscales, 3).tolist()}, "
+            f"amplitude {surface.amplitude:.2f}"
+            for name, surface in surfaces.items()
+        )
+        + ".",
+        "",
+    ]
+    return rules, "\n".join(lines)
 
 
 def command_fit(args: argparse.Namespace) -> None:
@@ -1592,93 +3353,40 @@ def command_fit(args: argparse.Namespace) -> None:
     draws = in_design_space(frame=load_draws(hot_start=args.hot_start, out_dir=out_dir))
     draws["miss"] = draws["miss"].astype(bool)
     surfaces = fit_surfaces(draws=draws, seed=args.seed)
-    grid = worst_case_grid(surfaces=surfaces)
-    lines = ["# Auto rule: coverage surface of the unfloored band", ""]
-
-    lines += ["## Data", ""]
-    counts = draws.groupby(["source", "family"]).agg(
-        draws=("miss", "size"), miss_rate=("miss", "mean")
-    )
-    lines += [markdown_table(counts, floatfmt=".4f"), ""]
-
-    lines += ["## Surfaces", ""]
-    for name, surface in surfaces.items():
-        lines.append(
-            f"- `{name}`: length scales (n_min, class ratio, AUC, shape) = "
-            f"{np.round(surface.lengthscales, 3).tolist()}, amplitude "
-            f"{surface.amplitude:.2f}"
-        )
     predictions = cross_validate(
         draws=draws, surfaces=surfaces, folds=args.folds, seed=args.seed
     )
-    clipped = np.clip(predictions["p_cv"], 1e-6, 1 - 1e-6)
-    y = predictions["miss"].to_numpy(float)
-    base = np.clip(predictions.groupby("family")["miss"].transform("mean"), 1e-6, 1)
-    log_loss = -np.mean(y * np.log(clipped) + (1 - y) * np.log(1 - clipped))
-    log_loss_base = -np.mean(y * np.log(base) + (1 - y) * np.log(1 - base))
-    lines += [
-        "",
-        f"{args.folds}-fold cross-validated log loss {log_loss:.4f} "
-        f"(family miss rate alone: {log_loss_base:.4f}).",
-        "",
-        "Out-of-fold reliability:",
-        "",
-        markdown_table(reliability_table(predictions=predictions), floatfmt=".4f"),
-        "",
-    ]
-
-    rules = {"reference": REFERENCE_RULE}
-    frontiers = {}
-    lines += ["## Frontier and rules", ""]
-    for label, column in (("mean", "p_mean"), ("upper", "p_upper")):
-        table = frontier(grid=grid, column=column, target=ALPHA)
-        frontiers[label] = table
-        try:
-            rules[label] = fit_rule(frontier_table=table)
-        except ValueError as err:
-            lines.append(f"- `{label}`: no rule ({err}).")
-    summary = pd.DataFrame(
-        {
-            label: {"rule": rule.describe(), **rule_summary(rule=rule, grid=grid)}
-            for label, rule in rules.items()
-        }
-    ).T
-    lines += [markdown_table(summary, floatfmt=".4f"), ""]
-    merged = frontiers["mean"].merge(
-        frontiers["upper"], on=["ratio", "auc"], suffixes=("_mean", "_upper")
+    grid = worst_case_grid(surfaces=surfaces, target=ALPHA)
+    grid.to_feather(out_dir / "grid.feather")
+    rules, report = build_report(
+        draws=draws,
+        rounds=load_rounds(out_dir),
+        surfaces=surfaces,
+        predictions=predictions,
+        grid=grid,
+        paired=paired_floor_effect(directories=args.hot_start),
+        timing=time_bands(sizes=TIMING_SIZES),
+        assurance=args.assurance,
+        folds=args.folds,
     )
-    merged.to_csv(out_dir / "frontier.csv", index=False)
-    pivot = frontiers["mean"].assign(
-        n_star=lambda t: np.where(t["censored"], np.inf, t["n_star"]),
-        auc=lambda t: t["auc"].map("{:.3f}".format),
-        ratio=lambda t: t["ratio"].map("{:.3g}".format),
+    plot_surface(
+        grid=grid, rules=rules, assurance=args.assurance, path=out_dir / "surface.png"
     )
-    pivot = pivot.pivot(index="auc", columns="ratio", values="n_star")[
-        [f"{ratio:.3g}" for ratio in GRID_RATIOS]
-    ]
-    lines += [
-        "Frontier `n*` under the posterior mean, by AUC (rows) and class ratio "
-        "(columns); `inf` means still unsafe at the largest tested size:",
-        "",
-        markdown_table(pivot, floatfmt=",.0f"),
-        "",
-    ]
-
-    lines += ["## Observed miss rate of admitted draws (no model)", ""]
-    for label, rule in rules.items():
-        lines += [
-            f"`{label}`: {rule.describe()}",
-            "",
-            markdown_table(admitted_miss_rates(draws=draws, rule=rule), floatfmt=".4f"),
-            "",
-        ]
-
-    plot_surface(grid=grid, rules=rules, path=out_dir / "surface.png")
-    (out_dir / "report.md").write_text("\n".join(lines), encoding="utf-8")
+    (out_dir / "report.md").write_text(report, encoding="utf-8")
     (out_dir / "rules.json").write_text(
-        json.dumps({k: asdict(r) for k, r in rules.items()}, indent=2), encoding="utf-8"
+        json.dumps(
+            {
+                "assurance": args.assurance,
+                **{
+                    label: [asdict(check) for check in rule.checks]
+                    for label, rule in rules.items()
+                },
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
     )
-    print("\n".join(lines))
+    print(report)
 
 
 def main() -> None:
@@ -1724,7 +3432,7 @@ def main() -> None:
     run.add_argument(
         "--refine-from-hot-start",
         action="store_true",
-        help="Use the contour criterion in round 0, from a fit to the hot start",
+        help="Use the value criterion in round 0, from a fit to the hot start",
     )
     run.add_argument("--workers", type=int, default=os.cpu_count())
     run.add_argument(
@@ -1733,6 +3441,29 @@ def main() -> None:
         default=30.0,
         help="Memory budget for the running bands, beyond each worker's ~0.7 GB "
         "baseline; a 100,000-negative band takes about 8 GB",
+    )
+    run.add_argument(
+        "--close-round",
+        type=float,
+        nargs="?",
+        const=0.0,
+        default=None,
+        metavar="CPU_HOURS",
+        help="End the unfinished round after a stratified sample of its "
+        "remaining draws worth CPU_HOURS of measured single-threaded time "
+        "(none if omitted); the full design is kept as "
+        "untrimmed_design_round<k>.feather",
+    )
+    run.add_argument(
+        "--cells",
+        type=Path,
+        default=None,
+        help="CSV of fixed cells (family, shape, auc, n_pos, n_neg, and "
+        "optionally reps) to replicate as the next round, instead of a "
+        "designed round",
+    )
+    run.add_argument(
+        "--reps", type=int, default=1000, help="Draws per cell without its own reps"
     )
     run.add_argument(
         "--dry-run", action="store_true", help="Print the next design's size and cost"
@@ -1746,6 +3477,13 @@ def main() -> None:
         help="Fit the surfaces and derive the rule",
     )
     fit.add_argument("--folds", type=int, default=5)
+    fit.add_argument(
+        "--assurance",
+        type=float,
+        default=0.9,
+        help="Posterior probability, at every admitted point, shape and "
+        "family, that the miss rate is at most the target",
+    )
     fit.set_defaults(handler=command_fit)
 
     args = parser.parse_args()

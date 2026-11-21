@@ -1,0 +1,37 @@
+{
+  "assurance": 0.9,
+  "recommended": [
+    {
+      "kind": "floor",
+      "threshold": 250.0,
+      "auc_exponent": 0.0,
+      "ratio_exponent": 0.0
+    },
+    {
+      "kind": "ratio_cap",
+      "threshold": 6.0,
+      "auc_exponent": 0.0,
+      "ratio_exponent": 0.0
+    },
+    {
+      "kind": "corner",
+      "threshold": 3.7,
+      "auc_exponent": 2.5,
+      "ratio_exponent": 0.0
+    }
+  ],
+  "current": [
+    {
+      "kind": "floor",
+      "threshold": 100,
+      "auc_exponent": 0.0,
+      "ratio_exponent": 0.0
+    },
+    {
+      "kind": "imbalance_corner",
+      "threshold": 12,
+      "auc_exponent": 2.5,
+      "ratio_exponent": 0.6666666666666666
+    }
+  ]
+}
