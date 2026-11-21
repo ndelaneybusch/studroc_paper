@@ -103,17 +103,23 @@ Usage
     uv run python stats/experiments/auto_rule_surface.py run --batch 40000 --dry-run
     uv run python stats/experiments/auto_rule_surface.py run --batch 40000
     uv run python stats/experiments/auto_rule_surface.py fit
+    uv run python stats/experiments/auto_rule_surface.py report
     uv run python stats/experiments/auto_rule_surface.py run --cells c.csv --reps 2000
 
 ``run`` resumes an unfinished round; otherwise it designs and runs the next
 one. ``fit`` writes ``report.md``, ``grid.feather``, ``rules.json`` and
-``surface.png`` to the output directory.
+``surface.png`` to the output directory, and caches the surfaces, the
+cross-validation and the band timings in ``fit_cache.pkl``. ``report`` rewrites
+those outputs from the cache in seconds, and refuses if the draws have changed
+since the fit.
 """
 
 import argparse
+import hashlib
 import json
 import multiprocessing
 import os
+import pickle
 import time
 import warnings
 from concurrent.futures import FIRST_COMPLETED, Future, ProcessPoolExecutor, wait
@@ -125,6 +131,7 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
+from scipy import ndimage
 from scipy.linalg import cho_factor, cho_solve, cholesky, solve_triangular
 from scipy.optimize import minimize
 from scipy.spatial import cKDTree
@@ -1801,17 +1808,13 @@ class Rule:
         return " and ".join(check.describe() for check in self.checks)
 
 
-# Hand-derived rule from the closed-form corner screen, kept as the reference
-# that fitted rules are compared against
+# Rule fitted before the rounds placed around the settings that bound it, kept
+# as the reference that fitted rules are compared against
 REFERENCE_RULE = Rule(
     (
-        Check(kind="floor", threshold=100),
-        Check(
-            kind="imbalance_corner",
-            threshold=12,
-            auc_exponent=2.5,
-            ratio_exponent=2 / 3,
-        ),
+        Check(kind="floor", threshold=250),
+        Check(kind="ratio_cap", threshold=6),
+        Check(kind="corner", threshold=3.7, auc_exponent=2.5),
     )
 )
 
@@ -2364,7 +2367,7 @@ def plot_surface(
         sharey=True,
         constrained_layout=True,
     )
-    styles = ("-", "--", ":", "-.")
+    styles = ("-", "--", "-.")
     meshes = {}
     for column, ratio in enumerate(PLOT_RATIOS):
         cell = grid[np.isclose(grid["ratio"], ratio)]
@@ -2469,6 +2472,8 @@ CRITERION_DESCRIPTIONS = {
     "contour": "near the 5% contour",
     "value": "where the surface was least certain near 5%",
     "cell": "replicated fixed cells",
+    "target": "around grid points that fail the assurance test only through "
+    "uncertainty and bound the rule",
 }
 # Smaller-class sizes and class ratios of the report's table of the largest
 # AUC the rule routes
@@ -2725,6 +2730,427 @@ def admits_cells(*, rule: Rule, cells: pd.DataFrame) -> NDArray:
     )
 
 
+# Confidence of safety at which the report counts a setting the rule sends to
+# the hybrid as left on the table, below the assurance the rule is held to
+SAFE_CONFIDENCE = 0.8
+# Largest regions of such settings the report describes, per rule
+TOP_REGIONS = 6
+# Bands of the smaller class and the class ratio that split a connected
+# region, which otherwise follows a rule's boundary across the whole grid
+REGION_N_EDGES = (300.0, 1_000.0, 3_000.0, 10_000.0)
+REGION_RATIO_EDGES = (2.5, 6.5)
+
+
+def grid_admits(*, rule: Rule, grid: pd.DataFrame) -> NDArray:
+    """Whether a rule admits each grid point."""
+    return rule.admits(
+        n_min=grid["n_min"].to_numpy(float),
+        auc=grid["auc"].to_numpy(float),
+        ratio=grid["ratio"].to_numpy(float),
+    )
+
+
+def hybrid_breakdown(
+    *, rules: dict[str, Rule], grid: pd.DataFrame, assurance: float
+) -> pd.DataFrame:
+    """How safe the settings each rule sends to the hybrid are.
+
+    Args:
+        rules: Rules by label.
+        grid: Output of :func:`worst_case_grid`.
+        assurance: Posterior probability of safety the rules are held to.
+
+    Returns:
+        One row per rule: the share of the grid sent to the hybrid, and how
+        that part splits by the best estimate and by the posterior
+        probability of safety, as shares of the part.
+    """
+    safe_at = {
+        level: (grid["exceedance"] <= 1 - level).to_numpy()
+        for level in (SAFE_CONFIDENCE, assurance)
+    }
+    below = (grid["p_mean"] <= ALPHA).to_numpy()
+    beyond = (grid["n_min"] * grid["ratio"] > ROUTED_N_MAX).to_numpy()
+    rows = {}
+    for label, rule in rules.items():
+        hybrid = ~grid_admits(rule=rule, grid=grid)
+        loose = hybrid & safe_at[SAFE_CONFIDENCE]
+        rows[label] = {
+            "grid share sent to the hybrid": percent(hybrid.mean()),
+            f"best estimate above {ALPHA:.0%}": percent(
+                (hybrid & ~below).sum() / hybrid.sum()
+            ),
+            f"best estimate at most {ALPHA:.0%}": percent(
+                (hybrid & below).sum() / hybrid.sum()
+            ),
+            f"safe with {SAFE_CONFIDENCE:.0%} confidence": percent(
+                loose.sum() / hybrid.sum()
+            ),
+            f"safe with {assurance:.0%} confidence": percent(
+                (hybrid & safe_at[assurance]).sum() / hybrid.sum()
+            ),
+            f"of the {SAFE_CONFIDENCE:.0%}-safe, larger class above "
+            f"{ROUTED_N_MAX:,}": percent((loose & beyond).sum() / max(loose.sum(), 1)),
+        }
+    table = pd.DataFrame(rows).T
+    table.index.name = "rule"
+    return table
+
+
+def grid_lattice(grid: pd.DataFrame) -> NDArray:
+    """Lattice indices (ratio, AUC, n_min) of each grid point.
+
+    Args:
+        grid: Output of :func:`worst_case_grid`.
+
+    Returns:
+        (rows, 3) integer indices into the axes of :func:`worst_case_grid`.
+    """
+    log_n = np.log(N_MIN_BOUNDS)
+    probit = norm.ppf(AUC_BOUNDS)
+    return np.column_stack(
+        [
+            np.abs(grid["ratio"].to_numpy()[:, None] - np.array(GRID_RATIOS)).argmin(1),
+            np.rint(
+                (norm.ppf(grid["auc"].to_numpy()) - probit[0])
+                / (probit[1] - probit[0])
+                * (GRID_AUC - 1)
+            ).astype(int),
+            np.rint(
+                (np.log(grid["n_min"].to_numpy()) - log_n[0])
+                / (log_n[1] - log_n[0])
+                * (GRID_N - 1)
+            ).astype(int),
+        ]
+    )
+
+
+def draws_to_assure(*, grid: pd.DataFrame, assurance: float) -> NDArray:
+    """Rough effective draws still needed at each grid point to reach assurance.
+
+    The worst-case posterior is treated as a binomial logit at the
+    best-estimate miss rate: the posterior SD implied by the exceedance gives
+    the effective draws behind it, and the SD that would put the target at the
+    assurance quantile gives the draws needed. Draws near a point inform its
+    neighbours within the surface's length scales, so the figure is a guide to
+    the local information required, not a design.
+
+    Args:
+        grid: Output of :func:`worst_case_grid`.
+        assurance: Posterior probability of safety to reach.
+
+    Returns:
+        Extra effective draws per point; zero where the point already meets
+        the assurance and infinite where its best estimate is above the target.
+    """
+    p = grid["p_mean"].to_numpy(float)
+    exceed = grid["exceedance"].to_numpy(float)
+    gap = logit(ALPHA) - logit(np.clip(p, 1e-6, 1 - 1e-6))
+    information = 1 / (p * (1 - p) * np.maximum(gap, 1e-12) ** 2)
+    now = norm.isf(np.clip(exceed, 1e-12, 0.5)) ** 2 * information
+    need = norm.ppf(assurance) ** 2 * information
+    extra = np.where(gap > 0, np.maximum(need - now, 0.0), np.inf)
+    return np.where(exceed <= 1 - assurance, 0.0, extra)
+
+
+def point_cost(grid: pd.DataFrame) -> NDArray:
+    """Modelled seconds per draw at each grid point's worst-case class sizes."""
+    larger = grid["n_min"] * grid["ratio"]
+    negative_minority = grid["worst_minority"] == "negative"
+    return cost_seconds(
+        pd.DataFrame(
+            {
+                "n_pos": np.where(negative_minority, larger, grid["n_min"]),
+                "n_neg": np.where(negative_minority, grid["n_min"], larger),
+            }
+        )
+    )
+
+
+def span(values: pd.Series, *, fmt: str) -> str:
+    """A range of values as text, or the single value if they agree."""
+    low, high = values.min(), values.max()
+    return (
+        f"{low:{fmt}}"
+        if f"{low:{fmt}}" == f"{high:{fmt}}"
+        else f"{low:{fmt}}-{high:{fmt}}"
+    )
+
+
+def safe_hybrid_regions(
+    *, rule: Rule, grid: pd.DataFrame, assurance: float
+) -> pd.DataFrame:
+    """Connected regions the rule sends to the hybrid that are probably safe.
+
+    A grid point belongs to a region if the rule sends it to the hybrid and
+    the posterior probability that its worst-case miss rate is at most the
+    target is at least :data:`SAFE_CONFIDENCE`. Regions are the connected
+    components of these points on the grid's lattice, neighbours sharing a
+    face (one step in the smaller class, the AUC or the class ratio), split
+    by the bands :data:`REGION_N_EDGES` and :data:`REGION_RATIO_EDGES` so
+    that each describes one stretch of the rule's boundary.
+
+    Args:
+        rule: The rule.
+        grid: Output of :func:`worst_case_grid`.
+        assurance: Posterior probability of safety the rule is held to.
+
+    Returns:
+        One row per region, largest first: its size, where it lies, how
+        close to the target it is, the checks that send it to the hybrid,
+        and the draws its hardest setting still needs to reach
+        ``assurance``.
+    """
+    mask = (
+        ~grid_admits(rule=rule, grid=grid)
+        & (grid["exceedance"] <= 1 - SAFE_CONFIDENCE).to_numpy()
+    )
+    lattice = grid_lattice(grid)
+    volume = np.zeros((len(GRID_RATIOS), GRID_AUC, GRID_N), dtype=bool)
+    volume[tuple(lattice[mask].T)] = True
+    labels, _ = ndimage.label(volume)
+    component = np.where(mask, labels[tuple(lattice.T)], 0)
+    band = np.digitize(grid["n_min"], REGION_N_EDGES) * (
+        len(REGION_RATIO_EDGES) + 1
+    ) + np.digitize(grid["ratio"], REGION_RATIO_EDGES)
+    keys = component * (len(REGION_N_EDGES) + 1) * (len(REGION_RATIO_EDGES) + 1) + band
+    _, inverse = np.unique(keys[mask], return_inverse=True)
+    region = np.zeros(len(grid), dtype=int)
+    region[mask] = inverse + 1
+    count = int(region.max())
+    extra = draws_to_assure(grid=grid, assurance=assurance)
+    cost = point_cost(grid)
+    args = {c: grid[c].to_numpy(float) for c in ("n_min", "auc", "ratio")}
+    failing = {check.describe(): ~check.admits(**args) for check in rule.checks}
+    rows = []
+    for k in range(1, count + 1):
+        members = region == k
+        part = grid[members]
+        hardest = int(np.argmax(np.where(members, extra, -1.0)))
+        worst = part.groupby(["worst_family", "worst_minority"]).size().idxmax()
+        shapes = part.loc[
+            (part["worst_family"] == worst[0]) & (part["worst_minority"] == worst[1]),
+            "worst_shape",
+        ]
+        rows.append(
+            {
+                "settings": int(members.sum()),
+                "grid share": percent(members.mean()),
+                "smaller class": span(part["n_min"], fmt=",.0f"),
+                "larger class": span(part["n_min"] * part["ratio"], fmt=",.0f"),
+                "AUC": span(part["auc"], fmt=".3f"),
+                "class ratio": span(part["ratio"], fmt=".3g"),
+                "worst family": FAMILIES[worst[0]].title,
+                "minority class": worst[1],
+                "typical worst shape": f"{shapes.median():.3g}",
+                "best estimate": span(part["p_mean"], fmt=".2%"),
+                f"safe at {assurance:.0%}": percent(
+                    (part["exceedance"] <= 1 - assurance).mean()
+                ),
+                "sent to the hybrid by": ", ".join(
+                    f"`{name}` ({fails[members].mean():.0%})"
+                    for name, fails in failing.items()
+                    if fails[members].mean() >= 0.5
+                ),
+                "draws at the hardest setting": f"{extra[hardest]:,.0f}",
+                "CPU-hours there": f"{extra[hardest] * cost[hardest] / 3600:,.1f}",
+            }
+        )
+    table = pd.DataFrame(rows)
+    if table.empty:
+        return table
+    table = table.sort_values("settings", ascending=False).head(TOP_REGIONS)
+    table.index = pd.RangeIndex(1, len(table) + 1, name="region")
+    return table
+
+
+def best_extra_clause(
+    *, rule: Rule, grid: pd.DataFrame, unsafe: NDArray
+) -> tuple[Rule | None, NDArray]:
+    """Best second conjunction to admit, as an alternative, beside a rule.
+
+    The routing becomes ``rule or clause``. The clause is searched like a
+    rule (:func:`search_rules`, :func:`recommend`, rounded on the strict
+    side) over the grid points the rule sends to the hybrid, so it must
+    exclude every unsafe point among them.
+
+    Args:
+        rule: The rule.
+        grid: Output of :func:`worst_case_grid`.
+        unsafe: Points the clause must exclude.
+
+    Returns:
+        The clause, or None if no clause admits anything, and the points it
+        adds to the rule.
+    """
+    hybrid = ~grid_admits(rule=rule, grid=grid)
+    sub = grid[hybrid].reset_index(drop=True)
+    if not unsafe[hybrid].any():
+        return None, np.zeros(len(grid), dtype=bool)
+    ladder = recommend(search=search_rules(grid=sub, unsafe=unsafe[hybrid]))
+    clause = ladder.loc[ladder["recommended"], "rounded"].iloc[0]
+    added = hybrid & grid_admits(rule=clause, grid=grid)
+    if not added.any():
+        return None, added
+    return clause, added
+
+
+def clause_options(*, rule: Rule, grid: pd.DataFrame, assurance: float) -> pd.DataFrame:
+    """Second clauses for a rule, now and if more draws tightened the surface.
+
+    Args:
+        rule: The rule.
+        grid: Output of :func:`worst_case_grid`.
+        assurance: Posterior probability of safety the rule is held to.
+
+    Returns:
+        Two rows: the best clause that every point it adds already passes at
+        ``assurance``, and the best clause whose points pass at
+        :data:`SAFE_CONFIDENCE`, which needs draws at those that do not yet
+        pass at ``assurance``. Each gives the clause, the grid share it adds,
+        the points needing draws, and the draws and modelled CPU-hours at the
+        hardest of them.
+    """
+    extra = draws_to_assure(grid=grid, assurance=assurance)
+    cost = point_cost(grid)
+    rows = {}
+    for scenario, level in (
+        (f"now, at {assurance:.0%}", assurance),
+        (
+            f"after draws lift {SAFE_CONFIDENCE:.0%}-safe settings to {assurance:.0%}",
+            SAFE_CONFIDENCE,
+        ),
+    ):
+        unsafe = (grid["exceedance"] > 1 - level).to_numpy()
+        clause, added = best_extra_clause(rule=rule, grid=grid, unsafe=unsafe)
+        pending = added & (grid["exceedance"] > 1 - assurance).to_numpy()
+        hardest = (
+            int(np.argmax(np.where(pending, extra, -1.0))) if pending.any() else None
+        )
+        rows[scenario] = {
+            "clause": clause.describe() if clause else "none",
+            "grid share added": percent(added.mean()),
+            "settings needing draws": f"{int(pending.sum()):,}",
+            "draws at the hardest setting": (
+                f"{extra[hardest]:,.0f}" if hardest is not None else "—"
+            ),
+            "CPU-hours there": (
+                f"{extra[hardest] * cost[hardest] / 3600:,.1f}"
+                if hardest is not None
+                else "—"
+            ),
+        }
+    table = pd.DataFrame(rows).T
+    table.index.name = "when"
+    return table
+
+
+def auc_headroom(
+    *,
+    rules: dict[str, Rule],
+    grid: pd.DataFrame,
+    assurance: float,
+    n_mins: tuple[int, ...],
+    ratios: tuple[float, ...],
+) -> pd.DataFrame:
+    """Largest AUC each rule admits beside the largest that is safe.
+
+    The safe limit at a smaller class and class ratio is the largest grid AUC
+    up to which every grid AUC passes the test at ``assurance``, at the grid
+    point nearest that smaller class.
+
+    Args:
+        rules: Rules by label.
+        grid: Output of :func:`worst_case_grid`.
+        assurance: Posterior probability of safety of the test.
+        n_mins: Smaller-class sizes of the rows.
+        ratios: Class ratios of the columns.
+
+    Returns:
+        One row per smaller class and one column per ratio, each cell giving
+        the rules' limits and the safe limit, ``hybrid`` where a rule admits
+        nothing and ``none`` where no AUC is safe.
+    """
+    limits = {
+        label: largest_routed_auc(rule=rule, n_mins=n_mins, ratios=ratios)
+        for label, rule in rules.items()
+    }
+    grid_n = np.unique(grid["n_min"])
+    table = pd.DataFrame(
+        index=pd.Index([f"{n:,.0f}" for n in n_mins], name="smaller class"),
+        columns=pd.Index([f"{r:g} : 1" for r in ratios], name="class ratio"),
+        dtype=object,
+    )
+    for i, n in enumerate(n_mins):
+        nearest = grid_n[np.abs(np.log(grid_n / n)).argmin()]
+        for j, ratio in enumerate(ratios):
+            column = grid[
+                np.isclose(grid["n_min"], nearest) & np.isclose(grid["ratio"], ratio)
+            ].sort_values("auc")
+            safe = (column["exceedance"] <= 1 - assurance).to_numpy()
+            run = int(np.argmin(safe)) if not safe.all() else len(safe)
+            safe_text = f"{column['auc'].iloc[run - 1]:.3f}" if run else "none"
+            table.iloc[i, j] = " / ".join(
+                [*(str(limits[label].iloc[i, j]) for label in rules), safe_text]
+            ) + (" †" if n * ratio > ROUTED_N_MAX else "")
+    return table
+
+
+# Exponents (AUC, ratio) of the two corner checks of the bent-corner form: a
+# steep check that binds at small samples and a flat one that binds at large
+STEEP_CORNERS = tuple(
+    (a, b) for a in (0.5, 0.75, 1.0, 1.25, 1.5) for b in (0.0, 1 / 3, 2 / 3)
+)
+FLAT_CORNERS = tuple((a, b) for a in (2.0, 2.5, 3.0, 4.0, 6.0) for b in (0.0, 1 / 3))
+
+
+def bent_corner_rule(*, grid: pd.DataFrame, unsafe: NDArray) -> tuple[Rule, float]:
+    """Best rule with two corner checks, optionally with a floor.
+
+    The rule search allows one corner check, whose limit on ``1 - AUC`` is a
+    power of the smaller class. Two corner checks of different exponents
+    bound ``1 - AUC`` by the larger of two powers, a frontier that bends
+    from steep at small samples to flat at large ones.
+
+    Args:
+        grid: Output of :func:`worst_case_grid`.
+        unsafe: Whether each grid point is unsafe.
+
+    Returns:
+        The best such rule, rounded on the strict side, and its grid share.
+    """
+    best: tuple[float, Rule] | None = None
+    for floor in ((), (("floor", (0.0, 0.0)),)):
+        for steep, flat in product(STEEP_CORNERS, FLAT_CORNERS):
+            parts = (*floor, ("imbalance_corner", steep), ("imbalance_corner", flat))
+            fit = solve_combination(
+                kinds=tuple(kind for kind, _ in parts),
+                exponents=tuple(exponent for _, exponent in parts),
+                grid=grid,
+                unsafe=unsafe,
+            )
+            if fit is None:
+                continue
+            rounded = Rule(
+                tuple(
+                    Check(
+                        kind="corner",
+                        threshold=c.threshold,
+                        auc_exponent=c.auc_exponent,
+                    )
+                    if c.kind == "imbalance_corner" and c.ratio_exponent == 0
+                    else c
+                    for c in (round_strict(check) for check in fit.rule.checks)
+                )
+            )
+            share = float(grid_admits(rule=rounded, grid=grid).mean())
+            if best is None or share > best[0]:
+                best = (share, rounded)
+    if best is None:
+        raise ValueError("No unsafe point to bound")
+    return best[1], best[0]
+
+
 def build_report(
     *,
     draws: pd.DataFrame,
@@ -2752,8 +3178,9 @@ def build_report(
         folds: Number of cross-validation folds behind ``predictions``.
 
     Returns:
-        The recommended rule and the current rule by label, and the report as
-        Markdown.
+        The recommended rule, the previous rule and, if one is within the
+        parsimony tolerance with more checks, the alternative rule, by label;
+        and the report as Markdown.
     """
     families = " and ".join(
         f"{f.title} ({f.label} from {f.shape_bounds[0]:g} to {f.shape_bounds[1]:g})"
@@ -2765,7 +3192,14 @@ def build_report(
     search = search_rules(grid=grid, unsafe=unsafe)
     ladder = recommend(search=search)
     recommended = ladder.loc[ladder["recommended"], "rounded"].iloc[0]
-    rules = {"recommended": recommended, "current": REFERENCE_RULE}
+    rules = {"recommended": recommended, "previous": REFERENCE_RULE}
+    # The rule with the most checks among those within the parsimony tolerance
+    # trades simplicity for a different shape of the admitted region
+    eligible = ladder[
+        ladder["admitted_share"] >= ladder["admitted_share"].max() - PARSIMONY_TOLERANCE
+    ]
+    if eligible["checks"].max() > ladder.loc[ladder["recommended"], "checks"].iloc[0]:
+        rules["alternative"] = eligible.loc[eligible["checks"].idxmax(), "rounded"]
     summaries = {
         label: rule_summary(rule=rule, grid=grid, unsafe=unsafe)
         for label, rule in rules.items()
@@ -2773,6 +3207,29 @@ def build_report(
     admitted_grid = recommended.admits(
         n_min=grid["n_min"], auc=grid["auc"], ratio=grid["ratio"]
     )
+    breakdown = hybrid_breakdown(rules=rules, grid=grid, assurance=assurance)
+    candidates = {
+        label: rules[label]
+        for label in ("recommended", "alternative")
+        if label in rules
+    }
+    regions = {
+        label: safe_hybrid_regions(rule=rule, grid=grid, assurance=assurance)
+        for label, rule in candidates.items()
+    }
+    clauses = {
+        label: clause_options(rule=rule, grid=grid, assurance=assurance)
+        for label, rule in candidates.items()
+    }
+    loose_column = f"safe with {SAFE_CONFIDENCE:.0%} confidence"
+    headroom = auc_headroom(
+        rules=candidates,
+        grid=grid,
+        assurance=assurance,
+        n_mins=SUMMARY_N_MIN,
+        ratios=SUMMARY_RATIOS,
+    )
+    bent, bent_share = bent_corner_rule(grid=grid, unsafe=unsafe)
 
     reliability = reliability_table(predictions=predictions)
     near = reliability[reliability["predicted"].between(0.02, 0.12)]
@@ -2888,9 +3345,11 @@ def build_report(
             f"significantly above {ALPHA:.0%}"
         )
         + " (Section 6).",
-        f"- The rule currently in `hybrid_band.md` §4.4 "
-        f"(`{REFERENCE_RULE.describe()}`) admits "
-        f"{summaries['current']['unsafe_admitted']:,} settings that fail the "
+        f"- The previous rule, fitted before the rounds placed around the "
+        f"settings that bound it (`{REFERENCE_RULE.describe()}`), admits "
+        f"{summaries['previous']['unsafe_admitted']:,} "
+        f"setting{'' if summaries['previous']['unsafe_admitted'] == 1 else 's'} "
+        f"that fail{'s' if summaries['previous']['unsafe_admitted'] == 1 else ''} the "
         f"same test; the recommended rule admits none (Section 5.4).",
         "",
         "**Limits.**",
@@ -2919,6 +3378,25 @@ def build_report(
         f"the edge of the design (Section 5.5).",
         "- The study evaluates the rule at the true AUC; at runtime the "
         "empirical AUC stands in for it.",
+        f"- The rule sends "
+        f"{breakdown.loc['recommended', 'grid share sent to the hybrid']} of the "
+        f"grid to the hybrid; "
+        f"{breakdown.loc['recommended', loose_column]} of that is safe with "
+        f"{SAFE_CONFIDENCE:.0%} confidence, mostly in slivers along the rule's "
+        f"boundary"
+        + (
+            f". The largest such region has a smaller class of "
+            f"{regions['recommended'].iloc[0]['smaller class']}, AUC "
+            f"{regions['recommended'].iloc[0]['AUC']} and class ratio "
+            f"{regions['recommended'].iloc[0]['class ratio']}"
+            if len(regions["recommended"])
+            else ""
+        )
+        + f". A second clause beside the rule would route a further "
+        f"{clauses['recommended'].iloc[0]['grid share added']} of the grid "
+        f"without new draws, and a rule with two corner checks "
+        f"{(bent_share - summaries['recommended']['admitted_share']) * 100:.1f} "
+        f"percentage points (Section 5.6).",
         f"- Shares of the grid quoted below count points of an evaluation grid "
         f"(log class size, probit AUC, ten class ratios) without weights. They "
         f"compare candidate rules and do not estimate how often users are "
@@ -3108,13 +3586,26 @@ def build_report(
         else:
             cell_findings.append(f"No cell is significantly above {ALPHA:.0%}.")
         predicted_high = cell_table[cell_table["p_surface"] > ALPHA]
-        if (
-            len(predicted_high)
-            and not admits_cells(rule=recommended, cells=predicted_high).any()
-        ):
+        if len(predicted_high):
+            high_admitted = admits_cells(rule=recommended, cells=predicted_high)
+            high_ids = predicted_high.index.get_level_values("cell")
+            high_far = (
+                predicted_high[["n_pos", "n_neg"]].max(axis=1) > ROUTED_N_MAX
+            ).to_numpy()
             cell_findings.append(
                 f"All {len(predicted_high)} cells whose best estimate exceeds "
                 f"{ALPHA:.0%} are routed to the hybrid."
+                if not high_admitted.any()
+                else f"Of the {len(predicted_high)} cells whose best estimate "
+                f"exceeds {ALPHA:.0%}, the rule admits "
+                + ", ".join(
+                    f"cell {c}"
+                    + (f" (larger class above {ROUTED_N_MAX:,})" if far else "")
+                    for c, far in zip(
+                        high_ids[high_admitted], high_far[high_admitted], strict=True
+                    )
+                )
+                + "."
             )
         lines += [
             "## 4. Replicated cells: a direct check where it matters",
@@ -3210,10 +3701,10 @@ def build_report(
         "The last row counts settings that more than one check excludes; they "
         "lie deep inside the unsafe region and do not bear on any one check.",
         "",
-        "### 5.4 Sensitivity, and the current rule",
+        "### 5.4 Sensitivity, and the previous rule",
         "",
-        "The recommended rule at other assurance levels, and the rule currently "
-        "in `hybrid_band.md` §4.4 judged by the same test:",
+        "The recommended rule at other assurance levels, and the previous rule "
+        "judged by the same test:",
         "",
     ]
     by_level = {}
@@ -3227,10 +3718,15 @@ def build_report(
                 summary=rule_summary(rule=rule, grid=grid, unsafe=level_unsafe)
             ),
         }
-    by_level[f"current, judged at {assurance:.0%}"] = {
+    by_level[f"previous, judged at {assurance:.0%}"] = {
         "rule": REFERENCE_RULE.describe(),
-        **summary_columns(summary=summaries["current"]),
+        **summary_columns(summary=summaries["previous"]),
     }
+    if "alternative" in rules:
+        by_level[f"alternative at {assurance:.0%} assurance"] = {
+            "rule": rules["alternative"].describe(),
+            **summary_columns(summary=summaries["alternative"]),
+        }
     beyond = grid[admitted_grid & ~routed]
     beyond_high = beyond[beyond["p_mean"] > ALPHA]
     beyond_unsafe = int(unsafe_anywhere[admitted_grid & ~routed].sum())
@@ -3264,6 +3760,77 @@ def build_report(
         markdown_table(cell_display[far], floatfmt=".4f")
         if far.any()
         else "No replicated cell lies there.",
+        "",
+    ]
+    lines += [
+        "### 5.6 Safe settings the rule sends to the hybrid",
+        "",
+        "Sending a safe setting to the hybrid costs width at small samples and "
+        "compute at large ones (Section 1). A setting goes to the hybrid either "
+        "because it is unsafe or because a few simple checks cannot carve it "
+        "out from unsafe neighbours. The table splits the part of the grid each "
+        "rule sends to the hybrid by its best estimate and by the probability "
+        "that it is safe:",
+        "",
+        markdown_table(breakdown, floatfmt=".4f"),
+        "",
+        "**Where the slack is.** At each smaller class and class ratio, the "
+        "largest AUC the "
+        + " and the ".join(f"{label} rule" for label in candidates)
+        + f" admit, then the largest AUC up to which every setting is safe at "
+        f"{assurance:.0%} (`none` where the lowest AUC already fails). A † marks "
+        f"a larger class above {ROUTED_N_MAX:,}, where rules are not held to "
+        "the test:",
+        "",
+        markdown_table(headroom, floatfmt=".3f"),
+        "",
+        "A single corner check bounds `1 - AUC` by one power of the smaller "
+        "class, a straight line on log scales. The safe limit is not straight: "
+        "it rises quickly with the smaller class at small samples and levels "
+        "off at large ones. Two corner checks of different exponents follow "
+        f"such a bend. The best rule of that form, `{bent.describe()}`, admits "
+        f"{percent(bent_share)} of the grid against "
+        f"{percent(summaries['recommended']['admitted_share'])} for the "
+        "recommended rule; the rest of the slack lies in thin slivers beside "
+        "unsafe settings, which no few checks can follow.",
+        "",
+    ]
+    for label, rule in candidates.items():
+        table = regions[label]
+        lines += [
+            f"**{label.capitalize()} rule** (`{rule.describe()}`). "
+            + (
+                f"The largest connected regions it sends to the hybrid that are "
+                f"safe with {SAFE_CONFIDENCE:.0%} confidence (settings are "
+                f"connected if they differ by one step of the grid in the "
+                f"smaller class, the AUC or the class ratio):"
+                if len(table)
+                else f"It sends no setting that is safe with "
+                f"{SAFE_CONFIDENCE:.0%} confidence to the hybrid."
+            ),
+            "",
+        ]
+        if len(table):
+            lines += [markdown_table(table, floatfmt=".4f"), ""]
+        lines += [
+            "A second clause admitted beside the rule (`rule or clause`) can "
+            "route part of this without loosening the rule's checks. Searched "
+            "like the rule over the settings it sends to the hybrid, and held "
+            "to the test at every class size:",
+            "",
+            markdown_table(clauses[label], floatfmt=".4f"),
+            "",
+        ]
+    lines += [
+        "*Sent to the hybrid by* lists the checks that at least half of a "
+        "region fails, with the share failing. *Draws at the hardest setting* "
+        f"is a rough count of the effective draws the region's least certain "
+        f"setting still needs for {assurance:.0%} assurance, treating its "
+        "posterior as binomial at the best estimate; draws nearby inform it "
+        "too, so this is a guide to the information required rather than a "
+        "design. Regions whose settings are mostly safe at "
+        f"{assurance:.0%} already need only a different rule; the rest need "
+        "draws first.",
         "",
     ]
     lines += [
@@ -3314,7 +3881,9 @@ def build_report(
         f"probability that it exceeds {ALPHA:.0%} (bottom row). The black "
         f"contour marks the {assurance:.0%} assurance boundary; the solid green "
         "line encloses the settings the recommended rule admits, the dashed "
-        "line those of the current rule. The dotted black line marks a larger "
+        "line those of the previous rule and the dash-dot line those of the "
+        "alternative rule, where there is one (Section 5.6). The dotted black "
+        "line marks a larger "
         f"class of {ROUTED_N_MAX:,}, beyond which the rule is not held to the "
         "assurance test (Section 5.5), so the green line may cross the black "
         "contour to its right. The grey line marks the largest smaller class "
@@ -3347,36 +3916,85 @@ def build_report(
     return rules, "\n".join(lines)
 
 
-def command_fit(args: argparse.Namespace) -> None:
-    """Fit the surfaces, derive the rules and write the report."""
-    out_dir: Path = args.out_dir
-    draws = in_design_space(frame=load_draws(hot_start=args.hot_start, out_dir=out_dir))
-    draws["miss"] = draws["miss"].astype(bool)
-    surfaces = fit_surfaces(draws=draws, seed=args.seed)
-    predictions = cross_validate(
-        draws=draws, surfaces=surfaces, folds=args.folds, seed=args.seed
+# Results of a fit that the report reuses, so that it can be rewritten without
+# refitting
+FIT_CACHE = "fit_cache.pkl"
+
+
+@dataclass(frozen=True, kw_only=True)
+class FitArtifacts:
+    """The slow parts of a fit, cached for :func:`command_report`.
+
+    Attributes:
+        fingerprint: :func:`draws_fingerprint` of the draws fitted.
+        seed: Seed of the fit and the cross-validation.
+        folds: Number of cross-validation folds.
+        surfaces: Fitted surface by family name.
+        predictions: Output of :func:`cross_validate`.
+        grid: Output of :func:`worst_case_grid`.
+        paired: Output of :func:`paired_floor_effect`.
+        timing: Output of :func:`time_bands`.
+    """
+
+    fingerprint: str
+    seed: int
+    folds: int
+    surfaces: dict[str, Surface]
+    predictions: pd.DataFrame
+    grid: pd.DataFrame
+    paired: pd.DataFrame
+    timing: pd.DataFrame
+
+
+def draws_fingerprint(draws: pd.DataFrame) -> str:
+    """Hash of the draws' contents, to tell whether a cached fit is current."""
+    hashed = pd.util.hash_pandas_object(draws, index=False).to_numpy()
+    return hashlib.sha256(hashed.tobytes()).hexdigest()
+
+
+def load_fit_draws(args: argparse.Namespace) -> pd.DataFrame:
+    """The draws a fit uses: every draw in the design space, misses as bool."""
+    draws = in_design_space(
+        frame=load_draws(hot_start=args.hot_start, out_dir=args.out_dir)
     )
-    grid = worst_case_grid(surfaces=surfaces, target=ALPHA)
-    grid.to_feather(out_dir / "grid.feather")
+    draws["miss"] = draws["miss"].astype(bool)
+    return draws
+
+
+def write_outputs(
+    *, artifacts: FitArtifacts, draws: pd.DataFrame, out_dir: Path, assurance: float
+) -> None:
+    """Derive the rules and write the report, figure, grid and rules.
+
+    Args:
+        artifacts: The fit.
+        draws: The draws fitted.
+        out_dir: Directory of the outputs.
+        assurance: Posterior probability of safety the rules are held to.
+    """
+    artifacts.grid.to_feather(out_dir / "grid.feather")
     rules, report = build_report(
         draws=draws,
         rounds=load_rounds(out_dir),
-        surfaces=surfaces,
-        predictions=predictions,
-        grid=grid,
-        paired=paired_floor_effect(directories=args.hot_start),
-        timing=time_bands(sizes=TIMING_SIZES),
-        assurance=args.assurance,
-        folds=args.folds,
+        surfaces=artifacts.surfaces,
+        predictions=artifacts.predictions,
+        grid=artifacts.grid,
+        paired=artifacts.paired,
+        timing=artifacts.timing,
+        assurance=assurance,
+        folds=artifacts.folds,
     )
     plot_surface(
-        grid=grid, rules=rules, assurance=args.assurance, path=out_dir / "surface.png"
+        grid=artifacts.grid,
+        rules=rules,
+        assurance=assurance,
+        path=out_dir / "surface.png",
     )
     (out_dir / "report.md").write_text(report, encoding="utf-8")
     (out_dir / "rules.json").write_text(
         json.dumps(
             {
-                "assurance": args.assurance,
+                "assurance": assurance,
                 **{
                     label: [asdict(check) for check in rule.checks]
                     for label, rule in rules.items()
@@ -3387,6 +4005,44 @@ def command_fit(args: argparse.Namespace) -> None:
         encoding="utf-8",
     )
     print(report)
+
+
+def command_fit(args: argparse.Namespace) -> None:
+    """Fit the surfaces, cache the fit, derive the rules and write the report."""
+    draws = load_fit_draws(args)
+    surfaces = fit_surfaces(draws=draws, seed=args.seed)
+    artifacts = FitArtifacts(
+        fingerprint=draws_fingerprint(draws),
+        seed=args.seed,
+        folds=args.folds,
+        surfaces=surfaces,
+        predictions=cross_validate(
+            draws=draws, surfaces=surfaces, folds=args.folds, seed=args.seed
+        ),
+        grid=worst_case_grid(surfaces=surfaces, target=ALPHA),
+        paired=paired_floor_effect(directories=args.hot_start),
+        timing=time_bands(sizes=TIMING_SIZES),
+    )
+    with (args.out_dir / FIT_CACHE).open("wb") as handle:
+        pickle.dump(artifacts, handle)
+    write_outputs(
+        artifacts=artifacts, draws=draws, out_dir=args.out_dir, assurance=args.assurance
+    )
+
+
+def command_report(args: argparse.Namespace) -> None:
+    """Rewrite the report from the cached fit, without refitting."""
+    cache = args.out_dir / FIT_CACHE
+    if not cache.exists():
+        raise SystemExit(f"No cached fit at {cache}; run fit first")
+    with cache.open("rb") as handle:
+        artifacts: FitArtifacts = pickle.load(handle)
+    draws = load_fit_draws(args)
+    if draws_fingerprint(draws) != artifacts.fingerprint:
+        raise SystemExit("The draws have changed since the cached fit; run fit")
+    write_outputs(
+        artifacts=artifacts, draws=draws, out_dir=args.out_dir, assurance=args.assurance
+    )
 
 
 def main() -> None:
@@ -3485,6 +4141,21 @@ def main() -> None:
         "family, that the miss rate is at most the target",
     )
     fit.set_defaults(handler=command_fit)
+
+    report = commands.add_parser(
+        "report",
+        parents=[shared],
+        formatter_class=formatter,
+        help="Rewrite the report, figure and rules from the cached fit",
+    )
+    report.add_argument(
+        "--assurance",
+        type=float,
+        default=0.9,
+        help="Posterior probability, at every admitted point, shape and "
+        "family, that the miss rate is at most the target",
+    )
+    report.set_defaults(handler=command_report)
 
     args = parser.parse_args()
     args.handler(args)

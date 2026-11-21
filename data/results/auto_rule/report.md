@@ -6,38 +6,38 @@
 
 **Recommended rule.** Use the unfloored band when all of the following hold, and the hybrid otherwise (`n_min` and `n_max` are the smaller and larger class counts):
 
-- the smaller class has at least 250 cases.
-- the larger class is at most 6 times the smaller (prevalence of the minority class at least 14%).
-- the AUC is low enough for the sample size: `n_min * (1 - AUC)^2.5 >= 3.7`. The left side grows with the expected number of minority cases beyond the ROC's corner, so the largest AUC allowed rises with the smaller class.
+- the smaller class has at least 160 cases.
+- the AUC is low enough for the sample size: `n_min * (1 - AUC)^2 >= 18`. The left side grows with the expected number of minority cases beyond the ROC's corner, so the largest AUC allowed rises with the smaller class.
 
-In one line: `n_min >= 250 and n_max / n_min <= 6 and n_min * (1 - AUC)^2.5 >= 3.7`.
+In one line: `n_min >= 160 and n_min * (1 - AUC)^2 >= 18`.
 
-**What safe means.** A *miss* is a dataset whose band fails to contain the true ROC somewhere; at 95% confidence the target miss rate is 5%. At every setting the rule admits with a larger class of at most 10,000, the fitted model gives at least 90% probability that the miss rate is at most 5%. This holds for the worst score distribution in the two families known to break the unfloored band, Student-t location shift (degrees of freedom from 1.1 to 30) and heteroscedastic Gaussian (sigma ratio (positive / negative) from 0.2 to 5), with either class as the minority. The largest best-estimate miss rate the rule admits there is 4.67%.
+**What safe means.** A *miss* is a dataset whose band fails to contain the true ROC somewhere; at 95% confidence the target miss rate is 5%. At every setting the rule admits with a larger class of at most 10,000, the fitted model gives at least 90% probability that the miss rate is at most 5%. This holds for the worst score distribution in the two families known to break the unfloored band, Student-t location shift (degrees of freedom from 1.1 to 30) and heteroscedastic Gaussian (sigma ratio (positive / negative) from 0.2 to 5), with either class as the minority. The largest best-estimate miss rate the rule admits there is 4.47%.
 
 **Where it routes.** The largest AUC sent to the unfloored band, by the size of the smaller class and the class ratio. Above it, and wherever the table says hybrid, the hybrid is used:
 
 | smaller class | 1 : 1 | 2 : 1 | 4 : 1 | 6 : 1 | 9 : 1 | 19 : 1 |
 | --- | --- | --- | --- | --- | --- | --- |
 | 100 | hybrid | hybrid | hybrid | hybrid | hybrid | hybrid |
-| 250 | 0.815 | 0.815 | 0.815 | 0.815 | hybrid | hybrid |
-| 500 | 0.859 | 0.859 | 0.859 | 0.859 | hybrid | hybrid |
-| 1,000 | 0.893 | 0.893 | 0.893 | 0.893 | hybrid | hybrid |
-| 3,000 | 0.931 | 0.931 | 0.931 | 0.931 | hybrid | hybrid |
-| 10,000 | 0.958 | 0.958 | 0.958 | 0.958 | hybrid | hybrid |
+| 250 | 0.732 | 0.732 | 0.732 | 0.732 | 0.732 | 0.732 |
+| 500 | 0.810 | 0.810 | 0.810 | 0.810 | 0.810 | 0.810 |
+| 1,000 | 0.866 | 0.866 | 0.866 | 0.866 | 0.866 | 0.866 |
+| 3,000 | 0.922 | 0.922 | 0.922 | 0.922 | 0.922 | 0.922 |
+| 10,000 | 0.958 | 0.958 | 0.958 | 0.958 | 0.958 | 0.958 |
 
 **Evidence.**
 
-- The model of the miss rate predicts held-out data well: between predicted rates of 2% and 12%, predictions are within 0.6 percentage points of observed rates (Section 3).
-- At 22 fixed settings, each simulated up to 1,000 times, 21 observed miss rates have 95% intervals that contain the model's prediction (Section 4).
-- Without any model: of the 373,263 simulated datasets the rule admits, 2.30% missed, and no group by family, class ratio and shape is significantly above 5% (Section 6).
-- The rule currently in `hybrid_band.md` §4.4 (`n_min >= 100 and n_min * (1 - AUC)^2.5 / ratio^0.667 >= 12`) admits 30 settings that fail the same test; the recommended rule admits none (Section 5.4).
+- The model of the miss rate predicts held-out data well: between predicted rates of 2% and 12%, predictions are within 0.5 percentage points of observed rates (Section 3).
+- At 26 fixed settings, each simulated up to 1,000 times, 25 observed miss rates have 95% intervals that contain the model's prediction (Section 4).
+- Without any model: of the 552,014 simulated datasets the rule admits, 2.41% missed, and no group by family, class ratio and shape is significantly above 5% (Section 6).
+- The previous rule, fitted before the rounds placed around the settings that bound it (`n_min >= 250 and n_max / n_min <= 6 and n_min * (1 - AUC)^2.5 >= 3.7`), admits 1 setting that fails the same test; the recommended rule admits none (Section 5.4).
 
 **Limits.**
 
 - Only the two families above are modelled. They are the known failure modes, but other score distributions are not covered.
-- Above a larger class of 10,000 the simulated data are sparse and the rule is not held to the 90% test; there the floor costs far more compute and buys no width (Section 1). The 7 replicated settings measured there that the rule admits missed at 3.1%-5.1%, none significantly above 5%; the model's best estimate, extended past its data, reaches 6.46% at the edge of the design (Section 5.5).
+- Above a larger class of 10,000 the simulated data are sparse and the rule is not held to the 90% test; there the floor costs far more compute and buys no width (Section 1). The 12 replicated settings measured there that the rule admits missed at 2.5%-5.1%, none significantly above 5%; the model's best estimate, extended past its data, reaches 6.59% at the edge of the design (Section 5.5).
 - The study evaluates the rule at the true AUC; at runtime the empirical AUC stands in for it.
-- Shares of the grid quoted below count points of an evaluation grid (log class size, probit AUC, ten class ratios) without weights. They compare candidate rules and do not estimate how often users are routed. The recommended rule admits 24.2% of the grid.
+- The rule sends 69.6% of the grid to the hybrid; 8.9% of that is safe with 80% confidence, mostly in slivers along the rule's boundary. The largest such region has a smaller class of 317-956, AUC 0.772-0.942 and class ratio 1-2.33. A second clause beside the rule would route a further 1.9% of the grid without new draws, and a rule with two corner checks 1.7 percentage points (Section 5.6).
+- Shares of the grid quoted below count points of an evaluation grid (log class size, probit AUC, ten class ratios) without weights. They compare candidate rules and do not estimate how often users are routed. The recommended rule admits 30.4% of the grid.
 
 ## 1. What routing buys
 
@@ -73,8 +73,8 @@ The earlier studies computed both bands on the same datasets, so they can be com
 | positives / negatives | unfloored (s) | hybrid (s) |
 | --- | --- | --- |
 | 1,000 / 1,000 | 0.2 | 0.5 |
-| 1,000 / 9,000 | 0.5 | 23.7 |
-| 10,000 / 10,000 | 0.8 | 26.4 |
+| 1,000 / 9,000 | 0.5 | 22.8 |
+| 10,000 / 10,000 | 0.8 | 25.4 |
 
 So the rule's job is to find where the unfloored band is safe and to send everything else to the hybrid.
 
@@ -94,6 +94,9 @@ Each draw is one simulated dataset: scores from one of the two families at a cho
 | round2 | This study, 75% where the surface was least certain near 5%, 25% spread over the design space | 14,886 | 10-99,925 | 3.6% |
 | round3 | This study, 75% where the surface was least certain near 5%, 25% spread over the design space | 19,892 | 10-99,875 | 3.4% |
 | round4 | This study, 100% replicated fixed cells | 21,000 | 120-80,000 | 4.5% |
+| round5 | This study, 100% around grid points that fail the assurance test only through uncertainty and bound the rule | 48,620 | 224-12,189 | 2.8% |
+| round6 | This study, 100% around grid points that fail the assurance test only through uncertainty and bound the rule | 47,555 | 2,132-11,699 | 2.9% |
+| round7 | This study, 100% replicated fixed cells | 8,000 | 210-1,000 | 4.5% |
 
 ## 3. The model of the miss rate, and how well it predicts
 
@@ -103,19 +106,19 @@ Held-out check: the data were split into 5 parts, and each part was predicted fr
 
 | predicted miss rate | datasets | predicted | observed | standard error |
 | --- | --- | --- | --- | --- |
-| 0%-1% | 351,478 | 0.72% | 0.91% | 0.02% |
-| 1%-2% | 809,099 | 1.48% | 1.50% | 0.01% |
-| 2%-3% | 676,244 | 2.46% | 2.42% | 0.02% |
-| 3%-4% | 190,069 | 3.41% | 3.17% | 0.04% |
-| 4%-5% | 95,773 | 4.46% | 4.07% | 0.06% |
-| 5%-6% | 66,826 | 5.47% | 4.90% | 0.08% |
-| 6%-8% | 73,424 | 6.89% | 6.41% | 0.09% |
-| 8%-12% | 71,133 | 9.73% | 9.11% | 0.11% |
-| 12%-20% | 61,673 | 15.43% | 16.14% | 0.15% |
-| 20%-40% | 53,510 | 27.99% | 29.97% | 0.20% |
-| 40%-100% | 16,749 | 48.69% | 48.45% | 0.39% |
+| 0%-1% | 352,209 | 0.73% | 0.91% | 0.02% |
+| 1%-2% | 807,644 | 1.48% | 1.51% | 0.01% |
+| 2%-3% | 744,752 | 2.47% | 2.41% | 0.02% |
+| 3%-4% | 213,304 | 3.40% | 3.15% | 0.04% |
+| 4%-5% | 105,858 | 4.46% | 4.16% | 0.06% |
+| 5%-6% | 69,518 | 5.46% | 4.99% | 0.08% |
+| 6%-8% | 74,627 | 6.89% | 6.40% | 0.09% |
+| 8%-12% | 71,483 | 9.73% | 9.27% | 0.11% |
+| 12%-20% | 61,109 | 15.40% | 16.17% | 0.15% |
+| 20%-40% | 53,031 | 28.13% | 30.26% | 0.20% |
+| 40%-100% | 16,618 | 49.11% | 48.10% | 0.39% |
 
-Between 2% and 12%, the range the rule depends on, predictions are within 0.6 percentage points of the observed rates. Around the 5% target the model predicts slightly more misses than occur, which errs toward caution.
+Between 2% and 12%, the range the rule depends on, predictions are within 0.5 percentage points of the observed rates. Around the 5% target the model predicts slightly more misses than occur, which errs toward caution.
 
 ## 4. Replicated cells: a direct check where it matters
 
@@ -123,30 +126,34 @@ Most draws sit at their own setting, which lets the model borrow strength across
 
 | cell | family | shape | AUC | positives | negatives | datasets | observed miss rate (95% interval) | model's best estimate | model's P(miss rate > 5%) | routed to |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 0 | heteroscedastic Gaussian | 0.2 | 0.750 | 120 | 120 | 1,000 | 6.1% (4.8%-7.8%) | 5.8% | 99.9% | hybrid |
-| 1 | heteroscedastic Gaussian | 0.2 | 0.924 | 420 | 420 | 1,000 | 5.5% (4.2%-7.1%) | 5.6% | 98.0% | hybrid |
-| 2 | heteroscedastic Gaussian | 0.2 | 0.830 | 320 | 160 | 1,000 | 7.3% (5.8%-9.1%) | 6.4% | 100.0% | hybrid |
-| 3 | heteroscedastic Gaussian | 0.3 | 0.850 | 640 | 160 | 1,000 | 5.2% (4.0%-6.8%) | 5.3% | 87.3% | hybrid |
-| 4 | heteroscedastic Gaussian | 2.24 | 0.914 | 480 | 1,920 | 1,000 | 4.3% (3.2%-5.7%) | 5.2% | 77.5% | hybrid |
-| 5 | heteroscedastic Gaussian | 2.24 | 0.862 | 420 | 3,780 | 1,000 | 5.6% (4.3%-7.2%) | 5.3% | 93.2% | hybrid |
-| 6 | heteroscedastic Gaussian | 2.24 | 0.902 | 1,100 | 9,900 | 1,000 | 5.4% (4.2%-7.0%) | 5.4% | 96.2% | hybrid |
-| 7 | heteroscedastic Gaussian | 2.24 | 0.862 | 550 | 10,450 | 1,000 | 5.2% (4.0%-6.8%) | 5.6% | 94.0% | hybrid |
-| 8 | heteroscedastic Gaussian | 2.24 | 0.924 | 3,300 | 62,700 | 500 | 5.0% (3.4%-7.3%) | 5.6% | 81.5% | hybrid |
-| 9 | heteroscedastic Gaussian | 0.3 | 0.772 | 945 | 105 | 1,000 | 3.6% (2.6%-4.9%) | 4.7% | 23.3% | hybrid |
-| 10 | heteroscedastic Gaussian | 5 | 0.792 | 6,080 | 320 | 1,000 | 2.6% (1.8%-3.8%) | 3.2% | 0.1% | hybrid |
-| 11 | Student-t location shift | 1.1 | 0.705 | 27,000 | 3,000 | 1,000 | 4.4% (3.3%-5.9%) | 3.9% | 0.2% | hybrid |
-| 12 | Student-t location shift | 1.1 | 0.705 | 36,100 | 1,900 | 1,000 | 2.5% (1.7%-3.7%) | 3.7% | 0.4% | hybrid |
-| 13 | Student-t location shift | 1.1 | 0.750 | 62,700 | 3,300 | 1,000 | 3.9% (2.9%-5.3%) | 3.6% | 0.4% | hybrid |
-| 14 | Student-t location shift | 4.7 | 0.924 | 34,800 | 8,700 | 1,000 | 3.1% (2.2%-4.4%) | 3.9% | 0.7% | unfloored |
-| 15 | Student-t location shift | 3.8 | 0.924 | 60,000 | 15,000 | 1,000 | 3.7% (2.7%-5.1%) | 4.3% | 7.1% | unfloored |
-| 16 | Student-t location shift | 3.8 | 0.924 | 40,000 | 20,000 | 1,000 | 4.6% (3.5%-6.1%) | 4.5% | 11.6% | unfloored |
-| 17 | Student-t location shift | 3.8 | 0.914 | 20,000 | 20,000 | 1,000 | 5.1% (3.9%-6.6%) | 4.3% | 4.2% | unfloored |
-| 18 | heteroscedastic Gaussian | 5 | 0.550 | 20,000 | 80,000 | 500 | 4.2% (2.8%-6.3%) | 4.8% | 36.3% | unfloored |
-| 19 | heteroscedastic Gaussian | 5 | 0.550 | 5,000 | 45,000 | 1,000 | 4.3% (3.2%-5.7%) | 4.1% | 5.2% | hybrid |
-| 20 | heteroscedastic Gaussian | 5 | 0.550 | 20,000 | 40,000 | 1,000 | 3.8% (2.8%-5.2%) | 4.0% | 0.7% | unfloored |
-| 21 | heteroscedastic Gaussian | 5 | 0.550 | 20,000 | 20,000 | 1,000 | 3.2% (2.3%-4.5%) | 3.2% | 0.0% | unfloored |
+| 0 | heteroscedastic Gaussian | 0.2 | 0.750 | 120 | 120 | 1,000 | 6.1% (4.8%-7.8%) | 6.3% | 100.0% | hybrid |
+| 1 | heteroscedastic Gaussian | 0.2 | 0.924 | 420 | 420 | 1,000 | 5.5% (4.2%-7.1%) | 6.0% | 100.0% | hybrid |
+| 2 | heteroscedastic Gaussian | 0.2 | 0.830 | 320 | 160 | 1,000 | 7.3% (5.8%-9.1%) | 7.0% | 100.0% | hybrid |
+| 3 | heteroscedastic Gaussian | 0.3 | 0.850 | 640 | 160 | 1,000 | 5.2% (4.0%-6.8%) | 5.1% | 62.8% | hybrid |
+| 4 | heteroscedastic Gaussian | 2.24 | 0.914 | 480 | 1,920 | 1,000 | 4.3% (3.2%-5.7%) | 5.3% | 91.0% | hybrid |
+| 5 | heteroscedastic Gaussian | 2.24 | 0.862 | 420 | 3,780 | 1,000 | 5.6% (4.3%-7.2%) | 5.4% | 98.3% | hybrid |
+| 6 | heteroscedastic Gaussian | 2.24 | 0.902 | 1,100 | 9,900 | 1,000 | 5.4% (4.2%-7.0%) | 5.4% | 97.2% | hybrid |
+| 7 | heteroscedastic Gaussian | 2.24 | 0.862 | 550 | 10,450 | 1,000 | 5.2% (4.0%-6.8%) | 5.8% | 98.7% | hybrid |
+| 8 | heteroscedastic Gaussian | 2.24 | 0.924 | 3,300 | 62,700 | 500 | 5.0% (3.4%-7.3%) | 5.3% | 66.2% | unfloored |
+| 9 | heteroscedastic Gaussian | 0.3 | 0.772 | 945 | 105 | 1,000 | 3.6% (2.6%-4.9%) | 4.5% | 4.9% | hybrid |
+| 10 | heteroscedastic Gaussian | 5 | 0.792 | 6,080 | 320 | 1,000 | 2.6% (1.8%-3.8%) | 3.0% | 0.0% | hybrid |
+| 11 | Student-t location shift | 1.1 | 0.705 | 27,000 | 3,000 | 1,000 | 4.4% (3.3%-5.9%) | 3.9% | 0.3% | unfloored |
+| 12 | Student-t location shift | 1.1 | 0.705 | 36,100 | 1,900 | 1,000 | 2.5% (1.7%-3.7%) | 3.7% | 0.2% | unfloored |
+| 13 | Student-t location shift | 1.1 | 0.750 | 62,700 | 3,300 | 1,000 | 3.9% (2.9%-5.3%) | 3.5% | 0.3% | unfloored |
+| 14 | Student-t location shift | 4.7 | 0.924 | 34,800 | 8,700 | 1,000 | 3.1% (2.2%-4.4%) | 3.8% | 0.4% | unfloored |
+| 15 | Student-t location shift | 3.8 | 0.924 | 60,000 | 15,000 | 1,000 | 3.7% (2.7%-5.1%) | 4.3% | 7.9% | unfloored |
+| 16 | Student-t location shift | 3.8 | 0.924 | 40,000 | 20,000 | 1,000 | 4.6% (3.5%-6.1%) | 4.4% | 7.8% | unfloored |
+| 17 | Student-t location shift | 3.8 | 0.914 | 20,000 | 20,000 | 1,000 | 5.1% (3.9%-6.6%) | 4.2% | 2.3% | unfloored |
+| 18 | heteroscedastic Gaussian | 5 | 0.550 | 20,000 | 80,000 | 500 | 4.2% (2.8%-6.3%) | 4.8% | 36.6% | unfloored |
+| 19 | heteroscedastic Gaussian | 5 | 0.550 | 5,000 | 45,000 | 1,000 | 4.3% (3.2%-5.7%) | 4.0% | 2.1% | unfloored |
+| 20 | heteroscedastic Gaussian | 5 | 0.550 | 20,000 | 40,000 | 1,000 | 3.8% (2.8%-5.2%) | 4.0% | 0.9% | unfloored |
+| 21 | heteroscedastic Gaussian | 5 | 0.550 | 20,000 | 20,000 | 1,000 | 3.2% (2.3%-4.5%) | 3.3% | 0.0% | unfloored |
+| 22 | heteroscedastic Gaussian | 0.2 | 0.825 | 210 | 210 | 2,000 | 5.6% (4.7%-6.7%) | 5.3% | 96.3% | hybrid |
+| 23 | heteroscedastic Gaussian | 0.2 | 0.800 | 630 | 210 | 2,000 | 4.9% (4.0%-5.9%) | 4.9% | 26.4% | hybrid |
+| 24 | heteroscedastic Gaussian | 0.2 | 0.800 | 1,000 | 250 | 2,000 | 4.8% (3.9%-5.8%) | 4.1% | 0.0% | hybrid |
+| 25 | heteroscedastic Gaussian | 0.3 | 0.810 | 420 | 210 | 2,000 | 2.6% (2.0%-3.4%) | 3.2% | 0.0% | hybrid |
 
-21 of 22 cells' 95% intervals contain the model's best estimate; the exception is cell 12 (observed fewer misses than predicted). Significantly above 5%: cell 2, which the rule sends to the hybrid. All 9 cells whose best estimate exceeds 5% are routed to the hybrid.
+25 of 26 cells' 95% intervals contain the model's best estimate; the exception is cell 12 (observed fewer misses than predicted). Significantly above 5%: cell 2, which the rule sends to the hybrid. Of the 10 cells whose best estimate exceeds 5%, the rule admits cell 8 (larger class above 10,000).
 
 ## 5. Deriving the rule
 
@@ -154,7 +161,7 @@ Most draws sit at their own setting, which lets the model borrow strength across
 
 The model is evaluated on a grid of settings: smaller class 10-20,000 (log scale), AUC 0.55-0.99 (probit scale) and class ratios 1, 1.5, 2, 2.33, 3, 4, 6, 9, 13, 19. At each setting it takes the worst case over both families, their shapes and which class is the minority. A setting is *unsafe* if the probability that this worst-case miss rate exceeds 5% is above 10%. Requiring a probability, not only a best estimate, below the target keeps the rule out of regions the data cannot yet vouch for.
 
-75.8% of the grid is unsafe. The rule must exclude every unsafe setting with a larger class of at most 10,000 (56.5% of the grid). Beyond that size the simulated data are sparse, Section 1 shows the floor buys no width there and costs far more compute, and the unsafe settings mostly reflect uncertainty about miss rates just below 5%. Section 5.5 checks the rule there against the replicated cells.
+73.1% of the grid is unsafe. The rule must exclude every unsafe setting with a larger class of at most 10,000 (55.3% of the grid). Beyond that size the simulated data are sparse, Section 1 shows the floor buys no width there and costs far more compute, and the unsafe settings mostly reflect uncertainty about miss rates just below 5%. Section 5.5 checks the rule there against the replicated cells.
 
 ### 5.2 Choosing the rule
 
@@ -162,10 +169,9 @@ Candidate rules are conjunctions of simple checks: a minimum on the smaller clas
 
 | checks | rule | grid share | recommended |
 | --- | --- | --- | --- |
-| 1 | n_min * (1 - AUC)^1.5 / ratio^0.667 >= 81 | 17.2% |  |
-| 2 | AUC <= 0.94 and n_min * (1 - AUC)^1 / ratio^1 >= 55 | 22.6% |  |
-| 3 | n_min >= 250 and n_max / n_min <= 6 and n_min * (1 - AUC)^2.5 >= 3.7 | 24.2% | yes |
-| 4 | n_min >= 160 and n_max / n_min <= 6 and AUC <= 0.94 and n_min * (1 - AUC)^2 / ratio^0.333 >= 8.7 | 23.9% |  |
+| 1 | n_min * (1 - AUC)^2 >= 25 | 27.6% |  |
+| 2 | n_min >= 160 and n_min * (1 - AUC)^2 >= 18 | 30.4% | yes |
+| 3 | n_min >= 210 and AUC <= 0.94 and n_min * (1 - AUC)^2 / ratio^0.333 >= 8 | 30.1% |  |
 
 The recommended rule is the one with the fewest checks that admits within 1 percentage point of the best rule's grid share.
 
@@ -175,39 +181,105 @@ Each check is credited with the unsafe settings that it alone excludes. Each tur
 
 | check | unsafe settings | smaller class | AUC | class ratio | worst family | minority class | typical worst shape |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| n_min >= 250 | 406 | 30-182 | 0.550-0.772 | 1-6 | heteroscedastic Gaussian | negative | sigma ratio (positive / negative) 0.2 |
-| n_max / n_min <= 6 | 181 | 276-1,098 | 0.550-0.890 | 9-19 | heteroscedastic Gaussian | negative | sigma ratio (positive / negative) 0.2 |
-| n_min * (1 - AUC)^2.5 >= 3.7 | 1821 | 276-8,728 | 0.846-0.990 | 1-6 | Student-t location shift | positive | degrees of freedom 2.5 |
-| several checks | 7581 | 10-1,098 | 0.550-0.990 | 1-19 | Student-t location shift | positive | degrees of freedom 1.1 |
+| n_min >= 160 | 33 | 91-120 | 0.550-0.604 | 1-19 | heteroscedastic Gaussian | negative | sigma ratio (positive / negative) 0.2 |
+| n_min * (1 - AUC)^2 >= 18 | 3037 | 182-8,728 | 0.728-0.990 | 1-19 | Student-t location shift | positive | degrees of freedom 2 |
+| several checks | 6720 | 10-159 | 0.550-0.990 | 1-19 | heteroscedastic Gaussian | positive | sigma ratio (positive / negative) 0.2 |
 
 The last row counts settings that more than one check excludes; they lie deep inside the unsafe region and do not bear on any one check.
 
-### 5.4 Sensitivity, and the current rule
+### 5.4 Sensitivity, and the previous rule
 
-The recommended rule at other assurance levels, and the rule currently in `hybrid_band.md` §4.4 judged by the same test:
+The recommended rule at other assurance levels, and the previous rule judged by the same test:
 
 | rule | checks | grid share | unsafe settings admitted | worst mean miss rate, n_max <= 10,000 | worst P(miss rate > 5%), n_max <= 10,000 | worst mean miss rate, n_max > 10,000 |
 | --- | --- | --- | --- | --- | --- | --- |
-| recommended at 80% assurance | n_min >= 210 and n_max / n_min <= 9 and n_min * (1 - AUC)^2.5 / ratio^0.333 >= 2.6 | 27.5% | 0 | 4.66% | 14.8% | 6.46% |
-| recommended at 90% assurance | n_min >= 250 and n_max / n_min <= 6 and n_min * (1 - AUC)^2.5 >= 3.7 | 24.2% | 0 | 4.67% | 7.4% | 6.46% |
-| recommended at 95% assurance | n_min >= 250 and n_max / n_min <= 4 and n_min * (1 - AUC)^2.5 >= 3.9 | 20.7% | 0 | 4.39% | 4.5% | 6.20% |
-| current, judged at 90% | n_min >= 100 and n_min * (1 - AUC)^2.5 / ratio^0.667 >= 12 | 19.4% | 30 | 4.67% | 23.5% | 6.34% |
+| recommended at 80% assurance | n_min >= 160 and n_min * (1 - AUC)^2 >= 15 | 31.6% | 0 | 4.63% | 12.7% | 6.59% |
+| recommended at 90% assurance | n_min >= 160 and n_min * (1 - AUC)^2 >= 18 | 30.4% | 0 | 4.47% | 6.0% | 6.59% |
+| recommended at 95% assurance | n_min >= 370 and n_min * (1 - AUC)^2.5 / ratio^0.333 >= 2.8 | 28.7% | 0 | 4.51% | 4.9% | 6.58% |
+| previous, judged at 90% | n_min >= 250 and n_max / n_min <= 6 and n_min * (1 - AUC)^2.5 >= 3.7 | 24.2% | 1 | 4.73% | 13.9% | 6.30% |
+| alternative at 90% assurance | n_min >= 210 and AUC <= 0.94 and n_min * (1 - AUC)^2 / ratio^0.333 >= 8 | 30.1% | 0 | 4.60% | 5.6% | 6.58% |
 
 The checks keep their form across assurance levels; the thresholds move.
 
 ### 5.5 Beyond a larger class of 10,000
 
-The rule admits 1,903 grid settings there, 1,028 of them unsafe by the test above. At 847 of those the best estimate is below 5% and only its uncertainty fails the test. The best estimate exceeds 5% at 181, all with a larger class of 19,904 or more, where it extends a rising trend beyond the data. The replicated cells in that range that the rule admits measure the band directly:
+The rule admits 2,817 grid settings there, 1,614 of them unsafe by the test above. At 1,093 of those the best estimate is below 5% and only its uncertainty fails the test. The best estimate exceeds 5% at 521, all with a larger class of 36,263 or more, where it extends a rising trend beyond the data. The replicated cells in that range that the rule admits measure the band directly:
 
 | cell | family | shape | AUC | positives | negatives | datasets | observed miss rate (95% interval) | model's best estimate | model's P(miss rate > 5%) | routed to |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 14 | Student-t location shift | 4.7 | 0.924 | 34,800 | 8,700 | 1,000 | 3.1% (2.2%-4.4%) | 3.9% | 0.7% | unfloored |
-| 15 | Student-t location shift | 3.8 | 0.924 | 60,000 | 15,000 | 1,000 | 3.7% (2.7%-5.1%) | 4.3% | 7.1% | unfloored |
-| 16 | Student-t location shift | 3.8 | 0.924 | 40,000 | 20,000 | 1,000 | 4.6% (3.5%-6.1%) | 4.5% | 11.6% | unfloored |
-| 17 | Student-t location shift | 3.8 | 0.914 | 20,000 | 20,000 | 1,000 | 5.1% (3.9%-6.6%) | 4.3% | 4.2% | unfloored |
-| 18 | heteroscedastic Gaussian | 5 | 0.550 | 20,000 | 80,000 | 500 | 4.2% (2.8%-6.3%) | 4.8% | 36.3% | unfloored |
-| 20 | heteroscedastic Gaussian | 5 | 0.550 | 20,000 | 40,000 | 1,000 | 3.8% (2.8%-5.2%) | 4.0% | 0.7% | unfloored |
-| 21 | heteroscedastic Gaussian | 5 | 0.550 | 20,000 | 20,000 | 1,000 | 3.2% (2.3%-4.5%) | 3.2% | 0.0% | unfloored |
+| 8 | heteroscedastic Gaussian | 2.24 | 0.924 | 3,300 | 62,700 | 500 | 5.0% (3.4%-7.3%) | 5.3% | 66.2% | unfloored |
+| 11 | Student-t location shift | 1.1 | 0.705 | 27,000 | 3,000 | 1,000 | 4.4% (3.3%-5.9%) | 3.9% | 0.3% | unfloored |
+| 12 | Student-t location shift | 1.1 | 0.705 | 36,100 | 1,900 | 1,000 | 2.5% (1.7%-3.7%) | 3.7% | 0.2% | unfloored |
+| 13 | Student-t location shift | 1.1 | 0.750 | 62,700 | 3,300 | 1,000 | 3.9% (2.9%-5.3%) | 3.5% | 0.3% | unfloored |
+| 14 | Student-t location shift | 4.7 | 0.924 | 34,800 | 8,700 | 1,000 | 3.1% (2.2%-4.4%) | 3.8% | 0.4% | unfloored |
+| 15 | Student-t location shift | 3.8 | 0.924 | 60,000 | 15,000 | 1,000 | 3.7% (2.7%-5.1%) | 4.3% | 7.9% | unfloored |
+| 16 | Student-t location shift | 3.8 | 0.924 | 40,000 | 20,000 | 1,000 | 4.6% (3.5%-6.1%) | 4.4% | 7.8% | unfloored |
+| 17 | Student-t location shift | 3.8 | 0.914 | 20,000 | 20,000 | 1,000 | 5.1% (3.9%-6.6%) | 4.2% | 2.3% | unfloored |
+| 18 | heteroscedastic Gaussian | 5 | 0.550 | 20,000 | 80,000 | 500 | 4.2% (2.8%-6.3%) | 4.8% | 36.6% | unfloored |
+| 19 | heteroscedastic Gaussian | 5 | 0.550 | 5,000 | 45,000 | 1,000 | 4.3% (3.2%-5.7%) | 4.0% | 2.1% | unfloored |
+| 20 | heteroscedastic Gaussian | 5 | 0.550 | 20,000 | 40,000 | 1,000 | 3.8% (2.8%-5.2%) | 4.0% | 0.9% | unfloored |
+| 21 | heteroscedastic Gaussian | 5 | 0.550 | 20,000 | 20,000 | 1,000 | 3.2% (2.3%-4.5%) | 3.3% | 0.0% | unfloored |
+
+### 5.6 Safe settings the rule sends to the hybrid
+
+Sending a safe setting to the hybrid costs width at small samples and compute at large ones (Section 1). A setting goes to the hybrid either because it is unsafe or because a few simple checks cannot carve it out from unsafe neighbours. The table splits the part of the grid each rule sends to the hybrid by its best estimate and by the probability that it is safe:
+
+| rule | grid share sent to the hybrid | best estimate above 5% | best estimate at most 5% | safe with 80% confidence | safe with 90% confidence | of the 80%-safe, larger class above 10,000 |
+| --- | --- | --- | --- | --- | --- | --- |
+| recommended | 69.6% | 89.5% | 10.5% | 8.9% | 8.2% | 3.4% |
+| previous | 75.8% | 84.5% | 15.5% | 12.5% | 11.2% | 26.0% |
+| alternative | 69.9% | 89.7% | 10.3% | 8.2% | 7.3% | 11.3% |
+
+**Where the slack is.** At each smaller class and class ratio, the largest AUC the recommended rule and the alternative rule admit, then the largest AUC up to which every setting is safe at 90% (`none` where the lowest AUC already fails). A † marks a larger class above 10,000, where rules are not held to the test:
+
+| smaller class | 1 : 1 | 2 : 1 | 4 : 1 | 6 : 1 | 9 : 1 | 19 : 1 |
+| --- | --- | --- | --- | --- | --- | --- |
+| 100 | hybrid / hybrid / none | hybrid / hybrid / none | hybrid / hybrid / none | hybrid / hybrid / 0.550 | hybrid / hybrid / 0.604 | hybrid / hybrid / none |
+| 250 | 0.732 / 0.821 / 0.811 | 0.732 / 0.799 / 0.811 | 0.732 / 0.775 / 0.811 | 0.732 / 0.759 / 0.829 | 0.732 / 0.742 / 0.811 | 0.732 / 0.708 / 0.750 |
+| 500 | 0.810 / 0.873 / 0.902 | 0.810 / 0.858 / 0.902 | 0.810 / 0.841 / 0.890 | 0.810 / 0.829 / 0.862 | 0.810 / 0.818 / 0.846 | 0.810 / 0.793 / 0.792 |
+| 1,000 | 0.866 / 0.911 / 0.942 | 0.866 / 0.900 / 0.942 | 0.866 / 0.887 / 0.902 | 0.866 / 0.879 / 0.890 | 0.866 / 0.871 / 0.876 | 0.866 / 0.854 / 0.846 † |
+| 3,000 | 0.922 / 0.940 / 0.956 | 0.922 / 0.940 / 0.942 | 0.922 / 0.935 / 0.924 † | 0.922 / 0.930 / 0.914 † | 0.922 / 0.925 / none † | 0.922 / 0.916 / none † |
+| 10,000 | 0.958 / 0.940 / 0.956 | 0.958 / 0.940 / none † | 0.958 / 0.940 / none † | 0.958 / 0.940 / none † | 0.958 / 0.940 / none † | 0.958 / 0.940 / none † |
+
+A single corner check bounds `1 - AUC` by one power of the smaller class, a straight line on log scales. The safe limit is not straight: it rises quickly with the smaller class at small samples and levels off at large ones. Two corner checks of different exponents follow such a bend. The best rule of that form, `n_min >= 160 and n_min * (1 - AUC)^1.25 / ratio^0.667 >= 8.5 and n_min * (1 - AUC)^2 >= 14`, admits 32.1% of the grid against 30.4% for the recommended rule; the rest of the slack lies in thin slivers beside unsafe settings, which no few checks can follow.
+
+**Recommended rule** (`n_min >= 160 and n_min * (1 - AUC)^2 >= 18`). The largest connected regions it sends to the hybrid that are safe with 80% confidence (settings are connected if they differ by one step of the grid in the smaller class, the AUC or the class ratio):
+
+| region | settings | grid share | smaller class | larger class | AUC | class ratio | worst family | minority class | typical worst shape | best estimate | safe at 90% | sent to the hybrid by | draws at the hardest setting | CPU-hours there |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | 245 | 1.4% | 317-956 | 317-2,231 | 0.772-0.942 | 1-2.33 | heteroscedastic Gaussian | negative | 0.2 | 2.82%-4.84% | 95.9% | `n_min * (1 - AUC)^2 >= 18` (100%) | 17,632 | 1.8 |
+| 2 | 179 | 1.0% | 1,098-2,889 | 1,098-6,741 | 0.876-0.956 | 1-2.33 | Student-t location shift | negative | 5.74 | 2.64%-4.78% | 96.1% | `n_min * (1 - AUC)^2 >= 18` (100%) | 6,262 | 2.4 |
+| 3 | 140 | 0.8% | 317-956 | 950-5,738 | 0.772-0.924 | 3-6 | Student-t location shift | negative | 5.74 | 3.00%-4.83% | 95.7% | `n_min * (1 - AUC)^2 >= 18` (100%) | 15,535 | 5.4 |
+| 4 | 130 | 0.7% | 79-276 | 821-5,238 | 0.550-0.811 | 9-19 | heteroscedastic Gaussian | negative | 1.22 | 3.44%-4.71% | 90.8% | `n_min >= 160` (72%), `n_min * (1 - AUC)^2 >= 18` (65%) | 4,029 | 0.4 |
+| 5 | 122 | 0.7% | 120-276 | 120-643 | 0.550-0.846 | 1-2.33 | heteroscedastic Gaussian | negative | 0.2 | 3.58%-4.81% | 88.5% | `n_min * (1 - AUC)^2 >= 18` (64%) | 9,415 | 0.4 |
+| 6 | 113 | 0.6% | 105-276 | 361-1,654 | 0.550-0.846 | 3-6 | heteroscedastic Gaussian | negative | 0.2 | 3.33%-4.81% | 91.2% | `n_min * (1 - AUC)^2 >= 18` (67%) | 11,377 | 1.4 |
+
+A second clause admitted beside the rule (`rule or clause`) can route part of this without loosening the rule's checks. Searched like the rule over the settings it sends to the hybrid, and held to the test at every class size:
+
+| when | clause | grid share added | settings needing draws | draws at the hardest setting | CPU-hours there |
+| --- | --- | --- | --- | --- | --- |
+| now, at 90% | n_max / n_min <= 3 and AUC <= 0.92 and n_min * (1 - AUC)^1 >= 55 | 1.9% | 0 | — | — |
+| after draws lift 80%-safe settings to 90% | n_max / n_min <= 3 and AUC <= 0.92 and n_min * (1 - AUC)^1 >= 48 | 2.4% | 5 | 9,415 | 0.4 |
+
+**Alternative rule** (`n_min >= 210 and AUC <= 0.94 and n_min * (1 - AUC)^2 / ratio^0.333 >= 8`). The largest connected regions it sends to the hybrid that are safe with 80% confidence (settings are connected if they differ by one step of the grid in the smaller class, the AUC or the class ratio):
+
+| region | settings | grid share | smaller class | larger class | AUC | class ratio | worst family | minority class | typical worst shape | best estimate | safe at 90% | sent to the hybrid by | draws at the hardest setting | CPU-hours there |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | 169 | 1.0% | 79-276 | 821-5,238 | 0.550-0.811 | 9-19 | heteroscedastic Gaussian | negative | 1.22 | 3.26%-4.71% | 92.9% | `n_min >= 210` (89%), `n_min * (1 - AUC)^2 / ratio^0.333 >= 8` (59%) | 4,029 | 0.4 |
+| 2 | 143 | 0.8% | 120-276 | 120-643 | 0.550-0.846 | 1-2.33 | heteroscedastic Gaussian | negative | 0.2 | 3.43%-4.81% | 90.2% | `n_min >= 210` (93%) | 9,415 | 0.4 |
+| 3 | 141 | 0.8% | 317-956 | 317-2,231 | 0.829-0.942 | 1-2.33 | heteroscedastic Gaussian | negative | 0.2 | 3.19%-4.84% | 92.9% | `n_min * (1 - AUC)^2 / ratio^0.333 >= 8` (100%) | 17,632 | 1.8 |
+| 4 | 139 | 0.8% | 105-276 | 361-1,654 | 0.550-0.846 | 3-6 | heteroscedastic Gaussian | negative | 0.2 | 3.22%-4.81% | 92.8% | `n_min >= 210` (84%) | 11,377 | 1.4 |
+| 5 | 99 | 0.6% | 1,098-2,889 | 1,098-6,741 | 0.902-0.956 | 1-2.33 | Student-t location shift | positive | 5.74 | 3.22%-4.78% | 92.9% | `AUC <= 0.94` (60%), `n_min * (1 - AUC)^2 / ratio^0.333 >= 8` (97%) | 6,262 | 2.4 |
+| 6 | 98 | 0.6% | 317-956 | 950-5,738 | 0.792-0.924 | 3-6 | heteroscedastic Gaussian | positive | 2.24 | 3.34%-4.83% | 93.9% | `n_min * (1 - AUC)^2 / ratio^0.333 >= 8` (100%) | 15,535 | 5.4 |
+
+A second clause admitted beside the rule (`rule or clause`) can route part of this without loosening the rule's checks. Searched like the rule over the settings it sends to the hybrid, and held to the test at every class size:
+
+| when | clause | grid share added | settings needing draws | draws at the hardest setting | CPU-hours there |
+| --- | --- | --- | --- | --- | --- |
+| now, at 90% | AUC <= 0.725 and n_min * (1 - AUC)^0.75 >= 69 | 1.2% | 0 | — | — |
+| after draws lift 80%-safe settings to 90% | AUC <= 0.725 and n_min * (1 - AUC)^0.75 >= 63 | 1.5% | 8 | 9,415 | 0.4 |
+
+*Sent to the hybrid by* lists the checks that at least half of a region fails, with the share failing. *Draws at the hardest setting* is a rough count of the effective draws the region's least certain setting still needs for 90% assurance, treating its posterior as binomial at the best estimate; draws nearby inform it too, so this is a guide to the information required rather than a design. Regions whose settings are mostly safe at 90% already need only a different rule; the rest need draws first.
 
 ## 6. Model-free check: the simulated datasets the rule admits
 
@@ -215,51 +287,57 @@ The simulated datasets inside the recommended rule, grouped by family, class rat
 
 | family | class ratio | shape | datasets | miss rate | 95% upper bound |
 | --- | --- | --- | --- | --- | --- |
-| heteroscedastic Gaussian | 1-2.33 | sigma ratio (positive / negative) 0.2-0.58 | 49,016 | 2.10% | 2.23% |
-| heteroscedastic Gaussian | 1-2.33 | sigma ratio (positive / negative) 0.58-1.7 | 66,426 | 2.23% | 2.34% |
-| heteroscedastic Gaussian | 1-2.33 | sigma ratio (positive / negative) 1.7-5 | 67,039 | 2.38% | 2.50% |
-| heteroscedastic Gaussian | 2.33-6 | sigma ratio (positive / negative) 0.2-0.58 | 1,026 | 3.02% | 4.26% |
-| heteroscedastic Gaussian | 2.33-6 | sigma ratio (positive / negative) 0.58-1.7 | 895 | 2.79% | 4.09% |
-| heteroscedastic Gaussian | 2.33-6 | sigma ratio (positive / negative) 1.7-5 | 1,436 | 3.55% | 4.64% |
-| Student-t location shift | 1-2.33 | degrees of freedom 1.1-3.3 | 68,349 | 2.28% | 2.39% |
-| Student-t location shift | 1-2.33 | degrees of freedom 3.3-10 | 60,327 | 2.40% | 2.53% |
-| Student-t location shift | 1-2.33 | degrees of freedom 10-30 | 53,892 | 2.23% | 2.36% |
-| Student-t location shift | 2.33-6 | degrees of freedom 1.1-3.3 | 962 | 2.91% | 4.17% |
-| Student-t location shift | 2.33-6 | degrees of freedom 3.3-10 | 2,985 | 3.52% | 4.24% |
-| Student-t location shift | 2.33-6 | degrees of freedom 10-30 | 910 | 2.53% | 3.76% |
+| heteroscedastic Gaussian | 1-2.33 | sigma ratio (positive / negative) 0.2-0.58 | 44,155 | 2.08% | 2.22% |
+| heteroscedastic Gaussian | 1-2.33 | sigma ratio (positive / negative) 0.58-1.7 | 59,833 | 2.22% | 2.35% |
+| heteroscedastic Gaussian | 1-2.33 | sigma ratio (positive / negative) 1.7-5 | 60,285 | 2.41% | 2.54% |
+| heteroscedastic Gaussian | 2.33-6 | sigma ratio (positive / negative) 0.2-0.58 | 1,034 | 2.51% | 3.66% |
+| heteroscedastic Gaussian | 2.33-6 | sigma ratio (positive / negative) 0.58-1.7 | 876 | 2.97% | 4.31% |
+| heteroscedastic Gaussian | 2.33-6 | sigma ratio (positive / negative) 1.7-5 | 1,417 | 3.67% | 4.78% |
+| heteroscedastic Gaussian | 6-19 | sigma ratio (positive / negative) 0.2-0.58 | 73,469 | 2.45% | 2.56% |
+| heteroscedastic Gaussian | 6-19 | sigma ratio (positive / negative) 0.58-1.7 | 36,341 | 2.58% | 2.74% |
+| heteroscedastic Gaussian | 6-19 | sigma ratio (positive / negative) 1.7-5 | 27,958 | 3.08% | 3.29% |
+| Student-t location shift | 1-2.33 | degrees of freedom 1.1-3.3 | 61,593 | 2.27% | 2.39% |
+| Student-t location shift | 1-2.33 | degrees of freedom 3.3-10 | 54,631 | 2.40% | 2.54% |
+| Student-t location shift | 1-2.33 | degrees of freedom 10-30 | 48,286 | 2.26% | 2.40% |
+| Student-t location shift | 2.33-6 | degrees of freedom 1.1-3.3 | 937 | 2.99% | 4.28% |
+| Student-t location shift | 2.33-6 | degrees of freedom 3.3-10 | 2,961 | 3.51% | 4.24% |
+| Student-t location shift | 2.33-6 | degrees of freedom 10-30 | 868 | 2.65% | 3.94% |
+| Student-t location shift | 6-19 | degrees of freedom 1.1-3.3 | 32,798 | 2.59% | 2.76% |
+| Student-t location shift | 6-19 | degrees of freedom 3.3-10 | 24,088 | 2.49% | 2.70% |
+| Student-t location shift | 6-19 | degrees of freedom 10-30 | 20,484 | 2.47% | 2.69% |
 
-Over all 373,263 datasets the miss rate is 2.30%. The highest among groups of at least 200 datasets is 3.55% (heteroscedastic Gaussian, class ratio 2.33-6, sigma ratio (positive / negative) 1.7-5).
+Over all 552,014 datasets the miss rate is 2.41%. The highest among groups of at least 200 datasets is 3.67% (heteroscedastic Gaussian, class ratio 2.33-6, sigma ratio (positive / negative) 1.7-5).
 
 ## 7. Figure
 
-`surface.png` shows, for five class ratios, the worst-case best estimate of the miss rate (top row; blue below 5%, red above) and the probability that it exceeds 5% (bottom row). The black contour marks the 90% assurance boundary; the solid green line encloses the settings the recommended rule admits, the dashed line those of the current rule. The dotted black line marks a larger class of 10,000, beyond which the rule is not held to the assurance test (Section 5.5), so the green line may cross the black contour to its right. The grey line marks the largest smaller class that can be simulated at that ratio.
+`surface.png` shows, for five class ratios, the worst-case best estimate of the miss rate (top row; blue below 5%, red above) and the probability that it exceeds 5% (bottom row). The black contour marks the 90% assurance boundary; the solid green line encloses the settings the recommended rule admits, the dashed line those of the previous rule and the dash-dot line those of the alternative rule, where there is one (Section 5.6). The dotted black line marks a larger class of 10,000, beyond which the rule is not held to the assurance test (Section 5.5), so the green line may cross the black contour to its right. The grey line marks the largest smaller class that can be simulated at that ratio.
 
 ## Appendix: best rule for every combination of checks
 
 | checks | rule (exact thresholds) | grid share |
 | --- | --- | --- |
-| corner + floor + ratio_cap | n_min >= 240.1 and n_max / n_min <= 6 and n_min * (1 - AUC)^2.5 >= 3.683 | 24.7% |
-| imbalance_corner + floor + ratio_cap + auc_cap | n_min >= 158.6 and n_max / n_min <= 6 and AUC <= 0.9418 and n_min * (1 - AUC)^2 / ratio^0.333 >= 8.64 | 24.7% |
-| corner + floor + ratio_cap + auc_cap | n_min >= 240.1 and n_max / n_min <= 6 and n_min * (1 - AUC)^2.5 >= 3.683 | 24.7% |
-| imbalance_corner + floor + ratio_cap | n_min >= 158.6 and n_max / n_min <= 6 and n_min * (1 - AUC)^2.5 / ratio^0.333 >= 4.318 | 23.7% |
-| imbalance_corner + ratio_cap + auc_cap | n_max / n_min <= 6 and AUC <= 0.9418 and n_min * (1 - AUC)^1.5 / ratio^0.333 >= 28.83 | 23.5% |
-| imbalance_corner + auc_cap | AUC <= 0.9418 and n_min * (1 - AUC)^1 / ratio^1 >= 54.91 | 23.2% |
-| imbalance_corner + floor + auc_cap | AUC <= 0.9418 and n_min * (1 - AUC)^1 / ratio^1 >= 54.91 | 23.2% |
-| corner + ratio_cap + auc_cap | n_max / n_min <= 6 and AUC <= 0.9418 and n_min * (1 - AUC)^1.5 >= 42.25 | 23.0% |
-| corner + ratio_cap | n_max / n_min <= 6 and n_min * (1 - AUC)^2 >= 21.33 | 22.6% |
-| corner + floor + auc_cap | n_min >= 1,261 and n_min * (1 - AUC)^2.5 >= 3.683 | 22.5% |
-| corner + floor | n_min >= 1,261 and n_min * (1 - AUC)^2.5 >= 3.683 | 22.5% |
-| imbalance_corner + ratio_cap | n_max / n_min <= 6 and n_min * (1 - AUC)^2 / ratio^0.333 >= 18.76 | 21.4% |
-| imbalance_corner + floor | n_min >= 1,261 and n_min * (1 - AUC)^2.5 / ratio^0.333 >= 3.53 | 21.3% |
-| corner + auc_cap | AUC <= 0.9418 and n_min * (1 - AUC)^0.5 >= 739.4 | 19.7% |
-| floor + ratio_cap + auc_cap | n_max / n_min <= 6 and AUC <= 0.8618 and n_min >= 316.6 | 18.2% |
-| floor + auc_cap | AUC <= 0.8899 and n_min >= 1,261 | 17.9% |
-| imbalance_corner | n_min * (1 - AUC)^1.5 / ratio^0.667 >= 80.23 | 17.3% |
-| corner | n_min * (1 - AUC)^1 >= 497.9 | 16.4% |
+| imbalance_corner + floor + ratio_cap + auc_cap | n_min >= 209.1 and AUC <= 0.9418 and n_min * (1 - AUC)^2 / ratio^0.333 >= 7.905 | 31.2% |
+| imbalance_corner + floor + auc_cap | n_min >= 209.1 and AUC <= 0.9418 and n_min * (1 - AUC)^2 / ratio^0.333 >= 7.905 | 31.2% |
+| corner + floor | n_min >= 158.6 and n_min * (1 - AUC)^2 >= 17.17 | 30.9% |
+| corner + floor + auc_cap | n_min >= 158.6 and n_min * (1 - AUC)^2 >= 17.17 | 30.9% |
+| corner + floor + ratio_cap | n_min >= 158.6 and n_min * (1 - AUC)^2 >= 17.17 | 30.9% |
+| corner + floor + ratio_cap + auc_cap | n_min >= 158.6 and n_min * (1 - AUC)^2 >= 17.17 | 30.9% |
+| imbalance_corner + floor | n_min >= 209.1 and n_min * (1 - AUC)^2.5 / ratio^0.333 >= 3.609 | 30.4% |
+| imbalance_corner + floor + ratio_cap | n_min >= 209.1 and n_min * (1 - AUC)^2.5 / ratio^0.333 >= 3.609 | 30.4% |
+| corner + auc_cap | AUC <= 0.9418 and n_min * (1 - AUC)^1.5 >= 47.06 | 29.2% |
+| corner + ratio_cap + auc_cap | AUC <= 0.9418 and n_min * (1 - AUC)^1.5 >= 47.06 | 29.2% |
+| imbalance_corner + auc_cap | AUC <= 0.9418 and n_min * (1 - AUC)^1.5 / ratio^0.333 >= 33.1 | 28.2% |
+| imbalance_corner + ratio_cap + auc_cap | AUC <= 0.9418 and n_min * (1 - AUC)^1.5 / ratio^0.333 >= 33.1 | 28.2% |
+| corner | n_min * (1 - AUC)^2 >= 24.49 | 28.1% |
+| corner + ratio_cap | n_min * (1 - AUC)^2 >= 24.49 | 28.1% |
+| imbalance_corner | n_min * (1 - AUC)^2 / ratio^0.333 >= 21.54 | 25.0% |
+| imbalance_corner + ratio_cap | n_min * (1 - AUC)^2 / ratio^0.333 >= 21.54 | 25.0% |
+| floor + auc_cap | AUC <= 0.8764 and n_min >= 956.4 | 18.6% |
+| floor + ratio_cap + auc_cap | AUC <= 0.8764 and n_min >= 956.4 | 18.6% |
 | floor | n_min >= 1.002e+04 | 7.6% |
 | floor + ratio_cap | n_min >= 1.002e+04 | 7.6% |
 | auc_cap | AUC <= 0.55 | 0.0% |
 | ratio_cap | n_max / n_min <= 1 | 0.0% |
 | ratio_cap + auc_cap | n_max / n_min <= 1 | 0.0% |
 
-Model length scales (positive corner, negative corner, AUC, shape): Student-t location shift [0.172, 0.346, 0.51, 0.321], amplitude 1.36; heteroscedastic Gaussian [0.201, 0.209, 0.848, 0.172], amplitude 1.45.
+Model length scales (positive corner, negative corner, AUC, shape): Student-t location shift [0.172, 0.465, 0.613, 0.344], amplitude 1.38; heteroscedastic Gaussian [0.198, 0.22, 0.851, 0.13], amplitude 1.36.

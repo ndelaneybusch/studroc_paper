@@ -3,13 +3,27 @@
   "recommended": [
     {
       "kind": "floor",
-      "threshold": 250.0,
+      "threshold": 160.0,
+      "auc_exponent": 0.0,
+      "ratio_exponent": 0.0
+    },
+    {
+      "kind": "corner",
+      "threshold": 18.0,
+      "auc_exponent": 2.0,
+      "ratio_exponent": 0.0
+    }
+  ],
+  "previous": [
+    {
+      "kind": "floor",
+      "threshold": 250,
       "auc_exponent": 0.0,
       "ratio_exponent": 0.0
     },
     {
       "kind": "ratio_cap",
-      "threshold": 6.0,
+      "threshold": 6,
       "auc_exponent": 0.0,
       "ratio_exponent": 0.0
     },
@@ -20,18 +34,24 @@
       "ratio_exponent": 0.0
     }
   ],
-  "current": [
+  "alternative": [
     {
       "kind": "floor",
-      "threshold": 100,
+      "threshold": 210.0,
+      "auc_exponent": 0.0,
+      "ratio_exponent": 0.0
+    },
+    {
+      "kind": "auc_cap",
+      "threshold": 0.9400000000000001,
       "auc_exponent": 0.0,
       "ratio_exponent": 0.0
     },
     {
       "kind": "imbalance_corner",
-      "threshold": 12,
-      "auc_exponent": 2.5,
-      "ratio_exponent": 0.6666666666666666
+      "threshold": 8.0,
+      "auc_exponent": 2.0,
+      "ratio_exponent": 0.3333333333333333
     }
   ]
 }
