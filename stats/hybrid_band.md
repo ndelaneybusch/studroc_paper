@@ -333,11 +333,11 @@ The implementation sources are [`hybrid_floor.py`](../src/studroc_paper/methods/
 
 ### 4.4 `auto` Routing Between the Unfloored and Hybrid Bands
 
-> **Note — calibrated, not yet implemented. [Empirical; model-based.]** The constants below are calibrated by [`auto_rule_surface.py`](experiments/auto_rule_surface.py); its report is [`data/results/auto_rule/report.md`](../data/results/auto_rule/report.md). The rule is evaluated at the true AUC. An end-to-end check of `auto` that routes on the empirical AUC has not been run.
+> **Note — calibrated, not yet implemented. [Empirical; model-based.]** The constants below are calibrated by [`auto_rule_surface.py`](experiments/auto_rule_surface.py); its report is [`data/results/auto_rule/report.md`](../data/results/auto_rule/report.md). The rules are evaluated at the true AUC. An end-to-end check of `auto` that routes on the empirical AUC has not been run.
 
 A user-facing `auto` mode needs to choose between the unfloored fiducial band (`m3_floor=False`) and the hybrid using only the class counts and the AUC. Where the unfloored band is safe it is the better choice, for three reasons:
 
-- **Width.** It is narrower at small samples. Paired on the same datasets, the hybrid's area is 1.3–1.6 times the unfloored band's when the larger class has at most 50 cases.
+- **Width.** It is narrower at small samples. Paired on the same datasets, the hybrid's area is 1.3–1.6 times the unfloored band's when the larger class has at most 50 cases, 1.13 at 150/150 and 1.04 at 500/500.
 - **Calibration.** It is closer to nominal at large samples. With 5,000 or more in the larger class, the two areas agree within 1%, and the floor only pushes the miss rate further below 5%.
 - **Speed.** It is much faster at large samples, because the ELL floor needs a fresh calibration for each new pair of class sizes. The cold timings for the unfloored band and the hybrid are:
 
@@ -348,78 +348,111 @@ A user-facing `auto` mode needs to choose between the unfloored fiducial band (`
 
 The floor is still needed elsewhere. Without it, the unfloored band's miss rate exceeds 5% at moderate imbalanced sizes, reaching 6.6% at 100/900, where the hybrid stays at or below 2.5%.
 
-**Rule.** Use the unfloored band when **all three** of these hold, and the hybrid otherwise:
+**Rules.** Two rules pass the same 90% assurance test (defined below) and admit nearly the same share of the evaluation grid. They differ in where they spend that share. Use the unfloored band when every inequality of the chosen rule holds, and the hybrid otherwise. Here $`n_{\min}`$ and $`n_{\max}`$ are the smaller and larger class counts, and $`r=n_{\max}/n_{\min}`$ is the class ratio.
 
-```math
-n_{\min} \ge 250,
-\qquad
-\frac{n_{\max}}{n_{\min}} \le 6,
-\qquad
-n_{\min}\,(1-\mathrm{AUC})^{5/2} \ge 3.7,
-```
+- **Recommended rule.** It has two checks, admits 30.4% of the grid, and ignores the class ratio:
 
-where $`n_{\min}`$ and $`n_{\max}`$ are the smaller and larger class counts. The ratio cap is the same as a minority prevalence of at least 1/7, about 14%.
+  ```math
+  n_{\min} \ge 160,
+  \qquad
+  n_{\min}\,(1-\mathrm{AUC})^{2} \ge 18.
+  ```
 
-**What "safe" means.** A miss is a dataset whose band fails to contain the true ROC somewhere, so the target miss rate at $`\alpha=.05`$ is 5%. A Bernoulli Gaussian-process model of the miss rate is fitted to about 2.5 million simulated datasets. The rule then admits a setting only if the model gives at least **90% posterior probability** that the worst-case miss rate there is at most 5%. The rule is calibrated to that assurance, not to the central estimate. The worst case is taken over two families:
+- **Alternative rule.** It has three checks, admits 30.1% of the grid, and charges imbalance:
+
+  ```math
+  n_{\min} \ge 210,
+  \qquad
+  \mathrm{AUC} \le 0.94,
+  \qquad
+  \frac{n_{\min}\,(1-\mathrm{AUC})^{2}}{r^{1/3}} \ge 8.
+  ```
+
+**Trade-off.** Each cell gives the largest AUC routed to the unfloored band by the recommended rule, then by the alternative. The third figure is the largest AUC up to which every grid setting passes the test at that size and ratio. Safe limits are at grid resolution, about 0.02 in AUC, and "none" means even the lowest AUC fails. A † marks a larger class above 10,000, where neither rule is held to the test:
+
+| $`n_{\min}`$ | Ratio 1 | Ratio 4 | Ratio 19 |
+|---|---|---|---|
+| 100 | hybrid / hybrid / none | hybrid / hybrid / none | hybrid / hybrid / none |
+| 250 | 0.732 / 0.821 / 0.811 | 0.732 / 0.775 / 0.811 | 0.732 / 0.708 / 0.750 |
+| 500 | 0.810 / 0.873 / 0.902 | 0.810 / 0.841 / 0.890 | 0.810 / 0.793 / 0.792 |
+| 1,000 | 0.866 / 0.911 / 0.942 | 0.866 / 0.887 / 0.902 | 0.866 / 0.854 / 0.846 † |
+| 3,000 | 0.922 / 0.940 / 0.956 | 0.922 / 0.935 / 0.924 † | 0.922 / 0.916 / none † |
+| 10,000 | 0.958 / 0.940 / 0.956 | 0.958 / 0.940 / none † | 0.958 / 0.940 / none † |
+
+- **The recommended rule is simpler and imbalance-blind.** It gives one AUC limit at every ratio, so it is strictest where data are balanced. At 250–1,000 per class it stops 0.07–0.09 in AUC short of the safe limit, and those settings go to the hybrid. The cost there is width, not time: the hybrid's area is roughly 1.04–1.09 times the unfloored band's at these sizes, and it is well under a second slower. It also admits minority classes of 160–209 at low AUC, which the alternative does not. With no AUC cap, it routes high-AUC data at large samples, up to 0.958 at 10,000 per class, to the fast unfloored band.
+- **The alternative follows the safe limit more closely at moderate sizes.** Under balance it admits AUC 0.02–0.09 higher than the recommended rule at 250–3,000 per class. Under strong imbalance it admits less. Its AUC cap of 0.94 is the price: with 5,000 or more in the smaller class and AUC 0.94–0.96 it sends data to the hybrid, which is where the hybrid costs about 25 s per band.
+- **Beyond the calibrated range,** the recommended rule admits more strongly imbalanced high-AUC settings. One replicated cell shows this: σ₊/σ₋ = 2.24, AUC 0.924, 3,300/62,700. The model's best estimate there is 5.3% and the observed rate 5.0%. The recommended rule routes it to the unfloored band and the alternative to the hybrid.
+- **Choosing.** Prefer the recommended rule if users' data are often large and high-AUC, and the alternative if they are mostly balanced at moderate sizes. Either way, the worst best-estimate miss rate either rule admits is at most 4.6%.
+
+**What "safe" means.** A miss is a dataset whose band fails to contain the true ROC somewhere, so the target miss rate at $`\alpha=.05`$ is 5%. A Bernoulli Gaussian-process model of the miss rate is fitted to about 2.6 million simulated datasets. A rule may admit a setting only if the model gives at least **90% posterior probability** that the worst-case miss rate there is at most 5%. The rule is calibrated to that assurance, not to the central estimate. The worst case is taken over two families:
 
 - Student-$`t`$ location shift, with 1.1–30 degrees of freedom.
 - Heteroscedastic Gaussian, with $`\sigma_+/\sigma_-`$ from 0.2 to 5.
 
 It is also taken over which class is the minority.
 
-The test is enforced for every setting with $`n_{\max}\le 10{,}000`$, which is the extent of the dense paired data. Above that size the floor no longer buys width and costs the most compute. There, the posterior exceedance mostly reflects sparse data rather than an estimated miss rate above 5%, so the rule is checked against replicated cells instead (see Limitations).
+The test is enforced for every setting with $`n_{\max}\le 10{,}000`$, which is the extent of the dense paired data. Above that size the floor no longer buys width and costs the most compute. There, the posterior exceedance mostly reflects sparse data rather than an estimated miss rate above 5%, so the rules are checked against replicated cells instead (see Limitations). The grid shares in this section count unweighted points of the evaluation grid: log class size, probit AUC and ten class ratios. They compare candidate rules and do not estimate how often users are routed.
 
-**Largest AUC routed to the unfloored band.** Above it, and wherever the table says hybrid, the hybrid is used:
+**Mechanism.** Each check of the recommended rule excludes the unsafe settings that it alone rules out, and each corresponds to one failure mode:
 
-| $`n_{\min}`$ | Ratio 1–6 | Ratio 9 or more |
-|---|---|---|
-| 100 | hybrid | hybrid |
-| 250 | 0.815 | hybrid |
-| 500 | 0.859 | hybrid |
-| 1,000 | 0.893 | hybrid |
-| 3,000 | 0.931 | hybrid |
-| 10,000 | 0.958 | hybrid |
-
-**Mechanism.** Each check excludes the unsafe settings that it alone rules out, and each corresponds to one failure mode. The worst case for each was found at the family, minority class and shape listed below:
-
-- **Corner check: convex hooks.** The worst case is Student-$`t`$ with the positives as the minority and about 2.5 degrees of freedom, at AUC above 0.85. The unfloored band fails when the ROC has a convex hook in a corner that holds about one expected minority observation ([`fiducial_band_theory.md` §7.4](fiducial_band_theory.md#74-convex-hooks-exact-geometry-approximate-risk)). The data cannot resolve the hook, and the within-gap linear completion assumes there is none. A higher AUC pushes the hook further into the corner, and the scarcer class is the one that resolves it. The check therefore scales the minority count by a power of $`1-\mathrm{AUC}`$. The search chose the exponent 5/2 independently, and it matches the 2.4 that the §7.4 closed-form screen implies.
-- **Floor $`n_{\min}\ge 250`$: small heteroscedastic samples.** The worst case is the heteroscedastic Gaussian with the negatives as the minority and $`\sigma_+/\sigma_-=0.2`$, at low to moderate AUC with 30–180 cases in the minority class. This matches the shape × AUC study, which found no safe zone at small samples.
-- **Ratio cap: strong imbalance.** The worst case is the same heteroscedastic shape at class ratios of 9–19, with 280–1,100 cases in the minority class. At fixed $`n_{\min}`$, a larger majority class lengthens the plateau run beside the corner. Capping the ratio removes this slice more cheaply than charging an imbalance penalty inside the corner check. At 90% assurance the corner check needs no ratio term.
+- **Corner check: convex hooks.** The worst case is Student-$`t`$ with the positives as the minority and about 2 degrees of freedom, at AUC above 0.73 with 180–8,700 cases in the minority class. The unfloored band fails when the ROC has a convex hook in a corner that holds about one expected minority observation ([`fiducial_band_theory.md` §7.4](fiducial_band_theory.md#74-convex-hooks-exact-geometry-approximate-risk)). The data cannot resolve the hook, and the within-gap linear completion assumes there is none. A higher AUC pushes the hook further into the corner, and the scarcer class is the one that resolves it. The check therefore scales the minority count by a power of $`1-\mathrm{AUC}`$. The search chose an exponent of 2, a little below the 2.4 that the §7.4 closed-form screen implies.
+- **Floor: small heteroscedastic samples.** The worst case is the heteroscedastic Gaussian with the negatives as the minority and $`\sigma_+/\sigma_-=0.2`$, at AUC 0.55–0.60 with 90–120 cases in the minority class. This matches the shape × AUC study, which found no safe zone at small samples.
+- **No ratio check.** An earlier calibration needed a cap of 6 on the class ratio. Two rounds of about 48,000 draws each were then aimed at the settings that bound it: σ₊/σ₋ 0.2–1.3, negative minority, ratios 9–19. They missed at only 2.0–3.2%, against the model's prior estimate of 3.8–4.3%. With that data, the corner check alone covers imbalance in the recommended rule. The alternative charges a mild $`r^{1/3}`$ instead.
 
 **Evidence. [Empirical.]**
 
-- **Prediction.** In five-fold cross-validation, predicted miss rates between 2% and 12% are within 0.6 percentage points of the observed rates. Near 5% the model slightly over-predicts misses, which errs toward caution.
-- **Replicated cells.** 22 fixed settings were each simulated 500–1,000 times at worst-case shapes on the rule's edges. In 21 of them the 95% interval contains the model's estimate; the exception has fewer misses than predicted. All 9 cells with an estimated miss rate above 5% are routed to the hybrid. That includes the only cell that is significantly above 5%: $`\sigma_+/\sigma_-=0.2`$, AUC 0.83, 320/160, with 7.3% misses.
-- **Model-free.** The rule admits 373,263 of the simulated datasets, and 2.30% of them missed. In no group by family, class ratio and shape third is the miss rate significantly above 5%. The highest is 3.55%.
-- **Earlier rule.** The earlier provisional rule was $`n_{\min}\ge100`$ and $`n_{\min}(n_{\min}/n_{\max})^{2/3}(1-\mathrm{AUC})^{5/2}\ge12`$. Under the same test it admits 30 unsafe settings, while admitting less of the evaluation grid than the calibrated rule (19.4% vs 24.2%).
+- **Prediction.** In five-fold cross-validation, predicted miss rates between 2% and 12% are within 0.5 percentage points of the observed rates. Near 5% the model slightly over-predicts misses, which errs toward caution.
+- **Replicated cells.** 26 fixed settings were each simulated 500–2,000 times at worst-case shapes near the rules' edges. In 25 of them the 95% interval contains the model's estimate; the exception has fewer misses than predicted.
+  - The only cell significantly above 5% goes to the hybrid under both rules: σ₊/σ₋ = 0.2, AUC 0.83, 320/160, with 7.3% misses.
+  - Four cells sat on the corner of an intermediate rule, with σ₊/σ₋ 0.2–0.3 and a minority class of 210–250. They measured 5.6%, 4.9%, 4.8% and 2.6%. These cells tightened the corner check to its present form, and both rules route all four to the hybrid.
+- **Model-free.** The recommended rule admits 552,014 of the simulated datasets, and 2.41% of them missed. In no group by family, class ratio and shape third is the miss rate significantly above 5%. The highest is 3.67%.
+- **Earlier rule.** The earlier calibration was $`n_{\min}\ge250`$, $`r\le6`$ and $`n_{\min}(1-\mathrm{AUC})^{5/2}\ge3.7`$. It admitted 24.2% of the grid and now fails the same test at one setting.
 
 **Calibration status.**
 
-| Parameter | Value | Basis | How well pinned |
-|---|---|---|---|
-| AUC exponent | 5/2 | Best on the search set {0.5, …, 2.5}; agrees with the §7.4 screen | Reasonably. It is the largest exponent searched, so a steeper one was not tried. |
-| Corner constant | 3.7 | Least slack at 90% assurance, rounded up from 3.68 | Well, within the two families |
-| Floor on $`n_{\min}`$ | 250 | Rounded up from 240 | Well |
-| Ratio cap | 6 | Chosen from the grid ratios {…, 4, 6, 9, …} | Coarse. The cap lies somewhere between 6 and 9. |
-| Assurance | 90% | Judgement | — |
+| Parameter | Recommended | Alternative | Basis | How well pinned |
+|---|---|---|---|---|
+| AUC exponent | 2 | 2 | Best on the search set {0.5, …, 2.5} | Reasonably. It is inside the search set, and 2.5 is a close second. |
+| Corner constant | 18 | 8 (with $`r^{1/3}`$) | Least slack at 90% assurance, rounded up from 17.2 and 7.9 | Well, within the two families |
+| Floor on $`n_{\min}`$ | 160 | 210 | Rounded up from 159 and 209 | Well |
+| AUC cap | — | 0.94 | Rounded down from 0.942 | Well |
+| Assurance | 90% | 90% | Judgement | — |
 
-The checks keep their form across assurance levels, and only the thresholds move:
+The recommended rule at other assurance levels:
 
 | Assurance | Rule | Grid share |
 |---|---|---|
-| 80% | $`n_{\min}\ge 210`$, ratio $`\le 9`$, $`n_{\min}(1-\mathrm{AUC})^{5/2}/\text{ratio}^{1/3}\ge 2.6`$ | 27.5% |
-| 95% | $`n_{\min}\ge 250`$, ratio $`\le 4`$, $`n_{\min}(1-\mathrm{AUC})^{5/2}\ge 3.9`$ | 20.7% |
+| 80% | $`n_{\min}\ge 160`$, $`n_{\min}(1-\mathrm{AUC})^{2}\ge 15`$ | 31.6% |
+| 95% | $`n_{\min}\ge 370`$, $`n_{\min}(1-\mathrm{AUC})^{5/2}/r^{1/3}\ge 2.8`$ | 28.7% |
 
-The grid shares in this section count unweighted points of the evaluation grid. They compare candidate rules and do not estimate how often users are routed.
+**What the rules leave on the table.** The recommended rule sends 69.6% of the grid to the hybrid. Of that part, 89.5% has a best-estimate miss rate above 5%. Another 8.9% is safe with 80% confidence (8.2% with 90%) but goes to the hybrid anyway, because simple checks cannot carve it out from unsafe neighbours.
+
+That safe slack lies in slivers along the corner check. The three largest regions are:
+
+| Region | Minority class | AUC | Ratio | Worst family | Share of the grid |
+|---|---|---|---|---|---|
+| 1 | 300–950 | 0.77–0.94 | 1–2.3 | Heteroscedastic Gaussian | 1.4% |
+| 2 | 1,100–2,900 | 0.88–0.96 | 1–2.3 | Student-$`t`$ | 1.0% |
+| 3 | 300–950 | 0.77–0.92 | 3–6 | Student-$`t`$ | 0.8% |
+
+Smaller regions lie at a minority class of 100–280 and low AUC.
+
+The safe AUC limit bends: it rises steeply with $`n_{\min}`$ at small samples and levels off at large ones. One power-law corner check cannot follow that bend. Three ways to recover the slack, each computed in the report's §5.6:
+
+- **A second corner check.** Add a steep check that binds at small samples beside the existing one. The best such rule, $`n_{\min}\ge160`$ and $`n_{\min}(1-\mathrm{AUC})^{5/4}/r^{2/3}\ge 8.5`$ and $`n_{\min}(1-\mathrm{AUC})^{2}\ge 14`$, admits 32.1% of the grid.
+- **A second clause.** Admit $`\text{rule}\ \lor\ \text{clause}`$. The best clause, $`r\le3`$ and $`\mathrm{AUC}\le0.92`$ and $`n_{\min}(1-\mathrm{AUC})\ge55`$, adds 1.9% of the grid with no new draws.
+- **More draws.** Raising every 80%-safe setting to 90% would let that clause grow to 2.4%. That takes roughly 10,000 effective draws at its hardest setting, which is cheap at small class sizes.
+
+The ceiling for any rule judged on the best estimate alone is about 33%. The remaining gains therefore come mainly from rule shape, not data.
 
 **Limitations.**
 
 - **Smooth shapes only.** No rule based on $`(n,\mathrm{AUC})`$ can protect against slivers or jumps in the ROC ([`fiducial_band.md`](fiducial_band.md) Proposition 2; theory §12.3). Only the two modelled families are covered. They are the known failure modes, but other score distributions are untested.
-- **Beyond $`n_{\max}=10{,}000`$.** The rule admits 1,028 grid settings that fail the 90% test.
-  - At 847 of them, the estimated miss rate is below 5% and only its uncertainty fails.
-  - The rest lie at $`n_{\max}`$ of about 20,000 or more, where the model extends a rising trend past its data, up to 6.46% at the edge of the design.
-  - The 7 replicated cells there that the rule admits measured miss rates of 3.1–5.1%, none significantly above 5%.
-- **Thinning.** At large samples the band is computed on a thinned grid of about 1,000 trim columns. In a Gaussian-limit simulation this kept the miss rate below 5% through $`n=10^6`$: 2.7%, 2.9% and 4.3% at $`n=`$ 20,000, 100,000 and $`10^6`$. The margin is shrinking, so the rule is untested beyond that size.
+- **Beyond $`n_{\max}=10{,}000`$.** The recommended rule admits 2,817 grid settings there, and 1,614 of them fail the 90% test.
+  - At 1,093 of those, the estimated miss rate is below 5% and only its uncertainty fails.
+  - The rest lie at $`n_{\max}`$ of about 36,000 or more, where the model extends a rising trend past its data, up to 6.6% at the edge of the design.
+  - The 12 replicated cells there that the rule admits measured miss rates of 2.5–5.1%, none significantly above 5%.
+- **Thinning.** At large samples the band is computed on a thinned grid of about 1,000 trim columns. In a Gaussian-limit simulation this kept the miss rate below 5% through $`n=10^6`$: 2.7%, 2.9% and 4.3% at $`n=`$ 20,000, 100,000 and $`10^6`$. The margin is shrinking, so the rules are untested beyond that size.
 - **Selection effect.** Routing on the empirical AUC makes the choice of band depend on the data, and the combined `auto` procedure has not been simulated. Routing on an upper confidence bound for the AUC would add margin, but this is untested.
 
 ---
