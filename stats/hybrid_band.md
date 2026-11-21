@@ -337,7 +337,7 @@ The implementation sources are [`hybrid_floor.py`](../src/studroc_paper/methods/
 
 A user-facing `auto` mode needs to choose between the unfloored fiducial band (`m3_floor=False`) and the hybrid using only the class counts and the AUC. Where the unfloored band is safe it is the better choice, for three reasons:
 
-- **Width.** It is narrower at small samples. Paired on the same datasets, the hybrid's area is 1.3–1.6 times the unfloored band's when the larger class has at most 50 cases, 1.13 at 150/150 and 1.04 at 500/500.
+- **Width.** It is narrower at small samples and high AUC. Paired on the same datasets, the hybrid's area averages 1.3–1.6 times the unfloored band's when the larger class has at most 50 cases, 1.13 at 150/150 and 1.04 at 500/500, averaged over AUC. Most of that excess comes from high AUC. At the AUCs the rules below route to the unfloored band, the two areas agree within about 1% on average.
 - **Calibration.** It is closer to nominal at large samples. With 5,000 or more in the larger class, the two areas agree within 1%, and the floor only pushes the miss rate further below 5%.
 - **Speed.** It is much faster at large samples, because the ELL floor needs a fresh calibration for each new pair of class sizes. The cold timings for the unfloored band and the hybrid are:
 
@@ -379,10 +379,19 @@ The floor is still needed elsewhere. Without it, the unfloored band's miss rate 
 | 3,000 | 0.922 / 0.940 / 0.956 | 0.922 / 0.935 / 0.924 † | 0.922 / 0.916 / none † |
 | 10,000 | 0.958 / 0.940 / 0.956 | 0.958 / 0.940 / none † | 0.958 / 0.940 / none † |
 
-- **The recommended rule is simpler and imbalance-blind.** It gives one AUC limit at every ratio, so it is strictest where data are balanced. At 250–1,000 per class it stops 0.07–0.09 in AUC short of the safe limit, and those settings go to the hybrid. The cost there is width, not time: the hybrid's area is roughly 1.04–1.09 times the unfloored band's at these sizes, and it is well under a second slower. It also admits minority classes of 160–209 at low AUC, which the alternative does not. With no AUC cap, it routes high-AUC data at large samples, up to 0.958 at 10,000 per class, to the fast unfloored band.
-- **The alternative follows the safe limit more closely at moderate sizes.** Under balance it admits AUC 0.02–0.09 higher than the recommended rule at 250–3,000 per class. Under strong imbalance it admits less. Its AUC cap of 0.94 is the price: with 5,000 or more in the smaller class and AUC 0.94–0.96 it sends data to the hybrid, which is where the hybrid costs about 25 s per band.
+The two rules agree on 28.3% of the grid. Each routes a slice of about 2% that the other sends to the hybrid. In both slices the hybrid costs almost no width. The width penalty below is the hybrid's area over the unfloored band's, minus one. It is measured on datasets where the earlier studies computed both bands, at the nearest such sizes for the recommended rule's slice, where no study ran:
+
+| | Recommended only | Alternative only |
+|---|---|---|
+| Grid share | 2.1% | 1.8% |
+| Where | Minority class 160–209 at low AUC; strong imbalance; 5,000+ per class at AUC 0.94–0.96 | Balanced data at 250–3,000 per class, at AUC up to 0.09 above the recommended limit |
+| Hybrid's width penalty there | −0.6% to +0.3% (90th percentile ≤ 2.7%) | +0.2% (90th percentile 3.1%) |
+| Hybrid's extra time there | 8–26 s per band in the large-sample part | 0.3–1 s per band |
+
+- **The recommended rule is simpler and ignores imbalance.** It gives one AUC limit at every ratio, so it is strictest where data are balanced. At 250–1,000 per class it stops 0.07–0.09 in AUC short of the safe limit, and those settings go to the hybrid. That costs almost nothing there: the hybrid is about as wide and well under a second slower. The only effect is a miss rate further below nominal. With no AUC cap, the rule routes high-AUC data at large samples, up to 0.958 at 10,000 per class, to the fast unfloored band.
+- **The alternative follows the safe limit more closely at moderate sizes.** Under balance it admits AUC 0.02–0.09 higher than the recommended rule at 250–3,000 per class, and under strong imbalance it admits less. Its AUC cap of 0.94 is the price: with 5,000 or more in the smaller class and AUC 0.94–0.96, it sends data to the hybrid, which there costs about 25 s per band.
 - **Beyond the calibrated range,** the recommended rule admits more strongly imbalanced high-AUC settings. One replicated cell shows this: σ₊/σ₋ = 2.24, AUC 0.924, 3,300/62,700. The model's best estimate there is 5.3% and the observed rate 5.0%. The recommended rule routes it to the unfloored band and the alternative to the hybrid.
-- **Choosing.** Prefer the recommended rule if users' data are often large and high-AUC, and the alternative if they are mostly balanced at moderate sizes. Either way, the worst best-estimate miss rate either rule admits is at most 4.6%.
+- **Choosing.** Use the recommended rule by default: it is simpler, it routes slightly more of the grid, and its extra strictness costs no width. The alternative's gain is only a band closer to nominal for balanced, moderate-size data. Its cost is the slow hybrid for large, high-AUC data. Either way, the worst best-estimate miss rate either rule admits is at most 4.6%.
 
 **What "safe" means.** A miss is a dataset whose band fails to contain the true ROC somewhere, so the target miss rate at $`\alpha=.05`$ is 5%. A Bernoulli Gaussian-process model of the miss rate is fitted to about 2.6 million simulated datasets. A rule may admit a setting only if the model gives at least **90% posterior probability** that the worst-case miss rate there is at most 5%. The rule is calibrated to that assurance, not to the central estimate. The worst case is taken over two families:
 
