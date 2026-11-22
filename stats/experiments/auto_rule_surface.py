@@ -88,15 +88,21 @@ instead (see :data:`ROUTED_N_MAX`).
 The rule is a conjunction of boundary checks, each a one- or two-parameter
 bound that ropes off one slice of the unsafe region (:class:`Check`): a floor
 on ``n_min``, a bound on the expected minority count beyond the corner
-``n_min (1 - AUC)^a``, optionally deflated by the class ratio, and caps on the
-AUC and the class ratio. For every combination of up to
-:data:`MAX_CHECKS` kinds, the closing check's threshold is solved exactly for
-every candidate setting of the others, and the combination that admits the
-largest share of the grid wins. The report gives the best rule for each number
-of checks and recommends the fewest checks within
-:data:`PARSIMONY_TOLERANCE` of the best, with thresholds rounded to round
-numbers on the strict side. It attributes to each check the unsafe slice that
-it alone excludes, so that a check can be read as one failure mechanism.
+``n_min (1 - AUC)^a``, optionally deflated by the class ratio, a ceiling on
+the AUC that may tighten with the class ratio, and a cap on the class ratio.
+The safe frontier rises steeply with ``n_min`` at small samples and levels off
+at large ones; a corner check with a ceiling follows that bend, which no
+single corner check can. For every combination of up to :data:`MAX_CHECKS`
+kinds, the closing check's threshold is solved exactly for every candidate
+setting of the others. The combination that admits the largest share of the
+safe points with a majority class of at most :data:`ROUTED_N_MAX` wins
+(:func:`safe_captured`); admitted points beyond it earn nothing, since they
+are not held to the test, and break ties only by how few of them have a best
+estimate above the target. The report gives the best rule for each number of
+checks and recommends the fewest checks within :data:`PARSIMONY_TOLERANCE` of
+the best, with thresholds rounded to two significant figures on the strict
+side. It attributes to each check the unsafe slice that it alone excludes, so
+that a check can be read as one failure mechanism.
 
 Usage
 -----
@@ -105,6 +111,12 @@ Usage
     uv run python stats/experiments/auto_rule_surface.py fit
     uv run python stats/experiments/auto_rule_surface.py report
     uv run python stats/experiments/auto_rule_surface.py run --cells c.csv --reps 2000
+    uv run python stats/experiments/auto_rule_surface.py run --cells c.csv --paired
+
+``--paired`` also computes the hybrid and every level of :data:`PAIRED_ALPHAS`
+on each draw's cloud, so that one round measures whether the hybrid lowers the
+miss rate where the rule refuses the unfloored band, what the floor costs in
+area, and how the frontier moves with the level.
 
 ``run`` resumes an unfinished round; otherwise it designs and runs the next
 one. ``fit`` writes ``report.md``, ``grid.feather``, ``rules.json`` and
@@ -1013,19 +1025,27 @@ def next_design(
 
 
 CELL_COLUMNS = ["family", "shape", "auc", "n_pos", "n_neg"]
+# Levels and bands a paired draw evaluates on its one cloud; ALPHA must be
+# among the levels
+PAIRED_ALPHAS = (0.01, 0.05, 0.1, 0.2)
+PAIRED_BANDS = ("raw", "hybrid")
 
 
-def cell_design(*, cells: pd.DataFrame, reps: int) -> pd.DataFrame:
+def cell_design(*, cells: pd.DataFrame, reps: int, paired: bool) -> pd.DataFrame:
     """Replicate fixed cells into a round's design.
 
     Args:
         cells: One row per cell with :data:`CELL_COLUMNS`, and optionally
             ``reps`` to override the number of draws of that cell.
         reps: Draws per cell without its own ``reps``.
+        paired: Whether each draw also evaluates the hybrid and every level
+            of :data:`PAIRED_ALPHAS` on the same cloud (see
+            :func:`simulate_draw`).
 
     Returns:
         The design, with a ``cell`` column indexing the rows of ``cells``,
-        ``criterion`` set to ``cell``, slowest draws first.
+        ``criterion`` set to ``cell`` and a ``paired`` flag, slowest draws
+        first.
 
     Raises:
         ValueError: If a column is missing, a family is unknown, or a cell
@@ -1050,6 +1070,7 @@ def cell_design(*, cells: pd.DataFrame, reps: int) -> pd.DataFrame:
         names="cell"
     )
     design["criterion"] = "cell"
+    design["paired"] = paired
     order = np.argsort(-cost_seconds(design), kind="stable")
     design = design.iloc[order].reset_index(drop=True)
     design.insert(0, "draw", np.arange(len(design)))
@@ -1110,12 +1131,33 @@ def empirical_binormal_slope(*, scores_pos: NDArray, scores_neg: NDArray) -> flo
     return float(np.polyfit(norm.ppf(fpr[inside]), norm.ppf(tpr[inside]), 1)[0])
 
 
+def paired_column(*, quantity: str, band: str, alpha: float) -> str:
+    """Name of a paired draw's column, such as ``miss_hybrid_a05``.
+
+    Args:
+        quantity: What the column records.
+        band: Name of the band in :data:`PAIRED_BANDS`.
+        alpha: Level of the band.
+
+    Returns:
+        The column name.
+    """
+    return f"{quantity}_{band}_a{round(alpha * 100):02d}"
+
+
 def simulate_draw(*, row: dict, seed: int, round_index: int) -> dict | None:
     """Simulate one dataset and evaluate the unfloored band on it.
 
     Scores, grid and truth follow the main suite: scores and the evaluation
     grid in single precision, the true ROC evaluated on the band's native
     grid in double precision.
+
+    A paired row (``row["paired"]``) computes every band of
+    :data:`PAIRED_BANDS` at every level of :data:`PAIRED_ALPHAS` from one
+    fiducial cloud, and records for each the miss indicator, the band area
+    and the FPR range of the violations. The unfloored band at
+    :data:`ALPHA` is bit-identical to the unpaired computation with the same
+    seed, so the draw's ``miss`` columns stay usable by the surface fit.
 
     Args:
         row: One row of a round's design.
@@ -1132,7 +1174,11 @@ def simulate_draw(*, row: dict, seed: int, round_index: int) -> dict | None:
         make_student_t_dgp,
     )
     from studroc_paper.eval.eval import evaluate_single_band
-    from studroc_paper.methods.fiducial_band_rs import fiducial_band_rs
+    from studroc_paper.methods import M3Floor
+    from studroc_paper.methods.fiducial_band_rs import (
+        fiducial_band_rs,
+        fiducial_band_suite_rs,
+    )
 
     makers = {
         "student_t": make_student_t_dgp,
@@ -1163,23 +1209,56 @@ def simulate_draw(*, row: dict, seed: int, round_index: int) -> dict | None:
     y_true = np.concatenate([np.ones(n_pos), np.zeros(n_neg)]).astype(np.float32)
     y_score = np.concatenate([scores_pos, scores_neg]).astype(np.float32)
     grid = np.linspace(0, 1, n_neg + 1)
+    true_tpr = dgp.get_true_roc(grid)
+    band_seed = int(rng.integers(0, 2**63 - 1))
+    paired = bool(row.get("paired", False))
+    paired_fields: dict[str, float | bool] = {}
     start = time.perf_counter()
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        _, lower, upper = fiducial_band_rs(
-            y_true=y_true,
-            y_score=y_score,
-            alpha=ALPHA,
-            n_threads=1,
-            random_state=int(rng.integers(0, 2**63 - 1)),
-        )
+        if paired:
+            suite = fiducial_band_suite_rs(
+                y_true=y_true,
+                y_score=y_score,
+                alphas=PAIRED_ALPHAS,
+                m3_floors={"raw": False, "hybrid": M3Floor()},
+                n_threads=1,
+                random_state=band_seed,
+            )
+            lower, upper = suite.bands[ALPHA]["raw"]
+        else:
+            _, lower, upper = fiducial_band_rs(
+                y_true=y_true,
+                y_score=y_score,
+                alpha=ALPHA,
+                n_threads=1,
+                random_state=band_seed,
+            )
     seconds = time.perf_counter() - start
     band = evaluate_single_band(
         lower_band=lower,
         upper_band=upper,
-        true_tpr=dgp.get_true_roc(grid),
+        true_tpr=true_tpr,
         fpr_grid=grid.astype(np.float32),
     )
+    if paired:
+        for alpha in PAIRED_ALPHAS:
+            for name in PAIRED_BANDS:
+                result = evaluate_single_band(
+                    lower_band=suite.bands[alpha][name][0],
+                    upper_band=suite.bands[alpha][name][1],
+                    true_tpr=true_tpr,
+                    fpr_grid=grid.astype(np.float32),
+                )
+                fields = {
+                    "miss": not result.covers_entirely,
+                    "area": float(result.band_area),
+                    "violation_fpr_min": result.violation_fpr_min,
+                    "violation_fpr_max": result.violation_fpr_max,
+                }
+                for quantity, value in fields.items():
+                    column = paired_column(quantity=quantity, band=name, alpha=alpha)
+                    paired_fields[column] = np.nan if value is None else value
     ranks = rankdata(y_score)
     return {
         "source": f"round{round_index}",
@@ -1207,6 +1286,7 @@ def simulate_draw(*, row: dict, seed: int, round_index: int) -> dict | None:
             scores_pos=scores_pos, scores_neg=scores_neg
         ),
         "seconds": seconds,
+        **paired_fields,
     }
 
 
@@ -1478,7 +1558,9 @@ def command_run(args: argparse.Namespace) -> None:
         raise SystemExit("--close-round: there is no unfinished round to close")
     elif args.cells is not None:
         round_index = len(designs)
-        design = cell_design(cells=pd.read_csv(args.cells), reps=args.reps)
+        design = cell_design(
+            cells=pd.read_csv(args.cells), reps=args.reps, paired=args.paired
+        )
     else:
         round_index = len(designs)
         existing = in_design_space(
@@ -1637,10 +1719,12 @@ def worst_case_grid(*, surfaces: dict[str, Surface], target: float) -> pd.DataFr
 # Rule
 # =============================================================================
 
-CheckKind = Literal["floor", "corner", "imbalance_corner", "auc_cap", "ratio_cap"]
-# Kinds whose check admits large values of the statistic; the caps admit
+CheckKind = Literal["floor", "corner", "imbalance_corner", "ceiling", "ratio_cap"]
+# Kinds whose check admits large values of the statistic; the ratio cap admits
 # small values
-LOWER_BOUNDS: frozenset[str] = frozenset({"floor", "corner", "imbalance_corner"})
+LOWER_BOUNDS: frozenset[str] = frozenset(
+    {"floor", "corner", "imbalance_corner", "ceiling"}
+)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -1653,14 +1737,21 @@ class Check:
     - ``corner``: ``n_min (1 - AUC)^a >= threshold``; at ``a = 1`` the
       expected count of the minority class beyond the ROC's corner
     - ``imbalance_corner``: ``n_min (1 - AUC)^a / ratio^b >= threshold``
-    - ``auc_cap``: ``AUC <= threshold``
+    - ``ceiling``: ``1 - AUC >= threshold * ratio^b``, an AUC cap that
+      tightens with imbalance; at ``b = 0`` a plain cap
+      ``AUC <= 1 - threshold``
     - ``ratio_cap``: ``n_max / n_min <= threshold``
+
+    A corner check alone bounds ``1 - AUC`` by one power of the smaller
+    class. The safe frontier instead rises steeply at small samples and
+    levels off at large ones, which a corner check with a ceiling follows.
 
     Attributes:
         kind: Kind of the check.
         threshold: Threshold on the natural scale of the kind's statistic.
         auc_exponent: Exponent ``a`` of the corner kinds.
-        ratio_exponent: Exponent ``b`` of ``imbalance_corner``.
+        ratio_exponent: Exponent ``b`` of ``imbalance_corner`` and
+            ``ceiling``.
     """
 
     kind: CheckKind
@@ -1681,8 +1772,6 @@ class Check:
 
     def bound(self) -> float:
         """The threshold on the scale of :meth:`score`."""
-        if self.kind == "auc_cap":
-            return -self.threshold
         if self.kind in LOWER_BOUNDS:
             return float(np.log(self.threshold))
         return float(-np.log(self.threshold))
@@ -1701,8 +1790,10 @@ class Check:
                 return f"n_min * (1 - AUC)^{a:g} >= {t:,.4g}"
             case "imbalance_corner":
                 return f"n_min * (1 - AUC)^{a:g} / ratio^{b:.3g} >= {t:,.4g}"
-            case "auc_cap":
-                return f"AUC <= {t:.4g}"
+            case "ceiling" if b == 0:
+                return f"AUC <= {1 - t:.4g}"
+            case "ceiling":
+                return f"1 - AUC >= {t:.4g} * ratio^{b:.3g}"
             case "ratio_cap":
                 return f"n_max / n_min <= {t:.4g}"
 
@@ -1718,8 +1809,14 @@ class Check:
                     "number of minority cases beyond the ROC's corner, so the "
                     "largest AUC allowed rises with the smaller class"
                 )
-            case "auc_cap":
-                return f"the AUC is at most {self.threshold:.4g}"
+            case "ceiling" if self.ratio_exponent == 0:
+                return f"the AUC is at most {1 - self.threshold:.4g}"
+            case "ceiling":
+                return (
+                    f"the AUC is below a ceiling that falls with imbalance: "
+                    f"`{self.describe()}`, so the AUC is at most "
+                    f"{1 - self.threshold:.4g} for balanced classes"
+                )
             case "ratio_cap":
                 return (
                     f"the larger class is at most {self.threshold:.4g} times the "
@@ -1742,14 +1839,15 @@ def check_score(
     Args:
         kind: Kind of the check.
         auc_exponent: Exponent ``a`` of the corner kinds.
-        ratio_exponent: Exponent ``b`` of ``imbalance_corner``.
+        ratio_exponent: Exponent ``b`` of ``imbalance_corner`` and
+            ``ceiling``.
         n_min: Smaller class counts.
         auc: AUCs.
         ratio: Class ratios ``n_max / n_min``.
 
     Returns:
-        The log statistic for the lower bounds, its negative for the ratio
-        cap, and the negative AUC for ``auc_cap``.
+        The log statistic for the lower bounds and its negative for the ratio
+        cap.
     """
     match kind:
         case "floor":
@@ -1762,8 +1860,8 @@ def check_score(
                 + auc_exponent * np.log1p(-auc)
                 - ratio_exponent * np.log(ratio)
             )
-        case "auc_cap":
-            return -auc
+        case "ceiling":
+            return np.log1p(-auc) - ratio_exponent * np.log(ratio)
         case "ratio_cap":
             return -np.log(ratio)
 
@@ -1772,9 +1870,7 @@ def check_from_bound(
     *, kind: CheckKind, bound: float, auc_exponent: float, ratio_exponent: float
 ) -> Check:
     """Build a check from a threshold on the scale of :func:`check_score`."""
-    if kind == "auc_cap":
-        threshold = -bound
-    elif kind in LOWER_BOUNDS:
+    if kind in LOWER_BOUNDS:
         threshold = float(np.exp(bound))
     else:
         threshold = float(np.exp(-bound))
@@ -1819,12 +1915,13 @@ REFERENCE_RULE = Rule(
 )
 
 AUC_EXPONENTS = (0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5)
-RATIO_EXPONENTS = (1 / 3, 2 / 3, 1.0)
+RATIO_EXPONENTS = (1 / 6, 1 / 3, 2 / 3, 1.0)
+CEILING_RATIO_EXPONENTS = (0.0, 0.25, 1 / 3, 0.5)
 EXPONENTS: dict[CheckKind, list[tuple[float, float]]] = {
     "floor": [(0.0, 0.0)],
     "corner": [(a, 0.0) for a in AUC_EXPONENTS],
     "imbalance_corner": [(a, b) for a in AUC_EXPONENTS for b in RATIO_EXPONENTS],
-    "auc_cap": [(0.0, 0.0)],
+    "ceiling": [(0.0, b) for b in CEILING_RATIO_EXPONENTS],
     "ratio_cap": [(0.0, 0.0)],
 }
 # The first kind of a combination in this order closes it: its threshold is
@@ -1834,7 +1931,7 @@ CLOSING_ORDER: tuple[CheckKind, ...] = (
     "corner",
     "floor",
     "ratio_cap",
-    "auc_cap",
+    "ceiling",
 )
 # Kinds that never appear together because one generalises the other
 REDUNDANT_PAIRS = (frozenset({"corner", "imbalance_corner"}),)
@@ -1842,8 +1939,8 @@ MAX_CHECKS = 4
 # Candidate thresholds per searched check, at quantiles of its statistic over
 # the unsafe points
 THRESHOLD_CANDIDATES = 16
-# A rule with fewer checks is recommended if it admits at most this much less
-# of the grid than the best rule
+# A rule with fewer checks is recommended if it captures at most this much
+# less of the safe settings than the best rule
 PARSIMONY_TOLERANCE = 0.01
 # Largest majority class over which unsafe points constrain the rule. The
 # earlier studies, which compute the unfloored band and the hybrid on the same
@@ -1872,17 +1969,52 @@ def routed_unsafe(*, grid: pd.DataFrame, assurance: float) -> NDArray:
     return ((grid["exceedance"] > 1 - assurance) & routed).to_numpy()
 
 
+def routed_points(grid: pd.DataFrame) -> NDArray:
+    """Whether each grid point has a majority class of at most :data:`ROUTED_N_MAX`."""
+    return (grid["n_min"] * grid["ratio"] <= ROUTED_N_MAX).to_numpy()
+
+
+def safe_captured(*, admitted: NDArray, routed: NDArray, unsafe: NDArray) -> float:
+    """Share of the safe routed grid points that a rule admits.
+
+    This is the objective of the rule search. Admitted points beyond
+    :data:`ROUTED_N_MAX` earn nothing: they are not held to the assurance
+    test, so counting them would reward rules for reaching into the region
+    the data cannot vouch for.
+
+    Args:
+        admitted: Whether the rule admits each grid point.
+        routed: Output of :func:`routed_points`.
+        unsafe: Whether each grid point is unsafe.
+
+    Returns:
+        The captured share, or NaN when no routed point is safe.
+    """
+    safe = routed & ~unsafe
+    return float((admitted & safe).sum() / safe.sum()) if safe.any() else np.nan
+
+
 @dataclass(frozen=True, kw_only=True)
 class RuleFit:
-    """A rule found by :func:`search_rules` and its share of the grid.
+    """A rule found by :func:`search_rules` and how much it admits.
 
     Attributes:
         rule: The rule, with only its active checks.
+        safe_captured: Output of :func:`safe_captured`, the search objective.
+        doubtful_beyond: Admitted points beyond :data:`ROUTED_N_MAX` whose
+            worst-case posterior-mean miss probability exceeds the target;
+            breaks ties in the objective.
         admitted_share: Share of the runnable grid the rule admits.
     """
 
     rule: Rule
+    safe_captured: float
+    doubtful_beyond: int
     admitted_share: float
+
+    def key(self) -> tuple[float, int]:
+        """Sort key: more captured first, then fewer doubtful points beyond."""
+        return (self.safe_captured, -self.doubtful_beyond)
 
 
 def solve_combination(
@@ -1897,9 +2029,10 @@ def solve_combination(
     The last kind closes the rule. Every other kind is searched over
     :data:`THRESHOLD_CANDIDATES` thresholds, including none; for each setting
     the closing threshold is the smallest that excludes every unsafe point
-    the other checks let through. Each active threshold of the winner is then
-    moved onto the nearest admitted grid point, so that the rule claims
-    nothing between the last admitted and the first excluded point.
+    the other checks let through. The winner maximises :meth:`RuleFit.key`.
+    Each active threshold of the winner is then moved onto the nearest
+    admitted grid point, so that the rule claims nothing between the last
+    admitted and the first excluded point.
 
     Args:
         kinds: Kinds of the checks, the closing kind last.
@@ -1908,11 +2041,14 @@ def solve_combination(
         unsafe: Whether each grid point is unsafe.
 
     Returns:
-        The rule admitting the largest share, or None if no unsafe point
-        exists to bound.
+        The best rule, or None if no unsafe point exists to bound or no
+        routed point is safe.
     """
-    if not unsafe.any():
+    routed = routed_points(grid)
+    safe = routed & ~unsafe
+    if not unsafe.any() or not safe.any():
         return None
+    doubtful = ~routed & (grid["p_mean"] > ALPHA).to_numpy()
     n_min, auc, ratio = (grid[c].to_numpy(float) for c in ("n_min", "auc", "ratio"))
     scores = [
         check_score(
@@ -1933,8 +2069,9 @@ def solve_combination(
         )
         # A bound just above an unsafe value excludes that point
         options.append([-np.inf, *np.nextafter(bounds, np.inf)])
-    # Every setting admits a share of at least zero, so the first replaces this
-    best: tuple[float, list[float]] = (-1.0, [])
+    # Every setting captures a share of at least zero, so the first replaces
+    # this
+    best: tuple[tuple[int, int], list[float]] = ((-1, 0), [])
     for chosen in product(*options):
         passing = np.ones(len(grid), dtype=bool)
         for score, bound in zip(scores[:-1], chosen, strict=True):
@@ -1945,10 +2082,11 @@ def solve_combination(
             if leaking.any()
             else -np.inf
         )
-        share = float(np.mean(passing & (closing >= closing_bound)))
-        if share > best[0]:
-            best = (share, [*chosen, closing_bound])
-    share, bounds = best
+        admitted = passing & (closing >= closing_bound)
+        key = (int((admitted & safe).sum()), -int((admitted & doubtful).sum()))
+        if key > best[0]:
+            best = (key, [*chosen, closing_bound])
+    bounds = best[1]
     admitted = np.ones(len(grid), dtype=bool)
     for score, bound in zip(scores, bounds, strict=True):
         admitted &= score >= bound
@@ -1962,7 +2100,31 @@ def solve_combination(
         for kind, (a, b), bound in zip(kinds, exponents, bounds, strict=True)
         if np.isfinite(bound)
     )
-    return RuleFit(rule=Rule(checks), admitted_share=share)
+    return rule_fit(rule=Rule(checks), grid=grid, unsafe=unsafe)
+
+
+def rule_fit(*, rule: Rule, grid: pd.DataFrame, unsafe: NDArray) -> RuleFit:
+    """Score a rule by the search objective.
+
+    Args:
+        rule: The rule.
+        grid: Output of :func:`worst_case_grid`.
+        unsafe: Whether each grid point is unsafe.
+
+    Returns:
+        The rule with its captured share, doubtful points beyond
+        :data:`ROUTED_N_MAX` and admitted share.
+    """
+    admitted = grid_admits(rule=rule, grid=grid)
+    routed = routed_points(grid)
+    return RuleFit(
+        rule=rule,
+        safe_captured=safe_captured(admitted=admitted, routed=routed, unsafe=unsafe),
+        doubtful_beyond=int(
+            (admitted & ~routed & (grid["p_mean"] > ALPHA).to_numpy()).sum()
+        ),
+        admitted_share=float(admitted.mean()),
+    )
 
 
 def search_rules(*, grid: pd.DataFrame, unsafe: NDArray) -> pd.DataFrame:
@@ -1974,8 +2136,9 @@ def search_rules(*, grid: pd.DataFrame, unsafe: NDArray) -> pd.DataFrame:
 
     Returns:
         One row per combination of kinds with the best rule found
-        (``fit``), its number of active checks (``checks``) and its admitted
-        share, sorted by share.
+        (``fit``), its number of active checks (``checks``), its captured
+        share of the safe settings and its admitted share of the grid,
+        sorted by :meth:`RuleFit.key`.
     """
     rows = []
     for size in range(1, MAX_CHECKS + 1):
@@ -1989,9 +2152,7 @@ def search_rules(*, grid: pd.DataFrame, unsafe: NDArray) -> pd.DataFrame:
                 fit = solve_combination(
                     kinds=ordered, exponents=exponents, grid=grid, unsafe=unsafe
                 )
-                if fit is not None and (
-                    best is None or fit.admitted_share > best.admitted_share
-                ):
+                if fit is not None and (best is None or fit.key() > best.key()):
                     best = fit
             if best is not None:
                 rows.append(
@@ -1999,17 +2160,23 @@ def search_rules(*, grid: pd.DataFrame, unsafe: NDArray) -> pd.DataFrame:
                         "kinds": " + ".join(kinds),
                         "fit": best,
                         "checks": len(best.rule.checks),
+                        "safe_captured": best.safe_captured,
+                        "doubtful_beyond": best.doubtful_beyond,
                         "admitted_share": best.admitted_share,
                     }
                 )
-    return pd.DataFrame(rows).sort_values("admitted_share", ascending=False)
+    return pd.DataFrame(rows).sort_values(
+        ["safe_captured", "doubtful_beyond"], ascending=[False, True]
+    )
 
 
 def round_strict(check: Check) -> Check:
     """Round a check's threshold to a round number on its strict side.
 
-    Lower bounds round up and caps round down, to two significant figures; an
-    AUC cap rounds down to a multiple of 0.005.
+    Thresholds round to two significant figures: lower bounds up, the ratio
+    cap down. Coarser rounding costs a visible share of the safe settings,
+    because the corner and ceiling thresholds sit on steep parts of the
+    frontier.
 
     Args:
         check: The check.
@@ -2019,14 +2186,11 @@ def round_strict(check: Check) -> Check:
         original admits.
     """
     t = check.threshold
+    scale = 10.0 ** (np.floor(np.log10(t)) - 1)
     # The tolerance keeps a threshold that is already round from moving
-    if check.kind == "auc_cap":
-        rounded = np.floor(t / 0.005 + 1e-9) * 0.005
-    elif check.kind in LOWER_BOUNDS:
-        scale = 10.0 ** (np.floor(np.log10(t)) - 1)
+    if check.kind in LOWER_BOUNDS:
         rounded = np.ceil(t / scale - 1e-9) * scale
     else:
-        scale = 10.0 ** (np.floor(np.log10(t)) - 1)
         rounded = np.floor(t / scale + 1e-9) * scale
     return Check(
         kind=check.kind,
@@ -2043,14 +2207,16 @@ def recommend(*, search: pd.DataFrame) -> pd.DataFrame:
         search: Output of :func:`search_rules`.
 
     Returns:
-        One row per number of checks with the best rule, its share before
-        and after rounding, and whether it is recommended: the fewest checks
-        within :data:`PARSIMONY_TOLERANCE` of the best share.
+        One row per number of checks with the best rule, the rule rounded on
+        the strict side (``rounded``), and whether it is recommended: the
+        fewest checks within :data:`PARSIMONY_TOLERANCE` of the best captured
+        share.
     """
-    ladder = search.loc[search.groupby("checks")["admitted_share"].idxmax()]
+    # search is sorted by RuleFit.key, so the first row per count is its best
+    ladder = search.groupby("checks", sort=True).head(1)
     ladder = ladder.sort_values("checks").reset_index(drop=True)
-    best = ladder["admitted_share"].max()
-    eligible = ladder["admitted_share"] >= best - PARSIMONY_TOLERANCE
+    best = ladder["safe_captured"].max()
+    eligible = ladder["safe_captured"] >= best - PARSIMONY_TOLERANCE
     ladder["recommended"] = False
     ladder.loc[eligible.idxmax(), "recommended"] = True
     ladder["rounded"] = [
@@ -2070,18 +2236,22 @@ def rule_summary(
         unsafe: Whether each grid point is unsafe.
 
     Returns:
-        The share of the runnable grid admitted, the number of unsafe points
+        The share of the runnable grid admitted, the share of the safe
+        settings captured (:func:`safe_captured`), the number of unsafe points
         admitted, the largest worst-case posterior-mean miss probability,
         exceedance probability and expected excess among the admitted points
-        with a majority class of at most :data:`ROUTED_N_MAX`, and the largest
-        posterior-mean miss probability among the admitted points beyond it.
+        with a majority class of at most :data:`ROUTED_N_MAX`, and, beyond
+        it, the number of admitted points whose posterior-mean miss
+        probability exceeds the target and the largest such probability.
     """
     admitted = rule.admits(n_min=grid["n_min"], auc=grid["auc"], ratio=grid["ratio"])
-    routed = (grid["n_min"] * grid["ratio"] <= ROUTED_N_MAX).to_numpy()
+    routed = routed_points(grid)
     inside = grid[admitted & routed]
     beyond = grid[admitted & ~routed]
     return {
         "admitted_share": float(admitted.mean()),
+        "safe_captured": safe_captured(admitted=admitted, routed=routed, unsafe=unsafe),
+        "doubtful_beyond": int((beyond["p_mean"] > ALPHA).sum()),
         "unsafe_admitted": int((admitted & unsafe).sum()),
         "max_p_mean": float(inside["p_mean"].max()) if len(inside) else np.nan,
         "max_exceedance": float(inside["exceedance"].max()) if len(inside) else np.nan,
@@ -2684,6 +2854,7 @@ def summary_columns(*, summary: dict[str, float]) -> dict[str, str]:
         The summary with readable names and formatted values.
     """
     return {
+        "safe settings captured": percent(summary["safe_captured"]),
         "grid share": percent(summary["admitted_share"]),
         "unsafe settings admitted": f"{summary['unsafe_admitted']:,}",
         f"worst mean miss rate, n_max <= {ROUTED_N_MAX:,}": percent(
@@ -2691,6 +2862,9 @@ def summary_columns(*, summary: dict[str, float]) -> dict[str, str]:
         ),
         f"worst P(miss rate > {ALPHA:.0%}), n_max <= {ROUTED_N_MAX:,}": percent(
             summary["max_exceedance"]
+        ),
+        f"admitted with mean miss rate > {ALPHA:.0%}, n_max > {ROUTED_N_MAX:,}": (
+            f"{summary['doubtful_beyond']:,}"
         ),
         f"worst mean miss rate, n_max > {ROUTED_N_MAX:,}": percent(
             summary["max_p_mean_beyond"], digits=2
@@ -3096,61 +3270,6 @@ def auc_headroom(
     return table
 
 
-# Exponents (AUC, ratio) of the two corner checks of the bent-corner form: a
-# steep check that binds at small samples and a flat one that binds at large
-STEEP_CORNERS = tuple(
-    (a, b) for a in (0.5, 0.75, 1.0, 1.25, 1.5) for b in (0.0, 1 / 3, 2 / 3)
-)
-FLAT_CORNERS = tuple((a, b) for a in (2.0, 2.5, 3.0, 4.0, 6.0) for b in (0.0, 1 / 3))
-
-
-def bent_corner_rule(*, grid: pd.DataFrame, unsafe: NDArray) -> tuple[Rule, float]:
-    """Best rule with two corner checks, optionally with a floor.
-
-    The rule search allows one corner check, whose limit on ``1 - AUC`` is a
-    power of the smaller class. Two corner checks of different exponents
-    bound ``1 - AUC`` by the larger of two powers, a frontier that bends
-    from steep at small samples to flat at large ones.
-
-    Args:
-        grid: Output of :func:`worst_case_grid`.
-        unsafe: Whether each grid point is unsafe.
-
-    Returns:
-        The best such rule, rounded on the strict side, and its grid share.
-    """
-    best: tuple[float, Rule] | None = None
-    for floor in ((), (("floor", (0.0, 0.0)),)):
-        for steep, flat in product(STEEP_CORNERS, FLAT_CORNERS):
-            parts = (*floor, ("imbalance_corner", steep), ("imbalance_corner", flat))
-            fit = solve_combination(
-                kinds=tuple(kind for kind, _ in parts),
-                exponents=tuple(exponent for _, exponent in parts),
-                grid=grid,
-                unsafe=unsafe,
-            )
-            if fit is None:
-                continue
-            rounded = Rule(
-                tuple(
-                    Check(
-                        kind="corner",
-                        threshold=c.threshold,
-                        auc_exponent=c.auc_exponent,
-                    )
-                    if c.kind == "imbalance_corner" and c.ratio_exponent == 0
-                    else c
-                    for c in (round_strict(check) for check in fit.rule.checks)
-                )
-            )
-            share = float(grid_admits(rule=rounded, grid=grid).mean())
-            if best is None or share > best[0]:
-                best = (share, rounded)
-    if best is None:
-        raise ValueError("No unsafe point to bound")
-    return best[1], best[0]
-
-
 def build_report(
     *,
     draws: pd.DataFrame,
@@ -3196,7 +3315,7 @@ def build_report(
     # The rule with the most checks among those within the parsimony tolerance
     # trades simplicity for a different shape of the admitted region
     eligible = ladder[
-        ladder["admitted_share"] >= ladder["admitted_share"].max() - PARSIMONY_TOLERANCE
+        ladder["safe_captured"] >= ladder["safe_captured"].max() - PARSIMONY_TOLERANCE
     ]
     if eligible["checks"].max() > ladder.loc[ladder["recommended"], "checks"].iloc[0]:
         rules["alternative"] = eligible.loc[eligible["checks"].idxmax(), "rounded"]
@@ -3229,7 +3348,6 @@ def build_report(
         n_mins=SUMMARY_N_MIN,
         ratios=SUMMARY_RATIOS,
     )
-    bent, bent_share = bent_corner_rule(grid=grid, unsafe=unsafe)
 
     reliability = reliability_table(predictions=predictions)
     near = reliability[reliability["predicted"].between(0.02, 0.12)]
@@ -3394,14 +3512,14 @@ def build_report(
         )
         + f". A second clause beside the rule would route a further "
         f"{clauses['recommended'].iloc[0]['grid share added']} of the grid "
-        f"without new draws, and a rule with two corner checks "
-        f"{(bent_share - summaries['recommended']['admitted_share']) * 100:.1f} "
-        f"percentage points (Section 5.6).",
-        f"- Shares of the grid quoted below count points of an evaluation grid "
-        f"(log class size, probit AUC, ten class ratios) without weights. They "
-        f"compare candidate rules and do not estimate how often users are "
-        f"routed. The recommended rule admits "
-        f"{percent(summaries['recommended']['admitted_share'])} of the grid.",
+        f"without new draws (Section 5.6).",
+        f"- Shares quoted below count points of an evaluation grid (log class "
+        f"size, probit AUC, ten class ratios) without weights. They compare "
+        f"candidate rules and do not estimate how often users are routed. The "
+        f"recommended rule admits "
+        f"{percent(summaries['recommended']['admitted_share'])} of the grid and "
+        f"{percent(summaries['recommended']['safe_captured'])} of the safe "
+        f"settings with a larger class of at most {ROUTED_N_MAX:,}.",
         "",
         "## 1. What routing buys",
         "",
@@ -3623,14 +3741,18 @@ def build_report(
             "",
         ]
 
+    ladder_summaries = [
+        rule_summary(rule=r, grid=grid, unsafe=unsafe) for r in ladder["rounded"]
+    ]
     ladder_display = pd.DataFrame(
         {
             "rule": [r.describe() for r in ladder["rounded"]],
-            "grid share": [
-                percent(
-                    rule_summary(rule=r, grid=grid, unsafe=unsafe)["admitted_share"]
-                )
-                for r in ladder["rounded"]
+            "safe settings captured": [
+                percent(s["safe_captured"]) for s in ladder_summaries
+            ],
+            "grid share": [percent(s["admitted_share"]) for s in ladder_summaries],
+            f"admitted with mean miss rate > {ALPHA:.0%}, n_max > {ROUTED_N_MAX:,}": [
+                f"{s['doubtful_beyond']:,}" for s in ladder_summaries
             ],
             "recommended": ["yes" if r else "" for r in ladder["recommended"]],
         },
@@ -3663,17 +3785,22 @@ def build_report(
         "### 5.2 Choosing the rule",
         "",
         "Candidate rules are conjunctions of simple checks: a minimum on the "
-        "smaller class, a cap on the class ratio, a cap on the AUC, and a "
-        "*corner* check that the AUC is low enough for the sample size. For "
-        "every combination the thresholds are set to admit as much of the grid "
-        "as possible without admitting an unsafe setting, then rounded to round "
-        "numbers on the safe side. The best rule for each number of checks:",
+        "smaller class, a cap on the class ratio, a *corner* check that the "
+        "AUC is low enough for the sample size, and a *ceiling* on the AUC "
+        "that may fall with imbalance. For every combination the thresholds "
+        "are set to capture as many safe settings with a larger class of at "
+        f"most {ROUTED_N_MAX:,} as possible without admitting an unsafe "
+        "setting, then rounded on the safe side. Settings admitted beyond that "
+        "size earn nothing, because they are not held to the test; among "
+        "rules that capture equally, the one admitting fewer settings there "
+        f"with a best estimate above {ALPHA:.0%} wins. The best rule for each "
+        "number of checks:",
         "",
         markdown_table(ladder_display, floatfmt=".4f"),
         "",
-        f"The recommended rule is the one with the fewest checks that admits "
+        f"The recommended rule is the one with the fewest checks that captures "
         f"within {PARSIMONY_TOLERANCE * 100:g} percentage point of the best "
-        f"rule's grid share.",
+        f"rule's share of the safe settings.",
         "",
         "### 5.3 What each check guards against",
         "",
@@ -3787,12 +3914,10 @@ def build_report(
         "A single corner check bounds `1 - AUC` by one power of the smaller "
         "class, a straight line on log scales. The safe limit is not straight: "
         "it rises quickly with the smaller class at small samples and levels "
-        "off at large ones. Two corner checks of different exponents follow "
-        f"such a bend. The best rule of that form, `{bent.describe()}`, admits "
-        f"{percent(bent_share)} of the grid against "
-        f"{percent(summaries['recommended']['admitted_share'])} for the "
-        "recommended rule; the rest of the slack lies in thin slivers beside "
-        "unsafe settings, which no few checks can follow.",
+        "off at large ones. A corner check with a ceiling follows that bend, "
+        "which is why the search offers the ceiling; the rest of the slack "
+        "lies in thin slivers beside unsafe settings, which no few checks can "
+        "follow.",
         "",
     ]
     for label, rule in candidates.items():
@@ -3897,6 +4022,9 @@ def build_report(
                     "rule (exact thresholds)": [
                         fit.rule.describe() for fit in search["fit"]
                     ],
+                    "safe settings captured": [
+                        percent(v) for v in search["safe_captured"]
+                    ],
                     "grid share": [percent(v) for v in search["admitted_share"]],
                 },
                 index=pd.Index(search["kinds"], name="checks"),
@@ -3961,10 +4089,36 @@ def load_fit_draws(args: argparse.Namespace) -> pd.DataFrame:
     return draws
 
 
+PLAN_FILE = "validation_plan.md"
+APPENDIX_HEADING = "## Appendix"
+
+
+def with_plan(*, report: str, plan: str) -> str:
+    """Insert a hand-written plan into the report, before its appendix.
+
+    Args:
+        report: Output of :func:`build_report`.
+        plan: Markdown of the plan, starting with its own heading.
+
+    Returns:
+        The report with the plan before the appendix, or at the end if the
+        report has none.
+    """
+    plan = plan.strip() + "\n\n"
+    at = report.find(f"\n{APPENDIX_HEADING}")
+    if at < 0:
+        return report.rstrip("\n") + "\n\n" + plan
+    return report[: at + 1] + plan + report[at + 1 :]
+
+
 def write_outputs(
     *, artifacts: FitArtifacts, draws: pd.DataFrame, out_dir: Path, assurance: float
 ) -> None:
     """Derive the rules and write the report, figure, grid and rules.
+
+    A :data:`PLAN_FILE` in ``out_dir`` holds the plan for the next
+    replicated cells; it is written by hand and inserted into the report
+    before the appendix, so that rewriting the report keeps it.
 
     Args:
         artifacts: The fit.
@@ -3990,6 +4144,9 @@ def write_outputs(
         assurance=assurance,
         path=out_dir / "surface.png",
     )
+    plan_path = out_dir / PLAN_FILE
+    if plan_path.exists():
+        report = with_plan(report=report, plan=plan_path.read_text(encoding="utf-8"))
     (out_dir / "report.md").write_text(report, encoding="utf-8")
     (out_dir / "rules.json").write_text(
         json.dumps(
@@ -4120,6 +4277,12 @@ def main() -> None:
     )
     run.add_argument(
         "--reps", type=int, default=1000, help="Draws per cell without its own reps"
+    )
+    run.add_argument(
+        "--paired",
+        action="store_true",
+        help="With --cells, also evaluate the hybrid and every level of "
+        "PAIRED_ALPHAS on each draw's cloud",
     )
     run.add_argument(
         "--dry-run", action="store_true", help="Print the next design's size and cost"
